@@ -8,6 +8,21 @@ use hyper::Request;
 use hyper::Response;
 use tokio::net::TcpListener;
 
+#[derive(serde::Deserialize, Debug)]
+#[serde(untagged)]
+enum TimerResponse {
+    Connect {
+        esp_id: String,
+    },
+    Solve {
+        solve_time: u128,
+        card_id: u128,
+        esp_id: String,
+        timestamp: u128,
+        session_id: i64,
+    },
+}
+
 async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
     let mut ws = fastwebsockets::FragmentCollector::new(fut.await?);
 
@@ -16,8 +31,8 @@ async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
         match frame.opcode {
             OpCode::Close => break,
             OpCode::Text | OpCode::Binary => {
-                let payload: String = String::from_utf8(frame.payload.to_vec()).unwrap();
-                println!("Received: {}", payload);
+                let response: TimerResponse = serde_json::from_slice(&frame.payload).unwrap();
+                println!("Received: {:?}", response);
                 ws.write_frame(frame).await?;
             }
             _ => {}
@@ -55,4 +70,3 @@ async fn main() -> Result<(), WebSocketError> {
         });
     }
 }
-
