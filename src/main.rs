@@ -9,15 +9,15 @@ use hyper::Response;
 use tokio::net::TcpListener;
 
 #[derive(serde::Deserialize, Debug)]
-#[serde(untagged)]
+#[serde(rename_all = "snake_case")]
 enum TimerResponse {
     Connect {
-        esp_id: String,
+        esp_id: u128,
     },
     Solve {
         solve_time: u128,
         card_id: u128,
-        esp_id: String,
+        esp_id: u128,
         timestamp: u128,
         session_id: i64,
     },
@@ -57,6 +57,7 @@ async fn server_upgrade(mut req: Request<Body>) -> Result<Response<Body>, WebSoc
 async fn main() -> Result<(), WebSocketError> {
     let listener = TcpListener::bind("0.0.0.0:8080").await?;
     println!("Server started, listening on {}", "0.0.0.0:8080");
+
     loop {
         let (stream, _) = listener.accept().await?;
         println!("Client connected");
