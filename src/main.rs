@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use fastwebsockets::upgrade;
 use fastwebsockets::OpCode;
 use fastwebsockets::WebSocketError;
@@ -8,7 +10,7 @@ use hyper::Request;
 use hyper::Response;
 use tokio::net::TcpListener;
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 enum TimerResponse {
     Connect {
@@ -21,10 +23,23 @@ enum TimerResponse {
         timestamp: u128,
         session_id: i64,
     },
+    CardInfoRequest {
+        card_id: u128,
+        esp_id: u128,
+    },
+    CardInfoResponse {
+        card_id: u128,
+        esp_id: u128,
+        name: String,
+    },
 }
 
 async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
     let mut ws = fastwebsockets::FragmentCollector::new(fut.await?);
+
+    // TMP HASHMAP, TODO: DB
+    let mut cards_hashmap: HashMap<u128, String> = HashMap::new();
+    cards_hashmap.insert(3004425529, "Filip Sciurka".to_string());
 
     loop {
         let frame = ws.read_frame().await?;
@@ -32,8 +47,25 @@ async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
             OpCode::Close => break,
             OpCode::Text | OpCode::Binary => {
                 let response: TimerResponse = serde_json::from_slice(&frame.payload).unwrap();
-                println!("Received: {:?}", response);
-                ws.write_frame(frame).await?;
+                match response {
+                    TimerResponse::CardInfoRequest { card_id, esp_id } => {
+                        if let Some(name) = cards_hashmap.get(&card_id) {
+                            let response = TimerResponse::CardInfoResponse {
+                                card_id,
+                                esp_id,
+                                name: name.to_string(),
+                            };
+
+                            let response = serde_json::to_vec(&response).unwrap();
+                            let frame = fastwebsockets::Frame::text(response.into());
+                            ws.write_frame(frame).await?;
+                        }
+                    }
+                    _ => {
+                        println!("Received: {:?}", response);
+                        ws.write_frame(frame).await?;
+                    }
+                }
             }
             _ => {}
         }
