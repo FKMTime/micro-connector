@@ -23,6 +23,11 @@ enum TimerResponse {
         timestamp: u128,
         session_id: i64,
     },
+    SolveConfirm {
+        esp_id: u128,
+        card_id: u128,
+        session_id: i64,
+    },
     CardInfoRequest {
         card_id: u128,
         esp_id: u128,
@@ -60,6 +65,27 @@ async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
                             let frame = fastwebsockets::Frame::text(response.into());
                             ws.write_frame(frame).await?;
                         }
+                    }
+                    TimerResponse::Solve {
+                        solve_time,
+                        card_id,
+                        esp_id,
+                        timestamp,
+                        session_id,
+                    } => {
+                        println!(
+                            "Solve: {} {} {} {} {}",
+                            solve_time, card_id, esp_id, timestamp, session_id
+                        );
+
+                        let response = TimerResponse::SolveConfirm {
+                            esp_id,
+                            session_id,
+                            card_id,
+                        };
+                        let response = serde_json::to_vec(&response).unwrap();
+                        let frame = fastwebsockets::Frame::text(response.into());
+                        ws.write_frame(frame).await?;
                     }
                     _ => {
                         println!("Received: {:?}", response);
