@@ -11,6 +11,12 @@ use hyper::Response;
 use tokio::net::TcpListener;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct LogData {
+    pub millis: u128,
+    pub msg: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 enum TimerResponse {
     Connect {
@@ -36,6 +42,10 @@ enum TimerResponse {
         card_id: u128,
         esp_id: u128,
         name: String,
+    },
+    Logs {
+        esp_id: u128,
+        logs: Vec<LogData>,
     },
 }
 
