@@ -42,6 +42,7 @@ enum TimerResponse {
         card_id: u128,
         esp_id: u128,
         name: String,
+        is_judge: bool,
     },
     Logs {
         esp_id: u128,
@@ -52,9 +53,10 @@ enum TimerResponse {
 async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
     let mut ws = fastwebsockets::FragmentCollector::new(fut.await?);
 
-    // TMP HASHMAP, TODO: DB
-    let mut cards_hashmap: HashMap<u128, String> = HashMap::new();
-    cards_hashmap.insert(3004425529, "Filip Sciurka".to_string());
+    // TMP HASHMAP, TODO: other backend
+    let mut cards_hashmap: HashMap<u128, (String, bool)> = HashMap::new();
+    cards_hashmap.insert(3004425529, ("Filip Sciurka".to_string(), false));
+    cards_hashmap.insert(3004425522, ("Filip Dziurka".to_string(), true));
 
     loop {
         let frame = ws.read_frame().await?;
@@ -68,7 +70,8 @@ async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
                             let response = TimerResponse::CardInfoResponse {
                                 card_id,
                                 esp_id,
-                                name: name.to_string(),
+                                name: name.0.to_string(),
+                                is_judge: name.1,
                             };
 
                             let response = serde_json::to_vec(&response).unwrap();
