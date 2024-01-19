@@ -56,7 +56,7 @@ async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
     // TMP HASHMAP, TODO: other backend
     let mut cards_hashmap: HashMap<u128, (String, bool)> = HashMap::new();
     cards_hashmap.insert(3004425529, ("Filip Sciurka".to_string(), false));
-    cards_hashmap.insert(3004425522, ("Filip Dziurka".to_string(), true));
+    cards_hashmap.insert(2156233370, ("Filip Dziurka".to_string(), true));
 
     loop {
         let frame = ws.read_frame().await?;
