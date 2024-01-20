@@ -119,6 +119,8 @@ async fn server_upgrade(mut req: Request<Body>) -> Result<Response<Body>, WebSoc
         if let Err(e) = tokio::task::unconstrained(handle_client(fut)).await {
             eprintln!("Error in websocket connection: {}", e);
         }
+
+        println!("Client disconnected (2)");
     });
 
     Ok(response)
