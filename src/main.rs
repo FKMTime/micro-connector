@@ -139,6 +139,8 @@ async fn main() -> Result<(), WebSocketError> {
             if let Err(e) = conn_fut.await {
                 println!("An error occurred: {:?}", e);
             }
+
+            println!("Client disconnected");
         });
     }
 }
