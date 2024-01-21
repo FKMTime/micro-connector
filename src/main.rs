@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use fastwebsockets::upgrade;
 use fastwebsockets::OpCode;
@@ -8,8 +9,10 @@ use hyper::body::Bytes;
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
+use hyper::upgrade::Upgraded;
 use hyper::Request;
 use hyper::Response;
+use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -57,42 +60,18 @@ enum TimerResponse {
 async fn handle_client(
     fut: upgrade::UpgradeFut,
     id: u128,
-    version: &str,
+    version_time: u128,
+    chip: &str,
 ) -> Result<(), WebSocketError> {
     let mut ws = fastwebsockets::FragmentCollector::new(fut.await?);
+    if update_client(&mut ws, id, version_time, chip).await? {
+        return Ok(());
+    }
 
     // TMP HASHMAP, TODO: other backend
     let mut cards_hashmap: HashMap<u128, (String, bool)> = HashMap::new();
     cards_hashmap.insert(3004425529, ("Filip Sciurka".to_string(), false));
     cards_hashmap.insert(2156233370, ("Filip Dziurka".to_string(), true));
-
-    let firmware_file = tokio::fs::read("/tmp/firmware.bin").await?;
-    let frame = fastwebsockets::Frame::text(
-        serde_json::to_vec(&TimerResponse::StartUpdate {
-            esp_id: id,
-            version: "new".to_string(),
-            size: firmware_file.len() as i64,
-        })
-        .unwrap()
-        .into(),
-    );
-    ws.write_frame(frame).await?;
-
-    // 1s delay to allow esp to process
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-    let chunk_size = 4096;
-    let mut firmware_chunks = firmware_file.chunks(chunk_size);
-
-    while let Some(chunk) = firmware_chunks.next() {
-        let frame = fastwebsockets::Frame::binary(chunk.into());
-        ws.write_frame(frame).await?;
-
-        // 250ms delay to allow esp to process
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-    }
-
-    // test update process
 
     let interval_time = std::time::Duration::from_secs(5);
     let mut hb_interval = tokio::time::interval(interval_time);
@@ -170,6 +149,68 @@ async fn handle_client(
 
     Ok(())
 }
+
+/// Returns true if client was updated
+async fn update_client(
+    ws: &mut fastwebsockets::FragmentCollector<TokioIo<Upgraded>>,
+    id: u128,
+    version_time: u128,
+    chip: &str,
+) -> Result<bool, WebSocketError> {
+    let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
+    let firmware_dir = std::path::PathBuf::from(firmware_dir);
+
+    let mut latest_firmware: (Option<PathBuf>, u128) = (None, version_time);
+    for entry in firmware_dir.read_dir()? {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let name_split: Vec<&str> = file_name.to_str().unwrap().split('.').collect();
+
+        if name_split.len() < 3 || name_split[0] != chip {
+            continue;
+        }
+
+        let version = u128::from_str_radix(name_split[1], 16).unwrap();
+        if version > latest_firmware.1 {
+            latest_firmware = (Some(entry.path()), version);
+        }
+    }
+
+    if latest_firmware.0.is_none() || version_time >= latest_firmware.1 {
+        return Ok(false);
+    }
+
+    println!("Updating client to version {}", latest_firmware.1);
+    println!("Firmware file: {:?}", latest_firmware.0);
+    let firmware_file = tokio::fs::read(latest_firmware.0.unwrap()).await?;
+    let frame = fastwebsockets::Frame::text(
+        serde_json::to_vec(&TimerResponse::StartUpdate {
+            esp_id: id,
+            version: "new".to_string(),
+            size: firmware_file.len() as i64,
+        })
+        .unwrap()
+        .into(),
+    );
+    ws.write_frame(frame).await?;
+
+    // 1s delay to allow esp to process
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let chunk_size = 1024 * 8;
+    let mut firmware_chunks = firmware_file.chunks(chunk_size);
+
+    while let Some(chunk) = firmware_chunks.next() {
+        let frame = fastwebsockets::Frame::binary(chunk.into());
+        ws.write_frame(frame).await?;
+
+        // 250ms delay to allow esp to process
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+
+    Ok(true)
+}
+
 async fn server_upgrade(
     mut req: Request<Incoming>,
 ) -> Result<Response<Empty<Bytes>>, WebSocketError> {
@@ -196,13 +237,19 @@ async fn server_upgrade(
         .parse::<u128>()
         .unwrap();
 
-    let version = query_map
-        .get("ver")
-        .expect("No version in query")
+    let version = query_map.get("ver").unwrap_or(&"0".to_string()).to_owned();
+    let version_time = u128::from_str_radix(&version, 16).unwrap();
+
+    let chip = query_map
+        .get("chip")
+        .unwrap_or(&"no-chip".to_string())
         .to_owned();
 
+    println!("Client connected: {} {} {}", id, version, chip);
     tokio::task::spawn(async move {
-        if let Err(e) = tokio::task::unconstrained(handle_client(fut, id, &version)).await {
+        if let Err(e) =
+            tokio::task::unconstrained(handle_client(fut, id, version_time, &chip)).await
+        {
             eprintln!("Error in websocket connection: {}", e);
         }
 
@@ -214,6 +261,7 @@ async fn server_upgrade(
 
 #[tokio::main]
 async fn main() -> Result<(), WebSocketError> {
+    _ = dotenvy::dotenv();
     let listener = TcpListener::bind("0.0.0.0:8080").await?;
     println!("Server started, listening on {}", "0.0.0.0:8080");
 
