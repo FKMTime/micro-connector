@@ -197,15 +197,40 @@ async fn update_client(
     // 1s delay to allow esp to process
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    let chunk_size = 1024 * 8;
+    let chunk_size = 1024 * 4;
     let mut firmware_chunks = firmware_file.chunks(chunk_size);
 
     while let Some(chunk) = firmware_chunks.next() {
         let frame = fastwebsockets::Frame::binary(chunk.into());
         ws.write_frame(frame).await?;
 
-        // 250ms delay to allow esp to process
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        if firmware_chunks.len() % 10 == 0 {
+            println!(
+                "[{}] {}/{} chunks left",
+                id,
+                firmware_chunks.len(),
+                firmware_file.len() / chunk_size
+            );
+        }
+
+        if firmware_chunks.len() == 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await; // Wait for esp to process
+                                                                         // (important)
+
+            break;
+        }
+
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(10), ws.read_frame())
+            .await
+            .or_else(|_| {
+                println!("Timeout while updating");
+                Err(WebSocketError::ConnectionClosed)
+            })?;
+
+        let frame = frame?;
+        if frame.opcode == OpCode::Close {
+            return Ok(false);
+        }
     }
 
     Ok(true)
@@ -267,7 +292,6 @@ async fn main() -> Result<(), WebSocketError> {
 
     loop {
         let (stream, _) = listener.accept().await?;
-        println!("Client connected");
         tokio::spawn(async move {
             let io = hyper_util::rt::TokioIo::new(stream);
             let conn_fut = http1::Builder::new()
