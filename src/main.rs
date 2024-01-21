@@ -21,8 +21,10 @@ pub struct LogData {
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 enum TimerResponse {
-    Connect {
+    StartUpdate {
         esp_id: u128,
+        version: String,
+        size: i64,
     },
     Solve {
         solve_time: u128,
@@ -52,13 +54,45 @@ enum TimerResponse {
     },
 }
 
-async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
+async fn handle_client(
+    fut: upgrade::UpgradeFut,
+    id: u128,
+    version: &str,
+) -> Result<(), WebSocketError> {
     let mut ws = fastwebsockets::FragmentCollector::new(fut.await?);
 
     // TMP HASHMAP, TODO: other backend
     let mut cards_hashmap: HashMap<u128, (String, bool)> = HashMap::new();
     cards_hashmap.insert(3004425529, ("Filip Sciurka".to_string(), false));
     cards_hashmap.insert(2156233370, ("Filip Dziurka".to_string(), true));
+
+    let firmware_file = tokio::fs::read("/tmp/firmware.bin").await?;
+    let frame = fastwebsockets::Frame::text(
+        serde_json::to_vec(&TimerResponse::StartUpdate {
+            esp_id: id,
+            version: "new".to_string(),
+            size: firmware_file.len() as i64,
+        })
+        .unwrap()
+        .into(),
+    );
+    ws.write_frame(frame).await?;
+
+    // 1s delay to allow esp to process
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let chunk_size = 4096;
+    let mut firmware_chunks = firmware_file.chunks(chunk_size);
+
+    while let Some(chunk) = firmware_chunks.next() {
+        let frame = fastwebsockets::Frame::binary(chunk.into());
+        ws.write_frame(frame).await?;
+
+        // 250ms delay to allow esp to process
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+
+    // test update process
 
     let interval_time = std::time::Duration::from_secs(5);
     let mut hb_interval = tokio::time::interval(interval_time);
@@ -78,14 +112,13 @@ async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
             }
             frame = ws.read_frame() => {
                 let frame = frame?;
-                println!("Received opcode: {:?}", frame.opcode);
 
                 match frame.opcode {
                     OpCode::Close => break,
                     OpCode::Pong => {
                         hb_recieved = true;
                     }
-                    OpCode::Text | OpCode::Binary => {
+                    OpCode::Text => {
                         let response: TimerResponse = serde_json::from_slice(&frame.payload).unwrap();
                         match response {
                             TimerResponse::CardInfoRequest { card_id, esp_id } => {
@@ -141,9 +174,35 @@ async fn server_upgrade(
     mut req: Request<Incoming>,
 ) -> Result<Response<Empty<Bytes>>, WebSocketError> {
     let (response, fut) = upgrade::upgrade(&mut req)?;
+    let query_map: HashMap<String, String> = req
+        .uri()
+        .query()
+        .map(|q| {
+            q.split('&')
+                .map(|s| {
+                    let mut split = s.split('=');
+                    (
+                        split.next().unwrap().to_string(),
+                        split.next().unwrap().to_string(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let id = query_map
+        .get("id")
+        .expect("No id in query")
+        .parse::<u128>()
+        .unwrap();
+
+    let version = query_map
+        .get("ver")
+        .expect("No version in query")
+        .to_owned();
 
     tokio::task::spawn(async move {
-        if let Err(e) = tokio::task::unconstrained(handle_client(fut)).await {
+        if let Err(e) = tokio::task::unconstrained(handle_client(fut, id, &version)).await {
             eprintln!("Error in websocket connection: {}", e);
         }
 
