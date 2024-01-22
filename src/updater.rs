@@ -1,8 +1,9 @@
-use std::path::PathBuf;
+use crate::structs::TimerResponse;
+use anyhow::Result;
 use fastwebsockets::WebSocketError;
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
-use crate::structs::TimerResponse;
+use std::path::PathBuf;
 
 /// Returns true if client was updated
 pub async fn update_client(
@@ -88,4 +89,42 @@ pub async fn update_client(
     }
 
     Ok(true)
+}
+
+pub async fn spawn_build_watcher(broadcaster: tokio::sync::broadcast::Sender<()>) -> Result<()> {
+    tokio::task::spawn(async move {
+        loop {
+            let res = build_watcher(&broadcaster).await;
+            if let Err(e) = res {
+                println!("Error in build watcher: {:?}", e);
+            }
+
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    });
+
+    Ok(())
+}
+
+async fn build_watcher(broadcaster: &tokio::sync::broadcast::Sender<()>) -> Result<()> {
+    let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
+    let firmware_dir = std::path::PathBuf::from(firmware_dir);
+
+    let mut latest_modified: u128 = 0;
+
+    loop {
+        for entry in firmware_dir.read_dir()? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                continue;
+            }
+
+            let modified = entry.metadata()?.modified()?.elapsed()?.as_millis();
+            if modified > latest_modified {
+                latest_modified = modified;
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
 }
