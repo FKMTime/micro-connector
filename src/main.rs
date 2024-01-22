@@ -1,3 +1,4 @@
+use anyhow::Result;
 use fastwebsockets::upgrade;
 use fastwebsockets::WebSocketError;
 use http_body_util::Empty;
@@ -11,14 +12,18 @@ use std::collections::HashMap;
 use tokio::net::TcpListener;
 
 mod handler;
+mod mdns;
 mod structs;
 mod updater;
 
 #[tokio::main]
-async fn main() -> Result<(), WebSocketError> {
+async fn main() -> Result<()> {
     _ = dotenvy::dotenv();
-    let listener = TcpListener::bind("0.0.0.0:8080").await?;
-    println!("Server started, listening on {}", "0.0.0.0:8080");
+
+    let port = 8080;
+    mdns::register_mdns(&port)?;
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
+    println!("Server started, listening on 0.0.0.0:{port}");
 
     loop {
         let (stream, _) = listener.accept().await?;

@@ -1,9 +1,7 @@
 use std::path::PathBuf;
-
 use fastwebsockets::WebSocketError;
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
-
 use crate::structs::TimerResponse;
 
 /// Returns true if client was updated

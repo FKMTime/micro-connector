@@ -1,9 +1,7 @@
 use std::collections::HashMap;
-
 use fastwebsockets::{OpCode, WebSocketError};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
-
 use crate::structs::TimerResponse;
 
 pub async fn handle_client(
