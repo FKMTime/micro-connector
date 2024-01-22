@@ -10,11 +10,14 @@ use hyper::Request;
 use hyper::Response;
 use std::collections::HashMap;
 use tokio::net::TcpListener;
+use tokio::sync::OnceCell;
 
 mod handler;
 mod mdns;
 mod structs;
 mod updater;
+
+static NEW_BUILD_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> = OnceCell::const_new();
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,6 +27,10 @@ async fn main() -> Result<()> {
     mdns::register_mdns(&port)?;
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     println!("Server started, listening on 0.0.0.0:{port}");
+
+    let (tx, _) = tokio::sync::broadcast::channel::<()>(1);
+    NEW_BUILD_BROADCAST.set(tx.clone())?;
+    updater::spawn_build_watcher(tx).await?;
 
     loop {
         let (stream, _) = listener.accept().await?;

@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use crate::structs::TimerResponse;
 use fastwebsockets::{OpCode, WebSocketError};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
-use crate::structs::TimerResponse;
+use std::collections::HashMap;
 
 pub async fn handle_client(
     fut: fastwebsockets::upgrade::UpgradeFut,
@@ -14,6 +14,12 @@ pub async fn handle_client(
     if super::updater::update_client(&mut ws, id, version_time, chip).await? {
         return Ok(());
     }
+
+    let mut update_broadcast = super::NEW_BUILD_BROADCAST
+        .get()
+        .unwrap()
+        .clone()
+        .subscribe();
 
     // TMP HASHMAP, TODO: other backend
     let mut cards_hashmap: HashMap<u128, (String, bool)> = HashMap::new();
@@ -35,6 +41,12 @@ pub async fn handle_client(
                 let frame = fastwebsockets::Frame::new(true, OpCode::Ping, None, vec![].into());
                 ws.write_frame(frame).await?;
                 hb_recieved = false;
+            }
+            _ = update_broadcast.recv() => {
+                let res = super::updater::update_client(&mut ws, id, version_time, chip).await?;
+                if res {
+                    break;
+                }
             }
             frame = ws.read_frame() => {
                 let frame = frame?;

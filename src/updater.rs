@@ -113,16 +113,27 @@ async fn build_watcher(broadcaster: &tokio::sync::broadcast::Sender<()>) -> Resu
     let mut latest_modified: u128 = 0;
 
     loop {
+        let mut modified_state = false;
         for entry in firmware_dir.read_dir()? {
             let entry = entry?;
             if entry.file_type()?.is_dir() {
                 continue;
             }
 
-            let modified = entry.metadata()?.modified()?.elapsed()?.as_millis();
+            let modified = entry
+                .metadata()?
+                .modified()?
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_millis();
             if modified > latest_modified {
                 latest_modified = modified;
+                modified_state = true;
             }
+        }
+
+        if modified_state {
+            println!("New build detected");
+            _ = broadcaster.send(());
         }
 
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
