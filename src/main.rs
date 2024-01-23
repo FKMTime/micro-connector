@@ -23,7 +23,10 @@ static NEW_BUILD_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> = OnceC
 async fn main() -> Result<()> {
     _ = dotenvy::dotenv();
 
-    let port = 8080;
+    let port: u16 = std::env::var("PORT")
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse()?;
+
     mdns::register_mdns(&port)?;
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     println!("Server started, listening on 0.0.0.0:{port}");

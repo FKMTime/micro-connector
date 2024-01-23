@@ -132,7 +132,6 @@ async fn build_watcher(broadcaster: &tokio::sync::broadcast::Sender<()>) -> Resu
         }
 
         if modified_state {
-            println!("New build detected");
             _ = broadcaster.send(());
         }
 
