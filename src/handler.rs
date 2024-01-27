@@ -4,7 +4,10 @@ use base64::prelude::*;
 use fastwebsockets::{OpCode, WebSocketError};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
-use std::{collections::HashMap, io::Write};
+use std::{
+    collections::HashMap,
+    io::{BufRead, Write},
+};
 
 pub async fn handle_client(
     fut: fastwebsockets::upgrade::UpgradeFut,
@@ -126,7 +129,9 @@ async fn on_ws_frame(
                 TimerResponse::Logs { esp_id, logs } => {
                     for log in logs.iter().rev() {
                         let msg = BASE64_STANDARD.decode(&log.msg.as_bytes()).unwrap();
-                        print!("{}", String::from_utf8_lossy(&msg));
+                        for line in msg.lines() {
+                            print!("{} | {}\n", esp_id, line?);
+                        }
                     }
                     std::io::stdout().flush().unwrap();
                 }
