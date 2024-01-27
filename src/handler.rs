@@ -1,8 +1,10 @@
 use crate::structs::TimerResponse;
+use anyhow::Result;
+use base64::prelude::*;
 use fastwebsockets::{OpCode, WebSocketError};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
-use std::collections::HashMap;
+use std::{collections::HashMap, io::Write};
 
 pub async fn handle_client(
     fut: fastwebsockets::upgrade::UpgradeFut,
@@ -50,7 +52,15 @@ pub async fn handle_client(
             }
             frame = ws.read_frame() => {
                 let frame = frame?;
-                on_ws_frame(&mut ws, id, version_time, chip, frame, &mut hb_recieved, &cards_hashmap).await?;
+                let res = on_ws_frame(&mut ws, id, version_time, chip, frame, &mut hb_recieved, &cards_hashmap).await;
+
+                match res {
+                    Ok(true) => break,
+                    Ok(false) => {}
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                    }
+                }
             }
         }
     }
@@ -66,11 +76,11 @@ async fn on_ws_frame(
     frame: fastwebsockets::Frame<'_>,
     hb_recieved: &mut bool,
     cards_hashmap: &HashMap<u128, (String, bool)>,
-) -> Result<(), WebSocketError> {
+) -> Result<bool> {
     match frame.opcode {
         OpCode::Close => {
             println!("Closing connection");
-            return Err(WebSocketError::ConnectionClosed);
+            return Ok(true);
         }
         OpCode::Pong => {
             *hb_recieved = true;
@@ -113,6 +123,13 @@ async fn on_ws_frame(
                     let frame = fastwebsockets::Frame::text(response.into());
                     ws.write_frame(frame).await?;
                 }
+                TimerResponse::Logs { esp_id, logs } => {
+                    for log in logs.iter().rev() {
+                        let msg = BASE64_STANDARD.decode(&log.msg.as_bytes()).unwrap();
+                        print!("{}", String::from_utf8_lossy(&msg));
+                    }
+                    std::io::stdout().flush().unwrap();
+                }
                 _ => {
                     println!("Received: {:?}", response);
                     ws.write_frame(frame).await?;
@@ -122,5 +139,5 @@ async fn on_ws_frame(
         _ => {}
     }
 
-    Ok(())
+    Ok(false)
 }
