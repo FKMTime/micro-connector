@@ -130,7 +130,11 @@ async fn on_ws_frame(
                     for log in logs.iter().rev() {
                         let msg = BASE64_STANDARD.decode(&log.msg.as_bytes()).unwrap();
                         for line in msg.lines() {
-                            print!("{} | {}\n", esp_id, line?);
+                            let line = line?;
+                            if line.is_empty() {
+                                continue;
+                            }
+                            print!("{} | {}\n", esp_id, line);
                         }
                     }
                     std::io::stdout().flush().unwrap();
