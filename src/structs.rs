@@ -14,10 +14,12 @@ pub enum TimerResponse {
     },
     Solve {
         solve_time: u128,
+        offset: i64,
         card_id: u128,
         esp_id: u128,
         timestamp: u128,
         session_id: i64,
+        delegate: bool,
     },
     SolveConfirm {
         esp_id: u128,

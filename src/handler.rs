@@ -107,14 +107,16 @@ async fn on_ws_frame(
                 }
                 TimerResponse::Solve {
                     solve_time,
+                    offset,
                     card_id,
                     esp_id,
                     timestamp,
                     session_id,
+                    delegate,
                 } => {
                     println!(
-                        "Solve: {} {} {} {} {}",
-                        solve_time, card_id, esp_id, timestamp, session_id
+                        "Solve: {} ({}) {} {} {} {} {}",
+                        solve_time, offset, card_id, esp_id, timestamp, session_id, delegate
                     );
 
                     let response = TimerResponse::SolveConfirm {
