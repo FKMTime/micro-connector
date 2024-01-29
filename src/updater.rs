@@ -5,6 +5,8 @@ use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use std::path::PathBuf;
 
+const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
+
 /// Returns true if client was updated
 pub async fn update_client(
     ws: &mut fastwebsockets::FragmentCollector<TokioIo<Upgraded>>,
@@ -49,11 +51,15 @@ pub async fn update_client(
     );
     ws.write_frame(frame).await?;
 
-    // 1s delay to allow esp to process
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    // wait for esp to respond
+    tokio::time::timeout(std::time::Duration::from_secs(10), ws.read_frame())
+        .await
+        .or_else(|_| {
+            println!("Timeout while updating");
+            Err(WebSocketError::ConnectionClosed)
+        })??;
 
-    let chunk_size = 1024 * 4;
-    let mut firmware_chunks = firmware_file.chunks(chunk_size);
+    let mut firmware_chunks = firmware_file.chunks(UPDATE_CHUNK_SIZE);
 
     while let Some(chunk) = firmware_chunks.next() {
         let frame = fastwebsockets::Frame::binary(chunk.into());
@@ -64,7 +70,7 @@ pub async fn update_client(
                 "[{}] {}/{} chunks left",
                 id,
                 firmware_chunks.len(),
-                firmware_file.len() / chunk_size
+                firmware_file.len() / UPDATE_CHUNK_SIZE
             );
         }
 
