@@ -75,7 +75,7 @@ pub async fn update_client(
         }
 
         if firmware_chunks.len() == 0 {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await; // Wait for esp to process
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await; // Wait for esp to process
                                                                          // (important)
 
             break;
