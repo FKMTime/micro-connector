@@ -92,7 +92,11 @@ async fn server_upgrade(
             eprintln!("Error in websocket connection: {}", e);
         }
 
-        println!("Client disconnected");
+        let epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        println!("Client disconnected ({})", epoch);
     });
 
     Ok(response)
