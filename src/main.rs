@@ -12,12 +12,15 @@ use std::collections::HashMap;
 use tokio::net::TcpListener;
 use tokio::sync::OnceCell;
 
+mod api;
 mod handler;
 mod mdns;
 mod structs;
 mod updater;
 
-static NEW_BUILD_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> = OnceCell::const_new();
+pub static NEW_BUILD_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> =
+    OnceCell::const_new();
+pub static API_URL: OnceCell<String> = OnceCell::const_new();
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -26,6 +29,8 @@ async fn main() -> Result<()> {
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
         .parse()?;
+    let api_url = std::env::var("API_URL").unwrap_or_else(|_| "http://localhost:5000".to_string());
+    API_URL.set(api_url)?;
 
     mdns::register_mdns(&port)?;
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;

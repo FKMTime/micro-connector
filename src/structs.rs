@@ -15,7 +15,8 @@ pub enum TimerResponse {
     Solve {
         solve_time: u128,
         offset: i64,
-        card_id: u128,
+        solver_id: u128,
+        judge_id: u128,
         esp_id: u128,
         timestamp: u128,
         session_id: i64,
@@ -23,7 +24,7 @@ pub enum TimerResponse {
     },
     SolveConfirm {
         esp_id: u128,
-        card_id: u128,
+        solver_id: u128,
         session_id: i64,
     },
     CardInfoRequest {
@@ -33,8 +34,7 @@ pub enum TimerResponse {
     CardInfoResponse {
         card_id: u128,
         esp_id: u128,
-        name: String,
-        is_judge: bool,
+        display: String,
     },
     Logs {
         esp_id: u128,

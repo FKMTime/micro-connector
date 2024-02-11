@@ -26,11 +26,6 @@ pub async fn handle_client(
         .clone()
         .subscribe();
 
-    // TMP HASHMAP, TODO: other backend
-    let mut cards_hashmap: HashMap<u128, (String, bool)> = HashMap::new();
-    cards_hashmap.insert(3004425529, ("Filip Sciurka".to_string(), false));
-    cards_hashmap.insert(2156233370, ("Filip Dziurka".to_string(), true));
-
     let interval_time = std::time::Duration::from_secs(5);
     let mut hb_interval = tokio::time::interval(interval_time);
     let mut hb_recieved = true;
@@ -55,7 +50,7 @@ pub async fn handle_client(
             }
             frame = ws.read_frame() => {
                 let frame = frame?;
-                let res = on_ws_frame(&mut ws, id, version_time, chip, frame, &mut hb_recieved, &cards_hashmap).await;
+                let res = on_ws_frame(&mut ws, id, version_time, chip, frame, &mut hb_recieved).await;
 
                 match res {
                     Ok(true) => break,
@@ -78,7 +73,6 @@ async fn on_ws_frame(
     _chip: &str,
     frame: fastwebsockets::Frame<'_>,
     hb_recieved: &mut bool,
-    cards_hashmap: &HashMap<u128, (String, bool)>,
 ) -> Result<bool> {
     match frame.opcode {
         OpCode::Close => {
@@ -92,12 +86,12 @@ async fn on_ws_frame(
             let response: TimerResponse = serde_json::from_slice(&frame.payload).unwrap();
             match response {
                 TimerResponse::CardInfoRequest { card_id, esp_id } => {
-                    if let Some(name) = cards_hashmap.get(&card_id) {
+                    if let Ok(info) = crate::api::get_solver_info(card_id).await {
+                        println!("Card info: {} {} {:?}", card_id, esp_id, info);
                         let response = TimerResponse::CardInfoResponse {
                             card_id,
                             esp_id,
-                            name: name.0.to_string(),
-                            is_judge: name.1,
+                            display: info.wca_id,
                         };
 
                         let response = serde_json::to_vec(&response).unwrap();
@@ -108,7 +102,8 @@ async fn on_ws_frame(
                 TimerResponse::Solve {
                     solve_time,
                     offset,
-                    card_id,
+                    solver_id,
+                    judge_id,
                     esp_id,
                     timestamp,
                     session_id,
@@ -116,13 +111,24 @@ async fn on_ws_frame(
                 } => {
                     println!(
                         "Solve: {} ({}) {} {} {} {} {}",
-                        solve_time, offset, card_id, esp_id, timestamp, session_id, delegate
+                        solve_time, offset, solver_id, esp_id, timestamp, session_id, delegate
                     );
+
+                    let res = crate::api::send_solve_entry(
+                        solve_time, offset, timestamp, esp_id, judge_id, solver_id, delegate,
+                    )
+                    .await;
+
+                    if res.is_err() {
+                        // maybe send error to client
+                        println!("Error: {:?}", res);
+                        return Ok(false);
+                    }
 
                     let response = TimerResponse::SolveConfirm {
                         esp_id,
                         session_id,
-                        card_id,
+                        solver_id,
                     };
                     let response = serde_json::to_vec(&response).unwrap();
                     let frame = fastwebsockets::Frame::text(response.into());
