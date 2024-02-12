@@ -91,7 +91,7 @@ async fn on_ws_frame(
                         let response = TimerResponse::CardInfoResponse {
                             card_id,
                             esp_id,
-                            display: info.wca_id,
+                            display: format!("{} ID: {}", info.name, info.registrant_id),
                         };
 
                         let response = serde_json::to_vec(&response).unwrap();
