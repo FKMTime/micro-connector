@@ -91,6 +91,7 @@ async fn on_ws_frame(
                         let response = TimerResponse::CardInfoResponse {
                             card_id,
                             esp_id,
+                            country_iso2: info.country_iso2,
                             display: format!("{} ID: {}", info.name, info.registrant_id),
                         };
 
@@ -119,18 +120,20 @@ async fn on_ws_frame(
                     )
                     .await;
 
-                    if res.is_err() {
-                        // maybe send error to client
-                        println!("Error: {:?}", res);
-                        return Ok(false);
-                    }
-
-                    let response = TimerResponse::SolveConfirm {
-                        esp_id,
-                        session_id,
-                        solver_id,
+                    let resp = match res {
+                        Ok(_) => TimerResponse::SolveConfirm {
+                            esp_id,
+                            session_id,
+                            solver_id,
+                        },
+                        Err(e) => TimerResponse::SolveEntryError {
+                            esp_id,
+                            session_id,
+                            error: e.message,
+                        },
                     };
-                    let response = serde_json::to_vec(&response).unwrap();
+
+                    let response = serde_json::to_vec(&resp).unwrap();
                     let frame = fastwebsockets::Frame::text(response.into());
                     ws.write_frame(frame).await?;
                 }

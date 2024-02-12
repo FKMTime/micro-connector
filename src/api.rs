@@ -13,6 +13,13 @@ pub struct SolverInfo {
     pub country_iso2: String,
     pub gender: String,
 }
+
+#[derive(serde::Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SolveEntryError {
+    pub message: String,
+}
+
 pub async fn get_solver_info(card_id: u128) -> Result<SolverInfo> {
     let client = API_CLIENT
         .get_or_init(|| async {
@@ -32,8 +39,8 @@ pub async fn get_solver_info(card_id: u128) -> Result<SolverInfo> {
         return Err(anyhow::anyhow!("Error getting solver info"));
     }
 
-    let info = res.json::<SolverInfo>().await;
-    Ok(info?)
+    let info = res.json::<SolverInfo>().await?;
+    Ok(info)
 }
 
 pub async fn send_solve_entry(
@@ -44,7 +51,7 @@ pub async fn send_solve_entry(
     judge_id: u128,
     competitor_id: u128,
     is_delegate: bool,
-) -> Result<()> {
+) -> Result<(), SolveEntryError> {
     let client = API_CLIENT
         .get_or_init(|| async {
             reqwest::Client::builder()
@@ -71,10 +78,25 @@ pub async fn send_solve_entry(
         "isDelegate": is_delegate,
     });
 
-    let res = client.post(&url).json(&body).send().await?;
+    let res = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|_| SolveEntryError {
+            message: format!("Error sending solve entry"),
+        })?;
+
     if !res.status().is_success() {
         println!("Error sending solve entry: {:?}", res);
-        return Err(anyhow::anyhow!("Error sending solve entry"));
+        let res = res
+            .json::<SolveEntryError>()
+            .await
+            .map_err(|_| SolveEntryError {
+                message: format!("Error parsing error message"),
+            })?;
+
+        return Err(res);
     }
 
     Ok(())

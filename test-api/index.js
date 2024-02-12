@@ -49,9 +49,18 @@ const requestListener = function(req, res) {
         });
         req.on('end', () => {
             let result = JSON.parse(body);
+            let competitor = people.find(person => person.cardId === result.competitorId);
+            let judge = people.find(person => person.cardId === result.judgeId);
+
+            if (competitor === undefined || judge === undefined) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'Competitor or judge not found' }));
+                return;
+            }
+
             console.log(result);
             res.writeHead(200);
-            res.end('Result entered');
+            res.end('');
         });
     } else {
         res.writeHead(404);

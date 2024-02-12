@@ -27,6 +27,11 @@ pub enum TimerResponse {
         solver_id: u128,
         session_id: i64,
     },
+    SolveEntryError {
+        esp_id: u128,
+        session_id: i64,
+        error: String,
+    },
     CardInfoRequest {
         card_id: u128,
         esp_id: u128,
@@ -35,6 +40,7 @@ pub enum TimerResponse {
         card_id: u128,
         esp_id: u128,
         display: String,
+        country_iso2: String,
     },
     Logs {
         esp_id: u128,
