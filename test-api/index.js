@@ -69,6 +69,6 @@ const requestListener = function(req, res) {
 };
 
 const server = http.createServer(requestListener);
-server.listen(5000, "localhost", () => {
+server.listen(5000, "0.0.0.0", () => {
     console.log('Server is running on http://localhost:5000');
 });
