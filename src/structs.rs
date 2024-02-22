@@ -31,6 +31,7 @@ pub enum TimerResponse {
         esp_id: u128,
         session_id: i64,
         error: String,
+        should_reset_time: bool,
     },
     CardInfoRequest {
         card_id: u128,

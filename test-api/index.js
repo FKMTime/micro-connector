@@ -54,7 +54,7 @@ const requestListener = function(req, res) {
 
             if (competitor === undefined || (judge === undefined && !result.isDelegate)) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: 'Competitor or judge not found' }));
+                res.end(JSON.stringify({ message: 'Competitor or judge not found', shouldResetTime: false }));
                 return;
             }
 

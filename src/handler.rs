@@ -130,6 +130,7 @@ async fn on_ws_frame(
                             esp_id,
                             session_id,
                             error: e.message,
+                            should_reset_time: e.should_reset_time,
                         },
                     };
 

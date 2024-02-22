@@ -18,6 +18,7 @@ pub struct SolverInfo {
 #[serde(rename_all = "camelCase")]
 pub struct SolveEntryError {
     pub message: String,
+    pub should_reset_time: bool,
 }
 
 pub async fn get_solver_info(card_id: u128) -> Result<SolverInfo> {
@@ -85,6 +86,7 @@ pub async fn send_solve_entry(
         .await
         .map_err(|_| SolveEntryError {
             message: format!("Error sending solve entry"),
+            should_reset_time: false,
         })?;
 
     if !res.status().is_success() {
@@ -94,6 +96,7 @@ pub async fn send_solve_entry(
             .await
             .map_err(|_| SolveEntryError {
                 message: format!("Error parsing error message"),
+                should_reset_time: false,
             })?;
 
         return Err(res);
