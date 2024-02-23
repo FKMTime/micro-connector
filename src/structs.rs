@@ -10,6 +10,7 @@ pub enum TimerResponse {
     StartUpdate {
         esp_id: u128,
         version: String,
+        build_time: u128, // NOT USED
         size: i64,
     },
     Solve {

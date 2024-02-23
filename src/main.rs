@@ -81,18 +81,27 @@ async fn server_upgrade(
         .parse::<u128>()
         .unwrap();
 
-    let version = query_map.get("ver").unwrap_or(&"0".to_string()).to_owned();
-    let version_time = u128::from_str_radix(&version, 16).unwrap();
+    let build_time = query_map.get("bt").unwrap_or(&"0".to_string()).to_owned();
+    let build_time = u128::from_str_radix(&build_time, 16).unwrap();
+
+    let version = query_map
+        .get("ver")
+        .unwrap_or(&"NONE".to_string())
+        .to_owned();
 
     let chip = query_map
         .get("chip")
         .unwrap_or(&"no-chip".to_string())
         .to_owned();
 
-    println!("Client connected: {} {} {}", id, version, chip);
+    println!(
+        "Client connected: {} {} {} ({})",
+        id, version, chip, build_time
+    );
     tokio::task::spawn(async move {
         if let Err(e) =
-            tokio::task::unconstrained(handler::handle_client(fut, id, version_time, &chip)).await
+            tokio::task::unconstrained(handler::handle_client(fut, id, &version, build_time, &chip))
+                .await
         {
             eprintln!("Error in websocket connection: {}", e);
         }

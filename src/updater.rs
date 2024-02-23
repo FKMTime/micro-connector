@@ -11,39 +11,49 @@ const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 pub async fn update_client(
     ws: &mut fastwebsockets::FragmentCollector<TokioIo<Upgraded>>,
     id: u128,
-    version_time: u128,
+    version: &str,
+    build_time: u128,
     chip: &str,
 ) -> Result<bool, WebSocketError> {
     let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
-    let mut latest_firmware: (Option<PathBuf>, u128) = (None, version_time);
+    let mut latest_firmware: (Option<PathBuf>, u128, String) = (None, build_time, String::new());
     for entry in firmware_dir.read_dir()? {
         let entry = entry?;
         let file_name = entry.file_name();
         let name_split: Vec<&str> = file_name.to_str().unwrap().split('.').collect();
 
-        if name_split.len() < 3 || name_split[0] != chip {
+        if name_split.len() != 4 || name_split[0] != chip {
             continue;
         }
 
-        let version = u128::from_str_radix(name_split[1], 16).unwrap();
-        if version > latest_firmware.1 {
-            latest_firmware = (Some(entry.path()), version);
+        let version = name_split[1].to_string();
+        let build_time = u128::from_str_radix(name_split[2], 16).unwrap();
+        if build_time > latest_firmware.1 {
+            latest_firmware = (Some(entry.path()), build_time, version);
         }
     }
 
-    if latest_firmware.0.is_none() || version_time >= latest_firmware.1 {
+    if latest_firmware.0.is_none()
+        || build_time >= latest_firmware.1
+        || latest_firmware.2 == version
+    {
         return Ok(false);
     }
 
-    println!("Updating client to version {:x}", latest_firmware.1);
+    println!(
+        "Updating client from version: {} to version {}",
+        version, latest_firmware.2
+    );
     println!("Firmware file: {:?}", latest_firmware.0);
+
     let firmware_file = tokio::fs::read(latest_firmware.0.unwrap()).await?;
     let frame = fastwebsockets::Frame::text(
         serde_json::to_vec(&TimerResponse::StartUpdate {
             esp_id: id,
-            version: format!("{:x}", latest_firmware.1),
+            version: latest_firmware.2,
+            build_time: latest_firmware.1,
             size: firmware_file.len() as i64,
         })
         .unwrap()
@@ -131,6 +141,7 @@ async fn build_watcher(broadcaster: &tokio::sync::broadcast::Sender<()>) -> Resu
                 .modified()?
                 .duration_since(std::time::UNIX_EPOCH)?
                 .as_millis();
+
             if modified > latest_modified {
                 latest_modified = modified;
                 modified_state = true;
