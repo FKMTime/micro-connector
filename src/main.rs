@@ -39,6 +39,7 @@ async fn main() -> Result<()> {
     let (tx, _) = tokio::sync::broadcast::channel::<()>(1);
     NEW_BUILD_BROADCAST.set(tx.clone())?;
     updater::spawn_build_watcher(tx).await?;
+    updater::spawn_github_releases_watcher().await?;
 
     loop {
         let (stream, _) = listener.accept().await?;

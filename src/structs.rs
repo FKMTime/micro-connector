@@ -1,3 +1,5 @@
+use serde::Deserialize;
+
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct LogData {
     pub millis: u128,
@@ -48,4 +50,12 @@ pub enum TimerResponse {
         esp_id: u128,
         logs: Vec<LogData>,
     },
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubReleaseItem {
+    pub name: String,
+    pub tag: String,
+    pub url: String,
 }

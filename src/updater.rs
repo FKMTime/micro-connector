@@ -1,11 +1,15 @@
-use crate::structs::TimerResponse;
-use anyhow::Result;
+use crate::structs::{GithubReleaseItem, TimerResponse};
+use anyhow::{anyhow, Result};
 use fastwebsockets::WebSocketError;
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use std::path::PathBuf;
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
+const GITHUB_UPDATE_INTERVAL: u64 = 30000;
+const GRM_URL: &str = "https://grm.filipton.space";
+const GH_OWNER: &str = "filipton";
+const GH_REPO: &str = "fkm-timer";
 
 /// Returns true if client was updated
 pub async fn update_client(
@@ -154,4 +158,48 @@ async fn build_watcher(broadcaster: &tokio::sync::broadcast::Sender<()>) -> Resu
 
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
+}
+
+pub async fn spawn_github_releases_watcher() -> Result<()> {
+    let client = reqwest::Client::new();
+
+    tokio::task::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(GITHUB_UPDATE_INTERVAL)).await;
+
+            let res = github_releases_watcher(&client).await;
+            if let Err(e) = res {
+                println!("Error in github releases watcher: {:?}", e);
+            }
+        }
+    });
+
+    Ok(())
+}
+
+async fn github_releases_watcher(client: &reqwest::Client) -> Result<()> {
+    let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
+    let firmware_dir = std::path::PathBuf::from(firmware_dir);
+
+    let url = format!("{GRM_URL}/releases/{GH_OWNER}/{GH_REPO}/latest");
+    let resp = client.get(&url).send().await?;
+    let resp: Vec<GithubReleaseItem> = resp.json().await?;
+
+    if resp.len() == 0 {
+        return Err(anyhow!("No releases"));
+    }
+
+    let github_release = resp
+        .first()
+        .ok_or_else(|| anyhow!("Rather impossible but no releases found."))?;
+
+    let release_path = firmware_dir.join(&github_release.name);
+    if let Ok(exists) = tokio::fs::try_exists(&release_path).await {
+        if !exists {
+            let resp = client.get(&github_release.url).send().await?;
+            tokio::fs::write(release_path, resp.bytes().await?).await?;
+        }
+    }
+
+    Ok(())
 }
