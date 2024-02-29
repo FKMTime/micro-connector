@@ -84,19 +84,28 @@ async fn on_ws_frame(
             let response: TimerResponse = serde_json::from_slice(&frame.payload).unwrap();
             match response {
                 TimerResponse::CardInfoRequest { card_id, esp_id } => {
-                    if let Ok(info) = crate::api::get_solver_info(card_id).await {
-                        println!("Card info: {} {} {:?}", card_id, esp_id, info);
-                        let response = TimerResponse::CardInfoResponse {
-                            card_id,
-                            esp_id,
-                            country_iso2: info.country_iso2,
-                            display: format!("{} ID: {}", info.name, info.registrant_id),
-                        };
+                    let response = match crate::api::get_solver_info(card_id).await {
+                        Ok(info) => {
+                            println!("Card info: {} {} {:?}", card_id, esp_id, info);
+                            let response = TimerResponse::CardInfoResponse {
+                                card_id,
+                                esp_id,
+                                country_iso2: info.country_iso2,
+                                display: format!("{} ID: {}", info.name, info.registrant_id),
+                            };
 
-                        let response = serde_json::to_vec(&response).unwrap();
-                        let frame = fastwebsockets::Frame::text(response.into());
-                        ws.write_frame(frame).await?;
-                    }
+                            response
+                        }
+                        Err(e) => TimerResponse::ApiError {
+                            esp_id,
+                            error: e.message,
+                            should_reset_time: e.should_reset_time,
+                        },
+                    };
+
+                    let response = serde_json::to_vec(&response).unwrap();
+                    let frame = fastwebsockets::Frame::text(response.into());
+                    ws.write_frame(frame).await?;
                 }
                 TimerResponse::Solve {
                     solve_time,
@@ -124,9 +133,8 @@ async fn on_ws_frame(
                             session_id,
                             solver_id,
                         },
-                        Err(e) => TimerResponse::SolveEntryError {
+                        Err(e) => TimerResponse::ApiError {
                             esp_id,
-                            session_id,
                             error: e.message,
                             should_reset_time: e.should_reset_time,
                         },

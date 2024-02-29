@@ -16,12 +16,12 @@ pub struct SolverInfo {
 
 #[derive(serde::Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct SolveEntryError {
+pub struct ApiErrorRes {
     pub message: String,
     pub should_reset_time: bool,
 }
 
-pub async fn get_solver_info(card_id: u128) -> Result<SolverInfo> {
+pub async fn get_solver_info(card_id: u128) -> Result<SolverInfo, ApiErrorRes> {
     let client = API_CLIENT
         .get_or_init(|| async {
             reqwest::Client::builder()
@@ -33,14 +33,23 @@ pub async fn get_solver_info(card_id: u128) -> Result<SolverInfo> {
         .await;
 
     let url = format!("{}/person/card/{}", crate::API_URL.get().unwrap(), card_id);
-    let res = client.get(&url).send().await?;
+    let res = client.get(&url).send().await.map_err(|_| ApiErrorRes {
+        message: format!("Error getting solver info"),
+        should_reset_time: false,
+    })?;
 
     if !res.status().is_success() {
         println!("Error getting solver info: {:?}", res);
-        return Err(anyhow::anyhow!("Error getting solver info"));
+        return Err(res.json::<ApiErrorRes>().await.map_err(|_| ApiErrorRes {
+            message: format!("Error parsing error message"),
+            should_reset_time: false,
+        })?);
     }
 
-    let info = res.json::<SolverInfo>().await?;
+    let info = res.json::<SolverInfo>().await.map_err(|_| ApiErrorRes {
+        message: format!("Error parsing solver info"),
+        should_reset_time: false,
+    })?;
     Ok(info)
 }
 
@@ -52,7 +61,7 @@ pub async fn send_solve_entry(
     judge_id: u128,
     competitor_id: u128,
     is_delegate: bool,
-) -> Result<(), SolveEntryError> {
+) -> Result<(), ApiErrorRes> {
     let client = API_CLIENT
         .get_or_init(|| async {
             reqwest::Client::builder()
@@ -84,20 +93,17 @@ pub async fn send_solve_entry(
         .json(&body)
         .send()
         .await
-        .map_err(|_| SolveEntryError {
+        .map_err(|_| ApiErrorRes {
             message: format!("Error sending solve entry"),
             should_reset_time: false,
         })?;
 
     if !res.status().is_success() {
         println!("Error sending solve entry: {:?}", res);
-        let res = res
-            .json::<SolveEntryError>()
-            .await
-            .map_err(|_| SolveEntryError {
-                message: format!("Error parsing error message"),
-                should_reset_time: false,
-            })?;
+        let res = res.json::<ApiErrorRes>().await.map_err(|_| ApiErrorRes {
+            message: format!("Error parsing error message"),
+            should_reset_time: false,
+        })?;
 
         return Err(res);
     }

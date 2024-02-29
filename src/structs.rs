@@ -30,9 +30,8 @@ pub enum TimerResponse {
         solver_id: u128,
         session_id: i64,
     },
-    SolveEntryError {
+    ApiError {
         esp_id: u128,
-        session_id: i64,
         error: String,
         should_reset_time: bool,
     },

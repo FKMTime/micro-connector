@@ -36,7 +36,7 @@ const requestListener = function(req, res) {
         let person = people.find(person => person.cardId === parseInt(cardId));
         if (person === undefined) {
             res.writeHead(404);
-            res.end('Person not found');
+            res.end(JSON.stringify({ message: 'Card not found', shouldResetTime: false }));
             return;
         }
 
@@ -53,7 +53,7 @@ const requestListener = function(req, res) {
             let judge = people.find(person => person.cardId === result.judgeId);
 
             if (competitor === undefined || (judge === undefined && !result.isDelegate)) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ message: 'Competitor or judge not found', shouldResetTime: false }));
                 return;
             }
