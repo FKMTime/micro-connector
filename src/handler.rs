@@ -84,7 +84,7 @@ async fn on_ws_frame(
             let response: TimerResponse = serde_json::from_slice(&frame.payload).unwrap();
             match response {
                 TimerResponse::CardInfoRequest { card_id, esp_id } => {
-                    let response = match crate::api::get_solver_info(card_id).await {
+                    let response = match crate::api::get_competitor_info(card_id).await {
                         Ok(info) => {
                             println!("Card info: {} {} {:?}", card_id, esp_id, info);
                             let response = TimerResponse::CardInfoResponse {
@@ -110,7 +110,7 @@ async fn on_ws_frame(
                 TimerResponse::Solve {
                     solve_time,
                     offset,
-                    solver_id,
+                    competitor_id: solver_id,
                     judge_id,
                     esp_id,
                     timestamp,
@@ -131,7 +131,7 @@ async fn on_ws_frame(
                         Ok(_) => TimerResponse::SolveConfirm {
                             esp_id,
                             session_id,
-                            solver_id,
+                            competitor_id: solver_id,
                         },
                         Err(e) => TimerResponse::ApiError {
                             esp_id,
