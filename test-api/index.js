@@ -71,6 +71,13 @@ const requestListener = function(req, res) {
     }
 };
 
+process.on('SIGTERM', () => {
+    process.exit(0);
+});
+process.on('SIGINT', () => {
+    process.exit(0);
+});
+
 const server = http.createServer(requestListener);
 server.listen(5000, "0.0.0.0", () => {
     console.log('Server is running on http://localhost:5000');
