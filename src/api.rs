@@ -113,3 +113,35 @@ pub async fn send_solve_entry(
 
     Ok(())
 }
+
+pub async fn should_update_devices() -> Result<bool> {
+    // TODO: make this client as global or sth
+    let client = API_CLIENT
+        .get_or_init(|| async {
+            reqwest::Client::builder()
+                .user_agent("FKM-Timer/0.1")
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .unwrap()
+        })
+        .await;
+
+    let url = format!(
+        "{}/competition/should-update",
+        crate::API_URL.get().unwrap()
+    );
+
+    let res = client.get(&url).send().await?;
+    if !res.status().is_success() {
+        return Err(anyhow::anyhow!("Cannot get 'should-update' status"));
+    }
+
+    let json: serde_json::Value = res.json().await?;
+    let should_update = json
+        .get("shouldUpdate")
+        .ok_or_else(|| anyhow::anyhow!("Field not found"))?
+        .as_bool()
+        .ok_or_else(|| anyhow::anyhow!("Cannot convert to boolean"))?;
+
+    Ok(should_update)
+}

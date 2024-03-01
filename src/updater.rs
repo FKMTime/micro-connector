@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 const GITHUB_UPDATE_INTERVAL: u64 = 30000;
+const SHOULD_UPDATE_STATUS_INTERVAL: u64 = 60000;
 const GRM_URL: &str = "https://grm.filipton.space";
 const GH_OWNER: &str = "filipton";
 const GH_REPO: &str = "fkm-timer";
@@ -200,6 +201,31 @@ async fn github_releases_watcher(client: &reqwest::Client) -> Result<()> {
             tokio::fs::write(release_path, resp.bytes().await?).await?;
         }
     }
+
+    Ok(())
+}
+
+pub async fn spawn_should_update_status_watcher() -> Result<()> {
+    tokio::task::spawn(async move {
+        loop {
+            let res = should_update_status_watcher().await;
+            if let Err(e) = res {
+                println!("Error in should update status watcher: {:?}", e);
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(
+                SHOULD_UPDATE_STATUS_INTERVAL,
+            ))
+            .await;
+        }
+    });
+
+    Ok(())
+}
+
+async fn should_update_status_watcher() -> Result<()> {
+    let should_update = crate::api::should_update_devices().await?;
+    crate::SHOULD_UPDATE.swap(should_update, std::sync::atomic::Ordering::Relaxed);
 
     Ok(())
 }

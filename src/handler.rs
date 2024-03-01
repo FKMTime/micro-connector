@@ -14,7 +14,9 @@ pub async fn handle_client(
     chip: &str,
 ) -> Result<(), WebSocketError> {
     let mut ws = fastwebsockets::FragmentCollector::new(fut.await?);
-    if super::updater::update_client(&mut ws, id, version, build_time, chip).await? {
+    if crate::get_should_update()
+        && super::updater::update_client(&mut ws, id, version, build_time, chip).await?
+    {
         return Ok(());
     }
 
@@ -41,6 +43,10 @@ pub async fn handle_client(
                 hb_recieved = false;
             }
             _ = update_broadcast.recv() => {
+                if !crate::get_should_update() {
+                    continue;
+                }
+
                 let res = super::updater::update_client(&mut ws, id, version, build_time, chip).await?;
                 if res {
                     break;

@@ -9,6 +9,7 @@ use hyper::service::service_fn;
 use hyper::Request;
 use hyper::Response;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use tokio::net::TcpListener;
 use tokio::sync::OnceCell;
 
@@ -21,6 +22,11 @@ mod updater;
 pub static NEW_BUILD_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> =
     OnceCell::const_new();
 pub static API_URL: OnceCell<String> = OnceCell::const_new();
+pub static SHOULD_UPDATE: AtomicBool = AtomicBool::new(true);
+
+pub fn get_should_update() -> bool {
+    SHOULD_UPDATE.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -40,6 +46,7 @@ async fn main() -> Result<()> {
     NEW_BUILD_BROADCAST.set(tx.clone())?;
     updater::spawn_build_watcher(tx).await?;
     updater::spawn_github_releases_watcher().await?;
+    updater::spawn_should_update_status_watcher().await?;
 
     loop {
         let (stream, _) = listener.accept().await?;

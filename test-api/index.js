@@ -62,6 +62,9 @@ const requestListener = function(req, res) {
             res.writeHead(200);
             res.end('');
         });
+    } else if (req.url === "/competition/should-update") {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ shouldUpdate: true }));
     } else {
         res.writeHead(404);
         res.end('Not Found');
