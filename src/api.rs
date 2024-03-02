@@ -25,6 +25,7 @@ pub async fn get_competitor_info(card_id: u128) -> Result<CompetitorInfo, ApiErr
     let client = API_CLIENT
         .get_or_init(|| async {
             reqwest::Client::builder()
+                .danger_accept_invalid_certs(true)
                 .user_agent("FKM-Timer/0.1")
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
@@ -68,6 +69,7 @@ pub async fn send_solve_entry(
     let client = API_CLIENT
         .get_or_init(|| async {
             reqwest::Client::builder()
+                .danger_accept_invalid_certs(true)
                 .user_agent("FKM-Timer/0.1")
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
@@ -119,6 +121,7 @@ pub async fn should_update_devices() -> Result<bool> {
     let client = API_CLIENT
         .get_or_init(|| async {
             reqwest::Client::builder()
+                .danger_accept_invalid_certs(true)
                 .user_agent("FKM-Timer/0.1")
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
