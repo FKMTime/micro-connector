@@ -1,4 +1,4 @@
-use crate::structs::{GithubReleaseItem, TimerResponse};
+use crate::structs::{GithubReleaseItem, TimerResponse, UpdateStrategy};
 use anyhow::{anyhow, Result};
 use fastwebsockets::WebSocketError;
 use hyper::upgrade::Upgraded;
@@ -167,6 +167,9 @@ pub async fn spawn_github_releases_watcher() -> Result<()> {
     tokio::task::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(GITHUB_UPDATE_INTERVAL)).await;
+            if !UpdateStrategy::should_update() {
+                continue;
+            }
 
             let res = github_releases_watcher(&client).await;
             if let Err(e) = res {
@@ -182,7 +185,13 @@ async fn github_releases_watcher(client: &reqwest::Client) -> Result<()> {
     let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
-    let url = format!("{GRM_URL}/releases/{GH_OWNER}/{GH_REPO}/latest");
+    let tag = match UpdateStrategy::get() {
+        UpdateStrategy::Disabled => return Ok(()),
+        UpdateStrategy::Stable => "latest",
+        UpdateStrategy::Prerelease => "prerelease",
+    };
+
+    let url = format!("{GRM_URL}/releases/{GH_OWNER}/{GH_REPO}/{tag}");
     let resp = client.get(&url).send().await?;
     let resp: Vec<GithubReleaseItem> = resp.json().await?;
 
@@ -225,7 +234,12 @@ pub async fn spawn_should_update_status_watcher() -> Result<()> {
 
 async fn should_update_status_watcher() -> Result<()> {
     let should_update = crate::api::should_update_devices().await?;
-    crate::SHOULD_UPDATE.swap(should_update, std::sync::atomic::Ordering::Relaxed);
+    let update_strategy = match should_update {
+        (true, true) => UpdateStrategy::Stable,
+        (true, false) => UpdateStrategy::Prerelease,
+        (false, _) => UpdateStrategy::Disabled,
+    };
 
+    UpdateStrategy::set(update_strategy);
     Ok(())
 }

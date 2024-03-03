@@ -58,3 +58,37 @@ pub struct GithubReleaseItem {
     pub tag: String,
     pub url: String,
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum UpdateStrategy {
+    Disabled,
+    Stable,
+    Prerelease,
+}
+
+impl UpdateStrategy {
+    pub fn get() -> Self {
+        crate::UPDATE_STRATEGY
+            .get()
+            .expect("Should be set")
+            .read()
+            .map_or_else(|_| UpdateStrategy::Disabled, |x| x.clone())
+    }
+
+    pub fn should_update() -> bool {
+        match Self::get() {
+            UpdateStrategy::Disabled => false,
+            UpdateStrategy::Stable => true,
+            UpdateStrategy::Prerelease => true,
+        }
+    }
+
+    pub fn set(strategy: UpdateStrategy) {
+        crate::UPDATE_STRATEGY
+            .get()
+            .expect("Should be set")
+            .write()
+            .map(|mut x| *x = strategy)
+            .expect("Should write");
+    }
+}

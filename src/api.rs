@@ -116,7 +116,8 @@ pub async fn send_solve_entry(
     Ok(())
 }
 
-pub async fn should_update_devices() -> Result<bool> {
+// It returns (should_update, use_stable_releases)
+pub async fn should_update_devices() -> Result<(bool, bool)> {
     // TODO: make this client as global or sth
     let client = API_CLIENT
         .get_or_init(|| async {
@@ -146,5 +147,11 @@ pub async fn should_update_devices() -> Result<bool> {
         .as_bool()
         .ok_or_else(|| anyhow::anyhow!("Cannot convert to boolean"))?;
 
-    Ok(should_update)
+    let use_stable_releases = json
+        .get("useStableReleases")
+        .ok_or_else(|| anyhow::anyhow!("Field not found"))?
+        .as_bool()
+        .ok_or_else(|| anyhow::anyhow!("Cannot convert to boolean"))?;
+
+    Ok((should_update, use_stable_releases))
 }

@@ -1,4 +1,4 @@
-use crate::structs::TimerResponse;
+use crate::structs::{TimerResponse, UpdateStrategy};
 use anyhow::Result;
 use base64::prelude::*;
 use fastwebsockets::{OpCode, WebSocketError};
@@ -14,7 +14,7 @@ pub async fn handle_client(
     chip: &str,
 ) -> Result<(), WebSocketError> {
     let mut ws = fastwebsockets::FragmentCollector::new(fut.await?);
-    if crate::get_should_update()
+    if UpdateStrategy::should_update()
         && super::updater::update_client(&mut ws, id, version, build_time, chip).await?
     {
         return Ok(());
@@ -43,7 +43,7 @@ pub async fn handle_client(
                 hb_recieved = false;
             }
             _ = update_broadcast.recv() => {
-                if !crate::get_should_update() {
+                if !UpdateStrategy::should_update() {
                     continue;
                 }
 

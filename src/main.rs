@@ -1,5 +1,6 @@
 use anyhow::Result;
-use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, RwLock};
+use structs::UpdateStrategy;
 use tokio::sync::OnceCell;
 
 mod api;
@@ -12,11 +13,7 @@ mod updater;
 pub static NEW_BUILD_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> =
     OnceCell::const_new();
 pub static API_URL: OnceCell<String> = OnceCell::const_new();
-pub static SHOULD_UPDATE: AtomicBool = AtomicBool::new(true);
-
-pub fn get_should_update() -> bool {
-    SHOULD_UPDATE.load(std::sync::atomic::Ordering::Relaxed)
-}
+pub static UPDATE_STRATEGY: OnceCell<Arc<RwLock<UpdateStrategy>>> = OnceCell::const_new();
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,6 +24,7 @@ async fn main() -> Result<()> {
         .parse()?;
     let api_url = std::env::var("API_URL").unwrap_or_else(|_| "http://localhost:5000".to_string());
     API_URL.set(api_url)?;
+    _ = UPDATE_STRATEGY.set(Arc::new(RwLock::new(UpdateStrategy::Disabled)));
 
     mdns::register_mdns(&port)?;
 
