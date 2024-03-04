@@ -9,8 +9,8 @@ pub struct CompetitorInfo {
     pub id: i64,
     pub registrant_id: Option<i64>,
     pub name: String,
-    pub wca_id: String,
-    pub country_iso2: String,
+    pub wca_id: Option<String>,
+    pub country_iso2: Option<String>,
     pub gender: String,
     pub can_compete: bool,
 }

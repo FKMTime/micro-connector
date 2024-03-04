@@ -96,7 +96,7 @@ async fn on_ws_frame(
                             let response = TimerResponse::CardInfoResponse {
                                 card_id,
                                 esp_id,
-                                country_iso2: info.country_iso2,
+                                country_iso2: info.country_iso2.unwrap_or_default(),
                                 display: format!(
                                     "{} ID: {}",
                                     info.name,

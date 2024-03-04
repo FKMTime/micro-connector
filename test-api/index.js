@@ -14,10 +14,9 @@ const people = [
     {
         id: 2,
         cardId: 2156233370,
-        registrantId: null,
         name: "Kim Joon",
-        wcaId: "2019KIMJO69",
-        countryIso2: "CN",
+        wcaId: null,
+        countryIso2: null,
         gender: "m",
         canCompete: false
     }
