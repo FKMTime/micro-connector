@@ -44,6 +44,7 @@ pub enum TimerResponse {
         esp_id: u128,
         display: String,
         country_iso2: String,
+        can_compete: bool,
     },
     Logs {
         esp_id: u128,

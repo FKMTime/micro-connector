@@ -7,11 +7,12 @@ static API_CLIENT: OnceCell<reqwest::Client> = OnceCell::const_new();
 #[serde(rename_all = "camelCase")]
 pub struct CompetitorInfo {
     pub id: i64,
-    pub registrant_id: i64,
+    pub registrant_id: Option<i64>,
     pub name: String,
     pub wca_id: String,
     pub country_iso2: String,
     pub gender: String,
+    pub can_compete: bool,
 }
 
 #[derive(serde::Deserialize, Debug)]

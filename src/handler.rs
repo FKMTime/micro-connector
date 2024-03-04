@@ -97,7 +97,12 @@ async fn on_ws_frame(
                                 card_id,
                                 esp_id,
                                 country_iso2: info.country_iso2,
-                                display: format!("{} ID: {}", info.name, info.registrant_id),
+                                display: format!(
+                                    "{} ID: {}",
+                                    info.name,
+                                    info.registrant_id.unwrap_or(-1)
+                                ),
+                                can_compete: info.can_compete,
                             };
 
                             response

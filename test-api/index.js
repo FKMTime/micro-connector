@@ -8,16 +8,18 @@ const people = [
         name: "Filip Sciurka",
         wcaId: "2020FILSCI",
         countryIso2: "PL",
-        gender: "m"
+        gender: "m",
+        canCompete: true
     },
     {
         id: 2,
         cardId: 2156233370,
-        registrantId: 2,
+        registrantId: null,
         name: "Kim Joon",
         wcaId: "2019KIMJO69",
         countryIso2: "CN",
-        gender: "m"
+        gender: "m",
+        canCompete: false
     }
 ];
 
