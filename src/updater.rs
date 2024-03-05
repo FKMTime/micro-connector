@@ -4,6 +4,7 @@ use fastwebsockets::WebSocketError;
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use std::path::PathBuf;
+use tracing::{debug, error, info};
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 const GITHUB_UPDATE_INTERVAL: u64 = 30000;
@@ -47,11 +48,11 @@ pub async fn update_client(
         return Ok(false);
     }
 
-    println!(
+    info!(
         "Updating client from version: {} to version {}",
         version, latest_firmware.2
     );
-    println!("Firmware file: {:?}", latest_firmware.0);
+    debug!("Firmware file: {:?}", latest_firmware.0);
 
     let firmware_file = tokio::fs::read(latest_firmware.0.unwrap()).await?;
     let frame = fastwebsockets::Frame::text(
@@ -70,7 +71,7 @@ pub async fn update_client(
     tokio::time::timeout(std::time::Duration::from_secs(10), ws.read_frame())
         .await
         .or_else(|_| {
-            println!("Timeout while updating");
+            error!("Timeout while updating");
             Err(WebSocketError::ConnectionClosed)
         })??;
 
@@ -81,7 +82,7 @@ pub async fn update_client(
         ws.write_frame(frame).await?;
 
         if firmware_chunks.len() % 10 == 0 {
-            println!(
+            debug!(
                 "[{}] {}/{} chunks left",
                 id,
                 firmware_chunks.len(),
@@ -99,7 +100,7 @@ pub async fn update_client(
         let frame = tokio::time::timeout(std::time::Duration::from_secs(10), ws.read_frame())
             .await
             .or_else(|_| {
-                println!("Timeout while updating");
+                error!("Timeout while updating");
                 Err(WebSocketError::ConnectionClosed)
             })?;
 
@@ -117,7 +118,7 @@ pub async fn spawn_build_watcher(broadcaster: tokio::sync::broadcast::Sender<()>
         loop {
             let res = build_watcher(&broadcaster).await;
             if let Err(e) = res {
-                println!("Error in build watcher: {:?}", e);
+                error!("Error in build watcher: {:?}", e);
             }
 
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -173,7 +174,7 @@ pub async fn spawn_github_releases_watcher() -> Result<()> {
 
             let res = github_releases_watcher(&client).await;
             if let Err(e) = res {
-                println!("Error in github releases watcher: {:?}", e);
+                error!("Error in github releases watcher: {:?}", e);
             }
         }
     });
@@ -219,7 +220,7 @@ pub async fn spawn_should_update_status_watcher() -> Result<()> {
         loop {
             let res = should_update_status_watcher().await;
             if let Err(e) = res {
-                println!("Error in should update status watcher: {:?}", e);
+                error!("Error in should update status watcher: {:?}", e);
             }
 
             tokio::time::sleep(std::time::Duration::from_millis(

@@ -5,6 +5,7 @@ use fastwebsockets::{OpCode, WebSocketError};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use std::io::{BufRead, Write};
+use tracing::{debug, error, info, trace};
 
 pub async fn handle_client(
     fut: fastwebsockets::upgrade::UpgradeFut,
@@ -34,7 +35,7 @@ pub async fn handle_client(
         tokio::select! {
             _ = hb_interval.tick() => {
                 if !hb_recieved {
-                    println!("Closing connection due to no heartbeat");
+                    error!("Closing connection due to no heartbeat ({id})");
                     break;
                 }
 
@@ -60,7 +61,7 @@ pub async fn handle_client(
                     Ok(true) => break,
                     Ok(false) => {}
                     Err(e) => {
-                        eprintln!("Error: {}", e);
+                        error!("Ws read frame error: {}", e);
                     }
                 }
             }
@@ -80,7 +81,7 @@ async fn on_ws_frame(
 ) -> Result<bool> {
     match frame.opcode {
         OpCode::Close => {
-            println!("Closing connection");
+            info!("Closing connection");
             return Ok(true);
         }
         OpCode::Pong => {
@@ -92,7 +93,7 @@ async fn on_ws_frame(
                 TimerResponse::CardInfoRequest { card_id, esp_id } => {
                     let response = match crate::api::get_competitor_info(card_id).await {
                         Ok(info) => {
-                            println!("Card info: {} {} {:?}", card_id, esp_id, info);
+                            trace!("Card info: {} {} {:?}", card_id, esp_id, info);
                             let response = TimerResponse::CardInfoResponse {
                                 card_id,
                                 esp_id,
@@ -128,9 +129,8 @@ async fn on_ws_frame(
                     session_id,
                     delegate,
                 } => {
-                    println!(
-                        "Solve: {} ({}) {} {} {} {} {}",
-                        solve_time, offset, solver_id, esp_id, timestamp, session_id, delegate
+                    trace!(
+                        "Solve: {solve_time} ({offset}) {solver_id} {esp_id} {timestamp} {session_id} {delegate}",
                     );
 
                     let res = crate::api::send_solve_entry(
@@ -156,6 +156,7 @@ async fn on_ws_frame(
                     ws.write_frame(frame).await?;
                 }
                 TimerResponse::Logs { esp_id, logs } => {
+                    let mut msg_buf = String::new();
                     for log in logs.iter().rev() {
                         let msg = BASE64_STANDARD.decode(&log.msg.as_bytes()).unwrap();
                         for line in msg.lines() {
@@ -163,13 +164,14 @@ async fn on_ws_frame(
                             if line.is_empty() {
                                 continue;
                             }
-                            print!("{} | {}\n", esp_id, line);
+                            msg_buf.push_str(&format!("{} | {}\n", esp_id, line));
                         }
                     }
-                    std::io::stdout().flush().unwrap();
+
+                    info!("LOGS:\n{}", msg_buf);
                 }
                 _ => {
-                    println!("Received: {:?}", response);
+                    trace!("Not implemented timer response received: {:?}", response);
                     ws.write_frame(frame).await?;
                 }
             }

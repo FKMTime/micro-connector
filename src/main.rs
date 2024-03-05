@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::sync::{Arc, RwLock};
 use structs::UpdateStrategy;
 use tokio::sync::OnceCell;
+use tracing::info;
 
 mod api;
 mod handler;
@@ -18,6 +19,7 @@ pub static UPDATE_STRATEGY: OnceCell<Arc<RwLock<UpdateStrategy>>> = OnceCell::co
 #[tokio::main]
 async fn main() -> Result<()> {
     _ = dotenvy::dotenv();
+    tracing_subscriber::fmt::init();
 
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
@@ -38,10 +40,10 @@ async fn main() -> Result<()> {
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     tokio::select! {
         _ = sigterm.recv() => {
-            println!("Received SIGTERM, stopping server!");
+            info!("Received SIGTERM, stopping server!");
         }
         _ = tokio::signal::ctrl_c() => {
-            println!("Received SIGINT, stopping server!");
+            info!("Received SIGINT, stopping server!");
         }
     }
 

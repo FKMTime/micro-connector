@@ -10,10 +10,13 @@ use hyper::Request;
 use hyper::Response;
 use std::collections::HashMap;
 use tokio::net::TcpListener;
+use tracing::error;
+use tracing::info;
 
 pub async fn start_server(port: u16) -> Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
-    println!("Server started, listening on 0.0.0.0:{port}");
+    info!("Server started, listening on 0.0.0.0:{port}");
+
     loop {
         let (stream, _) = listener.accept().await?;
         tokio::spawn(async move {
@@ -23,7 +26,7 @@ pub async fn start_server(port: u16) -> Result<()> {
                 .with_upgrades();
 
             if let Err(e) = conn_fut.await {
-                println!("An error occurred: {:?}", e);
+                error!("An error occurred: {:?}", e);
             }
         });
     }
@@ -68,24 +71,22 @@ async fn server_upgrade(
         .unwrap_or(&"no-chip".to_string())
         .to_owned();
 
-    println!(
-        "Client connected: {} {} {} ({})",
-        id, version, chip, build_time
-    );
+    info!("Client connected: {id} {version} {chip} (version build time: {build_time})",);
     tokio::task::spawn(async move {
         if let Err(e) = tokio::task::unconstrained(crate::handler::handle_client(
             fut, id, &version, build_time, &chip,
         ))
         .await
         {
-            eprintln!("Error in websocket connection: {}", e);
+            error!("Error in websocket connection: {}", e);
         }
 
         let epoch = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        println!("Client disconnected ({})", epoch);
+
+        info!("Client disconnected: {id} (epoch: {epoch})");
     });
 
     Ok(response)

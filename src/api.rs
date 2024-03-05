@@ -1,5 +1,6 @@
 use anyhow::Result;
 use tokio::sync::OnceCell;
+use tracing::{error, trace};
 
 static API_CLIENT: OnceCell<reqwest::Client> = OnceCell::const_new();
 
@@ -35,26 +36,35 @@ pub async fn get_competitor_info(card_id: u128) -> Result<CompetitorInfo, ApiErr
         .await;
 
     let url = format!("{}/person/card/{}", crate::API_URL.get().unwrap(), card_id);
-    let res = client.get(&url).send().await.map_err(|_| ApiErrorRes {
-        message: format!("Error getting competitor info"),
-        should_reset_time: false,
+    let res = client.get(&url).send().await.map_err(|e| {
+        error!("Error getting competitor info (send error): {}", e);
+
+        ApiErrorRes {
+            message: format!("Error getting competitor info"),
+            should_reset_time: false,
+        }
     })?;
 
-    if !res.status().is_success() {
-        println!("Error getting competitor info: {:?}", res);
-        return Err(res.json::<ApiErrorRes>().await.map_err(|_| ApiErrorRes {
-            message: format!("Error parsing error message"),
-            should_reset_time: false,
-        })?);
+    let success = res.status().is_success();
+    let status_code = res.status().as_u16();
+    let text = res.text().await.unwrap_or_default();
+    trace!("Competitor info response (SC: {status_code}): {}", text);
+
+    if !success {
+        error!("Error getting competitor info (not success): {}", text);
+
+        return Err(
+            serde_json::from_str::<ApiErrorRes>(&text).map_err(|_| ApiErrorRes {
+                message: format!("Error parsing error message"),
+                should_reset_time: false,
+            })?,
+        );
     }
 
-    let info = res
-        .json::<CompetitorInfo>()
-        .await
-        .map_err(|_| ApiErrorRes {
-            message: format!("Error parsing competitor info"),
-            should_reset_time: false,
-        })?;
+    let info = serde_json::from_str::<CompetitorInfo>(&text).map_err(|_| ApiErrorRes {
+        message: format!("Error parsing competitor info"),
+        should_reset_time: false,
+    })?;
     Ok(info)
 }
 
@@ -94,19 +104,24 @@ pub async fn send_solve_entry(
         "isDelegate": is_delegate,
     });
 
-    let res = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|_| ApiErrorRes {
+    let res = client.post(&url).json(&body).send().await.map_err(|e| {
+        error!("Error sending solve entry (send error): {}", e);
+
+        ApiErrorRes {
             message: format!("Error sending solve entry"),
             should_reset_time: false,
-        })?;
+        }
+    })?;
 
-    if !res.status().is_success() {
-        println!("Error sending solve entry: {:?}", res);
-        let res = res.json::<ApiErrorRes>().await.map_err(|_| ApiErrorRes {
+    let success = res.status().is_success();
+    let status_code = res.status().as_u16();
+    let text = res.text().await.unwrap_or_default();
+
+    trace!("Solve entry response (SC: {status_code}): {}", text);
+    if !success {
+        error!("Error sending solve entry (not success): {}", text);
+
+        let res = serde_json::from_str::<ApiErrorRes>(&text).map_err(|_| ApiErrorRes {
             message: format!("Error parsing error message"),
             should_reset_time: false,
         })?;
