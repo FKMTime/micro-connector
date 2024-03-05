@@ -152,11 +152,17 @@ pub async fn should_update_devices() -> Result<(bool, bool)> {
     );
 
     let res = client.get(&url).send().await?;
-    if !res.status().is_success() {
+
+    let success = res.status().is_success();
+    let status_code = res.status().as_u16();
+    let text = res.text().await.unwrap_or_default();
+
+    trace!("Should update response (SC: {status_code}): {}", text);
+    if !success {
         return Err(anyhow::anyhow!("Cannot get 'should-update' status"));
     }
 
-    let json: serde_json::Value = res.json().await?;
+    let json: serde_json::Value = serde_json::from_str(&text)?;
     let should_update = json
         .get("shouldUpdate")
         .ok_or_else(|| anyhow::anyhow!("Field not found"))?
