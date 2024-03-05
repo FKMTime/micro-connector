@@ -4,8 +4,8 @@ use base64::prelude::*;
 use fastwebsockets::{OpCode, WebSocketError};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
-use std::io::{BufRead, Write};
-use tracing::{debug, error, info, trace};
+use std::io::BufRead;
+use tracing::{error, info, trace};
 
 pub async fn handle_client(
     fut: fastwebsockets::upgrade::UpgradeFut,
