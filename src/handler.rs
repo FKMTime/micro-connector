@@ -29,19 +29,19 @@ pub async fn handle_client(
 
     let interval_time = std::time::Duration::from_secs(5);
     let mut hb_interval = tokio::time::interval(interval_time);
-    let mut hb_receieved = true;
+    let mut hb_received = true;
 
     loop {
         tokio::select! {
             _ = hb_interval.tick() => {
-                if !hb_receieved {
+                if !hb_received {
                     error!("Closing connection due to no heartbeat ({id})");
                     break;
                 }
 
                 let frame = fastwebsockets::Frame::new(true, OpCode::Ping, None, vec![].into());
                 ws.write_frame(frame).await?;
-                hb_receieved = false;
+                hb_received = false;
             }
             _ = update_broadcast.recv() => {
                 if !UpdateStrategy::should_update() {
@@ -55,7 +55,7 @@ pub async fn handle_client(
             }
             frame = ws.read_frame() => {
                 let frame = frame?;
-                let res = on_ws_frame(&mut ws, id, build_time, chip, frame, &mut hb_receieved).await;
+                let res = on_ws_frame(&mut ws, id, build_time, chip, frame, &mut hb_received).await;
 
                 match res {
                     Ok(true) => break,
@@ -77,7 +77,7 @@ async fn on_ws_frame(
     _version_time: u128,
     _chip: &str,
     frame: fastwebsockets::Frame<'_>,
-    hb_receieved: &mut bool,
+    hb_received: &mut bool,
 ) -> Result<bool> {
     match frame.opcode {
         OpCode::Close => {
@@ -85,7 +85,7 @@ async fn on_ws_frame(
             return Ok(true);
         }
         OpCode::Pong => {
-            *hb_receieved = true;
+            *hb_received = true;
         }
         OpCode::Text => {
             let response: TimerResponse = serde_json::from_slice(&frame.payload).unwrap();
