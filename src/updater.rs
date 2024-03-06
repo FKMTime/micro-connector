@@ -164,32 +164,30 @@ async fn build_watcher(
 ) -> Result<()> {
     let mut latest_modified: u128 = 0;
 
-    loop {
-        let mut modified_state = false;
-        for entry in firmware_dir.read_dir()? {
-            let entry = entry?;
-            if entry.file_type()?.is_dir() {
-                continue;
-            }
-
-            let modified = entry
-                .metadata()?
-                .modified()?
-                .duration_since(std::time::UNIX_EPOCH)?
-                .as_millis();
-
-            if modified > latest_modified {
-                latest_modified = modified;
-                modified_state = true;
-            }
+    let mut modified_state = false;
+    for entry in firmware_dir.read_dir()? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            continue;
         }
 
-        if modified_state {
-            _ = broadcaster.send(());
-        }
+        let modified = entry
+            .metadata()?
+            .modified()?
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_millis();
 
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        if modified > latest_modified {
+            latest_modified = modified;
+            modified_state = true;
+        }
     }
+
+    if modified_state {
+        _ = broadcaster.send(());
+    }
+
+    Ok(())
 }
 
 async fn github_releases_watcher(client: &reqwest::Client, firmware_dir: &PathBuf) -> Result<()> {
