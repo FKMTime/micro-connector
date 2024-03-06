@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.80"
 base64 = "0.22.0"
-chrono = "0.4.34"
+chrono = "0.4.35"
 dotenvy = "0.15.7"
 fastwebsockets = { version = "0.7.0", features = ["hyper", "upgrade"] }
 http-body-util = "0.1.0"

@@ -3,12 +3,13 @@ use anyhow::{anyhow, Result};
 use fastwebsockets::WebSocketError;
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
+use tokio::select;
 use tracing::{debug, error, info};
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 const GITHUB_UPDATE_INTERVAL: u64 = 30000;
-const SHOULD_UPDATE_STATUS_INTERVAL: u64 = 60000;
+const UPDATE_STRATEGY_INTERVAL: u64 = 60000;
 const GRM_URL: &str = "https://grm.filipton.space";
 const GH_OWNER: &str = "filipton";
 const GH_REPO: &str = "fkm-timer";
@@ -113,25 +114,54 @@ pub async fn update_client(
     Ok(true)
 }
 
-pub async fn spawn_build_watcher(broadcaster: tokio::sync::broadcast::Sender<()>) -> Result<()> {
+pub async fn spawn_watchers(broadcaster: tokio::sync::broadcast::Sender<()>) -> Result<()> {
+    let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
+    let firmware_dir = std::path::PathBuf::from(firmware_dir);
+
+    let (client, api_url) = crate::api::ApiClient::get_api_client()?;
+
+    let mut build_interval = tokio::time::interval(Duration::from_secs(1));
+    let mut github_releases_interval =
+        tokio::time::interval(Duration::from_millis(GITHUB_UPDATE_INTERVAL));
+    let mut update_strategy_interval =
+        tokio::time::interval(Duration::from_millis(UPDATE_STRATEGY_INTERVAL));
+
     tokio::task::spawn(async move {
         loop {
-            let res = build_watcher(&broadcaster).await;
-            if let Err(e) = res {
-                error!("Error in build watcher: {:?}", e);
-            }
+            select! {
+                _ = build_interval.tick() => {
+                    let res = build_watcher(&broadcaster, &firmware_dir).await;
+                    if let Err(e) = res {
+                        error!("Error in build watcher: {:?}", e);
+                    }
+                }
+                _ = github_releases_interval.tick() => {
+                    if !UpdateStrategy::should_update() {
+                        continue;
+                    }
 
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    let res = github_releases_watcher(&client, &firmware_dir).await;
+                    if let Err(e) = res {
+                        error!("Error in github releases watcher: {:?}", e);
+                    }
+                }
+                _ = update_strategy_interval.tick() => {
+                    let res = update_strategy_watcher(&client, &api_url).await;
+                    if let Err(e) = res {
+                        error!("Error in update strategy watcher: {:?}", e);
+                    }
+                }
+            }
         }
     });
 
     Ok(())
 }
 
-async fn build_watcher(broadcaster: &tokio::sync::broadcast::Sender<()>) -> Result<()> {
-    let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
-    let firmware_dir = std::path::PathBuf::from(firmware_dir);
-
+async fn build_watcher(
+    broadcaster: &tokio::sync::broadcast::Sender<()>,
+    firmware_dir: &PathBuf,
+) -> Result<()> {
     let mut latest_modified: u128 = 0;
 
     loop {
@@ -162,30 +192,7 @@ async fn build_watcher(broadcaster: &tokio::sync::broadcast::Sender<()>) -> Resu
     }
 }
 
-pub async fn spawn_github_releases_watcher() -> Result<()> {
-    let client = reqwest::Client::new();
-
-    tokio::task::spawn(async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_millis(GITHUB_UPDATE_INTERVAL)).await;
-            if !UpdateStrategy::should_update() {
-                continue;
-            }
-
-            let res = github_releases_watcher(&client).await;
-            if let Err(e) = res {
-                error!("Error in github releases watcher: {:?}", e);
-            }
-        }
-    });
-
-    Ok(())
-}
-
-async fn github_releases_watcher(client: &reqwest::Client) -> Result<()> {
-    let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
-    let firmware_dir = std::path::PathBuf::from(firmware_dir);
-
+async fn github_releases_watcher(client: &reqwest::Client, firmware_dir: &PathBuf) -> Result<()> {
     let tag = match UpdateStrategy::get() {
         UpdateStrategy::Disabled => return Ok(()),
         UpdateStrategy::Stable => "latest",
@@ -215,26 +222,8 @@ async fn github_releases_watcher(client: &reqwest::Client) -> Result<()> {
     Ok(())
 }
 
-pub async fn spawn_should_update_status_watcher() -> Result<()> {
-    tokio::task::spawn(async move {
-        loop {
-            let res = should_update_status_watcher().await;
-            if let Err(e) = res {
-                error!("Error in should update status watcher: {:?}", e);
-            }
-
-            tokio::time::sleep(std::time::Duration::from_millis(
-                SHOULD_UPDATE_STATUS_INTERVAL,
-            ))
-            .await;
-        }
-    });
-
-    Ok(())
-}
-
-async fn should_update_status_watcher() -> Result<()> {
-    let should_update = crate::api::should_update_devices().await?;
+async fn update_strategy_watcher(client: &reqwest::Client, api_url: &str) -> Result<()> {
+    let should_update = crate::api::should_update_devices(client, api_url).await?;
     let update_strategy = match should_update {
         (true, true) => UpdateStrategy::Stable,
         (true, false) => UpdateStrategy::Prerelease,

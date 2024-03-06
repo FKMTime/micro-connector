@@ -1,8 +1,6 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use tokio::sync::OnceCell;
 use tracing::{error, trace};
-
-static API_CLIENT: OnceCell<reqwest::Client> = OnceCell::const_new();
 
 #[derive(serde::Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -23,19 +21,12 @@ pub struct ApiErrorRes {
     pub should_reset_time: bool,
 }
 
-pub async fn get_competitor_info(card_id: u128) -> Result<CompetitorInfo, ApiErrorRes> {
-    let client = API_CLIENT
-        .get_or_init(|| async {
-            reqwest::Client::builder()
-                .danger_accept_invalid_certs(true)
-                .user_agent("FKM-Timer/0.1")
-                .timeout(std::time::Duration::from_secs(15))
-                .build()
-                .unwrap()
-        })
-        .await;
-
-    let url = format!("{}/person/card/{}", crate::API_URL.get().unwrap(), card_id);
+pub async fn get_competitor_info(
+    client: &reqwest::Client,
+    api_url: &str,
+    card_id: u128,
+) -> Result<CompetitorInfo, ApiErrorRes> {
+    let url = format!("{api_url}/person/card/{card_id}");
     let res = client.get(&url).send().await.map_err(|e| {
         error!("Error getting competitor info (send error): {}", e);
 
@@ -69,6 +60,8 @@ pub async fn get_competitor_info(card_id: u128) -> Result<CompetitorInfo, ApiErr
 }
 
 pub async fn send_solve_entry(
+    client: &reqwest::Client,
+    api_url: &str,
     time: u128,
     penalty: i64,
     solved_at: u128,
@@ -77,23 +70,12 @@ pub async fn send_solve_entry(
     competitor_id: u128,
     is_delegate: bool,
 ) -> Result<(), ApiErrorRes> {
-    let client = API_CLIENT
-        .get_or_init(|| async {
-            reqwest::Client::builder()
-                .danger_accept_invalid_certs(true)
-                .user_agent("FKM-Timer/0.1")
-                .timeout(std::time::Duration::from_secs(15))
-                .build()
-                .unwrap()
-        })
-        .await;
-
     let time = time / 10; // Convert to centiseconds
     let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)
         .unwrap()
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
-    let url = format!("{}/result/enter", crate::API_URL.get().unwrap());
+    let url = format!("{api_url}/result/enter");
     let body = serde_json::json!({
         "value": time,
         "penalty": penalty,
@@ -133,26 +115,13 @@ pub async fn send_solve_entry(
 }
 
 // It returns (should_update, use_stable_releases)
-pub async fn should_update_devices() -> Result<(bool, bool)> {
-    // TODO: make this client as global or sth
-    let client = API_CLIENT
-        .get_or_init(|| async {
-            reqwest::Client::builder()
-                .danger_accept_invalid_certs(true)
-                .user_agent("FKM-Timer/0.1")
-                .timeout(std::time::Duration::from_secs(15))
-                .build()
-                .unwrap()
-        })
-        .await;
-
-    let url = format!(
-        "{}/competition/should-update",
-        crate::API_URL.get().unwrap()
-    );
+pub async fn should_update_devices(
+    client: &reqwest::Client,
+    api_url: &str,
+) -> Result<(bool, bool)> {
+    let url = format!("{api_url}/competition/should-update");
 
     let res = client.get(&url).send().await?;
-
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
@@ -176,4 +145,30 @@ pub async fn should_update_devices() -> Result<(bool, bool)> {
         .ok_or_else(|| anyhow::anyhow!("Cannot convert to boolean"))?;
 
     Ok((should_update, use_stable_releases))
+}
+
+static API_URL: OnceCell<String> = OnceCell::const_new();
+static API_CLIENT: OnceCell<reqwest::Client> = OnceCell::const_new();
+pub struct ApiClient {}
+impl ApiClient {
+    pub fn set_api_client(client: reqwest::Client, api_url: String) -> Result<()> {
+        API_CLIENT.set(client)?;
+        API_URL.set(api_url)?;
+
+        Ok(())
+    }
+
+    pub fn get_api_client() -> Result<(reqwest::Client, String)> {
+        let client = API_CLIENT
+            .get()
+            .ok_or_else(|| anyhow!("API_CLIENT not set"))?
+            .to_owned();
+
+        let api_url = API_URL
+            .get()
+            .ok_or_else(|| anyhow!("API_URL not set"))?
+            .to_owned();
+
+        Ok((client, api_url))
+    }
 }

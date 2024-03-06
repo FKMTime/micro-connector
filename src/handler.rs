@@ -15,6 +15,7 @@ pub async fn handle_client(
     chip: &str,
 ) -> Result<(), WebSocketError> {
     let mut ws = fastwebsockets::FragmentCollector::new(fut.await?);
+
     if UpdateStrategy::should_update()
         && super::updater::update_client(&mut ws, id, version, build_time, chip).await?
     {
@@ -23,25 +24,24 @@ pub async fn handle_client(
 
     let mut update_broadcast = super::NEW_BUILD_BROADCAST
         .get()
-        .unwrap()
-        .clone()
+        .expect("build broadcast channel not set")
         .subscribe();
 
     let interval_time = std::time::Duration::from_secs(5);
     let mut hb_interval = tokio::time::interval(interval_time);
-    let mut hb_recieved = true;
+    let mut hb_receieved = true;
 
     loop {
         tokio::select! {
             _ = hb_interval.tick() => {
-                if !hb_recieved {
+                if !hb_receieved {
                     error!("Closing connection due to no heartbeat ({id})");
                     break;
                 }
 
                 let frame = fastwebsockets::Frame::new(true, OpCode::Ping, None, vec![].into());
                 ws.write_frame(frame).await?;
-                hb_recieved = false;
+                hb_receieved = false;
             }
             _ = update_broadcast.recv() => {
                 if !UpdateStrategy::should_update() {
@@ -55,7 +55,7 @@ pub async fn handle_client(
             }
             frame = ws.read_frame() => {
                 let frame = frame?;
-                let res = on_ws_frame(&mut ws, id, build_time, chip, frame, &mut hb_recieved).await;
+                let res = on_ws_frame(&mut ws, id, build_time, chip, frame, &mut hb_receieved).await;
 
                 match res {
                     Ok(true) => break,
@@ -77,7 +77,7 @@ async fn on_ws_frame(
     _version_time: u128,
     _chip: &str,
     frame: fastwebsockets::Frame<'_>,
-    hb_recieved: &mut bool,
+    hb_receieved: &mut bool,
 ) -> Result<bool> {
     match frame.opcode {
         OpCode::Close => {
@@ -85,99 +85,107 @@ async fn on_ws_frame(
             return Ok(true);
         }
         OpCode::Pong => {
-            *hb_recieved = true;
+            *hb_receieved = true;
         }
         OpCode::Text => {
             let response: TimerResponse = serde_json::from_slice(&frame.payload).unwrap();
-            match response {
-                TimerResponse::CardInfoRequest { card_id, esp_id } => {
-                    let response = match crate::api::get_competitor_info(card_id).await {
-                        Ok(info) => {
-                            trace!("Card info: {} {} {:?}", card_id, esp_id, info);
-                            let response = TimerResponse::CardInfoResponse {
-                                card_id,
-                                esp_id,
-                                country_iso2: info.country_iso2.unwrap_or_default(),
-                                display: format!(
-                                    "{} ID: {}",
-                                    info.name,
-                                    info.registrant_id.unwrap_or(-1)
-                                ),
-                                can_compete: info.can_compete,
-                            };
-
-                            response
-                        }
-                        Err(e) => TimerResponse::ApiError {
-                            esp_id,
-                            error: e.message,
-                            should_reset_time: e.should_reset_time,
-                        },
-                    };
-
-                    let response = serde_json::to_vec(&response).unwrap();
-                    let frame = fastwebsockets::Frame::text(response.into());
-                    ws.write_frame(frame).await?;
-                }
-                TimerResponse::Solve {
-                    solve_time,
-                    offset,
-                    competitor_id: solver_id,
-                    judge_id,
-                    esp_id,
-                    timestamp,
-                    session_id,
-                    delegate,
-                } => {
-                    trace!(
-                        "Solve: {solve_time} ({offset}) {solver_id} {esp_id} {timestamp} {session_id} {delegate}",
-                    );
-
-                    let res = crate::api::send_solve_entry(
-                        solve_time, offset, timestamp, esp_id, judge_id, solver_id, delegate,
-                    )
-                    .await;
-
-                    let resp = match res {
-                        Ok(_) => TimerResponse::SolveConfirm {
-                            esp_id,
-                            session_id,
-                            competitor_id: solver_id,
-                        },
-                        Err(e) => TimerResponse::ApiError {
-                            esp_id,
-                            error: e.message,
-                            should_reset_time: e.should_reset_time,
-                        },
-                    };
-
-                    let response = serde_json::to_vec(&resp).unwrap();
-                    let frame = fastwebsockets::Frame::text(response.into());
-                    ws.write_frame(frame).await?;
-                }
-                TimerResponse::Logs { esp_id, logs } => {
-                    let mut msg_buf = String::new();
-                    for log in logs.iter().rev() {
-                        let msg = BASE64_STANDARD.decode(&log.msg.as_bytes()).unwrap();
-                        for line in msg.lines() {
-                            let line = line?;
-                            if line.is_empty() {
-                                continue;
-                            }
-                            msg_buf.push_str(&format!("{} | {}\n", esp_id, line));
-                        }
-                    }
-
-                    info!("LOGS:\n{}", msg_buf);
-                }
-                _ => {
-                    trace!("Not implemented timer response received: {:?}", response);
-                    ws.write_frame(frame).await?;
-                }
+            let res = on_timer_response(ws, response).await;
+            if let Err(e) = res {
+                error!("on_timer_response error: {e:?}");
             }
         }
         _ => {}
     }
 
     Ok(false)
+}
+
+async fn on_timer_response(
+    ws: &mut fastwebsockets::FragmentCollector<TokioIo<Upgraded>>,
+    response: TimerResponse,
+) -> Result<()> {
+    let (client, api_url) = crate::api::ApiClient::get_api_client()?;
+
+    match response {
+        TimerResponse::CardInfoRequest { card_id, esp_id } => {
+            let response = match crate::api::get_competitor_info(&client, &api_url, card_id).await {
+                Ok(info) => {
+                    trace!("Card info: {} {} {:?}", card_id, esp_id, info);
+                    let response = TimerResponse::CardInfoResponse {
+                        card_id,
+                        esp_id,
+                        country_iso2: info.country_iso2.unwrap_or_default(),
+                        display: format!("{} ID: {}", info.name, info.registrant_id.unwrap_or(-1)),
+                        can_compete: info.can_compete,
+                    };
+
+                    response
+                }
+                Err(e) => TimerResponse::ApiError {
+                    esp_id,
+                    error: e.message,
+                    should_reset_time: e.should_reset_time,
+                },
+            };
+
+            let response = serde_json::to_vec(&response).unwrap();
+            let frame = fastwebsockets::Frame::text(response.into());
+            ws.write_frame(frame).await?;
+        }
+        TimerResponse::Solve {
+            solve_time,
+            offset,
+            competitor_id: solver_id,
+            judge_id,
+            esp_id,
+            timestamp,
+            session_id,
+            delegate,
+        } => {
+            trace!("Solve: {solve_time} ({offset}) {solver_id} {esp_id} {timestamp} {session_id} {delegate}");
+
+            let res = crate::api::send_solve_entry(
+                &client, &api_url, solve_time, offset, timestamp, esp_id, judge_id, solver_id,
+                delegate,
+            )
+            .await;
+
+            let resp = match res {
+                Ok(_) => TimerResponse::SolveConfirm {
+                    esp_id,
+                    session_id,
+                    competitor_id: solver_id,
+                },
+                Err(e) => TimerResponse::ApiError {
+                    esp_id,
+                    error: e.message,
+                    should_reset_time: e.should_reset_time,
+                },
+            };
+
+            let response = serde_json::to_vec(&resp).unwrap();
+            let frame = fastwebsockets::Frame::text(response.into());
+            ws.write_frame(frame).await?;
+        }
+        TimerResponse::Logs { esp_id, logs } => {
+            let mut msg_buf = String::new();
+            for log in logs.iter().rev() {
+                let msg = BASE64_STANDARD.decode(&log.msg.as_bytes()).unwrap();
+                for line in msg.lines() {
+                    let line = line?;
+                    if line.is_empty() {
+                        continue;
+                    }
+                    msg_buf.push_str(&format!("{} | {}\n", esp_id, line));
+                }
+            }
+
+            info!("LOGS:\n{}", msg_buf);
+        }
+        _ => {
+            trace!("Not implemented timer response received: {:?}", response);
+        }
+    }
+
+    Ok(())
 }

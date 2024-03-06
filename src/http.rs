@@ -22,7 +22,7 @@ pub async fn start_server(port: u16) -> Result<()> {
         tokio::spawn(async move {
             let io = hyper_util::rt::TokioIo::new(stream);
             let conn_fut = http1::Builder::new()
-                .serve_connection(io, service_fn(server_upgrade))
+                .serve_connection(io, service_fn(|req| server_upgrade(req)))
                 .with_upgrades();
 
             if let Err(e) = conn_fut.await {
@@ -81,12 +81,7 @@ async fn server_upgrade(
             error!("Error in websocket connection: {}", e);
         }
 
-        let epoch = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        info!("Client disconnected: {id} (epoch: {epoch})");
+        info!("Client disconnected: {id}");
     });
 
     Ok(response)
