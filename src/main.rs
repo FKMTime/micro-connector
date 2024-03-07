@@ -5,6 +5,7 @@ use tokio::sync::OnceCell;
 use tracing::info;
 
 mod api;
+mod github;
 mod handler;
 mod http;
 mod mdns;

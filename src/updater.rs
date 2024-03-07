@@ -1,5 +1,5 @@
-use crate::structs::{GithubReleaseItem, TimerResponse, UpdateStrategy};
-use anyhow::{anyhow, Result};
+use crate::structs::{TimerResponse, UpdateStrategy};
+use anyhow::Result;
 use fastwebsockets::WebSocketError;
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
@@ -8,11 +8,8 @@ use tokio::select;
 use tracing::{debug, error, info};
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
-const GITHUB_UPDATE_INTERVAL: u64 = 30000;
+const GITHUB_UPDATE_INTERVAL: u64 = 90000;
 const UPDATE_STRATEGY_INTERVAL: u64 = 60000;
-const GRM_URL: &str = "https://grm.filipton.space";
-const GH_OWNER: &str = "filipton";
-const GH_REPO: &str = "fkm-timer";
 
 /// Returns true if client was updated
 pub async fn update_client(
@@ -191,29 +188,16 @@ async fn build_watcher(
 }
 
 async fn github_releases_watcher(client: &reqwest::Client, firmware_dir: &PathBuf) -> Result<()> {
-    let tag = match UpdateStrategy::get() {
-        UpdateStrategy::Disabled => return Ok(()),
-        UpdateStrategy::Stable => "latest",
-        UpdateStrategy::Prerelease => "prerelease",
-    };
+    let update_strategy = UpdateStrategy::get();
+    let releases = crate::github::get_releases(client, update_strategy).await?;
 
-    let url = format!("{GRM_URL}/releases/{GH_OWNER}/{GH_REPO}/{tag}");
-    let resp = client.get(&url).send().await?;
-    let resp: Vec<GithubReleaseItem> = resp.json().await?;
-
-    if resp.len() == 0 {
-        return Err(anyhow!("No releases"));
-    }
-
-    let github_release = resp
-        .first()
-        .ok_or_else(|| anyhow!("Rather impossible but no releases found."))?;
-
-    let release_path = firmware_dir.join(&github_release.name);
-    if let Ok(exists) = tokio::fs::try_exists(&release_path).await {
-        if !exists {
-            let resp = client.get(&github_release.url).send().await?;
-            tokio::fs::write(release_path, resp.bytes().await?).await?;
+    for release in releases {
+        let release_path = firmware_dir.join(&release.name);
+        if let Ok(exists) = tokio::fs::try_exists(&release_path).await {
+            if !exists {
+                let resp = client.get(&release.download_url).send().await?;
+                tokio::fs::write(&release_path, resp.bytes().await?).await?;
+            }
         }
     }
 
