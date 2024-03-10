@@ -22,13 +22,13 @@ pub enum TimerResponse {
         judge_id: u128,
         esp_id: u128,
         timestamp: u128,
-        session_id: i64,
+        session_id: String, // UUID
         delegate: bool,
     },
     SolveConfirm {
         esp_id: u128,
         competitor_id: u128,
-        session_id: i64,
+        session_id: String,
     },
     ApiError {
         esp_id: u128,

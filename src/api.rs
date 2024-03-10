@@ -69,6 +69,7 @@ pub async fn send_solve_entry(
     judge_id: u128,
     competitor_id: u128,
     is_delegate: bool,
+    session_id: &str,
 ) -> Result<(), ApiErrorRes> {
     let time = time / 10; // Convert to centiseconds
     let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)
@@ -84,6 +85,7 @@ pub async fn send_solve_entry(
         "judgeId": judge_id,
         "competitorId": competitor_id,
         "isDelegate": is_delegate,
+        "sessionId": session_id,
     });
 
     let res = client.post(&url).json(&body).send().await.map_err(|e| {

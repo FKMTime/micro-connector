@@ -145,8 +145,16 @@ async fn on_timer_response(
             trace!("Solve: {solve_time} ({offset}) {solver_id} {esp_id} {timestamp} {session_id} {delegate}");
 
             let res = crate::api::send_solve_entry(
-                &client, &api_url, solve_time, offset, timestamp, esp_id, judge_id, solver_id,
+                &client,
+                &api_url,
+                solve_time,
+                offset,
+                timestamp,
+                esp_id,
+                judge_id,
+                solver_id,
                 delegate,
+                &session_id,
             )
             .await;
 
