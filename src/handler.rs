@@ -150,6 +150,10 @@ async fn on_timer_response(
             )
             .await;
 
+            // disconnect client for test
+            //ws.write_frame(fastwebsockets::Frame::close(1, &[])).await?;
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
             let resp = match res {
                 Ok(_) => TimerResponse::SolveConfirm {
                     esp_id,
