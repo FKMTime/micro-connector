@@ -1,88 +1,59 @@
+use crate::handler::handle_client;
 use anyhow::Result;
-use fastwebsockets::upgrade;
-use fastwebsockets::WebSocketError;
-use http_body_util::Empty;
-use hyper::body::Bytes;
-use hyper::body::Incoming;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::Request;
-use hyper::Response;
-use std::collections::HashMap;
+use axum::extract::ws::WebSocket;
+use axum::extract::Query;
+use axum::response::IntoResponse;
+use axum::Router;
+use axum::{extract::WebSocketUpgrade, routing::get};
+use serde::Deserialize;
 use tokio::net::TcpListener;
-use tracing::error;
-use tracing::info;
+use tower_http::trace::{DefaultMakeSpan, TraceLayer};
+use tracing::{error, info};
+
+fn default_chip() -> String {
+    "no-chip".to_string()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EspConnectInfo {
+    pub id: u64,
+
+    #[serde(rename = "ver")]
+    pub version: String,
+
+    #[serde(default = "default_chip")]
+    pub chip: String,
+
+    #[serde(rename = "bt")]
+    pub build_time: String,
+}
 
 pub async fn start_server(port: u16) -> Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     info!("Server started, listening on 0.0.0.0:{port}");
 
-    loop {
-        let (stream, _) = listener.accept().await?;
-        tokio::spawn(async move {
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let conn_fut = http1::Builder::new()
-                .serve_connection(io, service_fn(|req| server_upgrade(req)))
-                .with_upgrades();
+    let app = Router::new().route("/", get(ws_handler)).layer(
+        TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default().include_headers(true)),
+    );
 
-            if let Err(e) = conn_fut.await {
-                error!("An error occurred: {:?}", e);
-            }
-        });
-    }
+    axum::serve(listener, app.into_make_service()).await?;
+    Ok(())
 }
 
-async fn server_upgrade(
-    mut req: Request<Incoming>,
-) -> Result<Response<Empty<Bytes>>, WebSocketError> {
-    let (response, fut) = upgrade::upgrade(&mut req)?;
-    let query_map: HashMap<String, String> = req
-        .uri()
-        .query()
-        .map(|q| {
-            q.split('&')
-                .map(|s| {
-                    let mut split = s.split('=');
-                    (
-                        split.next().unwrap().to_string(),
-                        split.next().unwrap().to_string(),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    Query(esp_connect_info): Query<EspConnectInfo>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info))
+}
 
-    let id = query_map
-        .get("id")
-        .expect("No id in query")
-        .parse::<u128>()
-        .unwrap();
+async fn handle_socket(socket: WebSocket, esp_connect_info: EspConnectInfo) {
+    info!("Client connected: {esp_connect_info:?}");
 
-    let build_time = query_map.get("bt").unwrap_or(&"0".to_string()).to_owned();
-    let build_time = u128::from_str_radix(&build_time, 16).unwrap();
+    let res = handle_client(socket, &esp_connect_info).await;
+    if let Err(e) = res {
+        error!("Handle client error: {e}");
+    }
 
-    let version = query_map
-        .get("ver")
-        .unwrap_or(&"NONE".to_string())
-        .to_owned();
-
-    let chip = query_map
-        .get("chip")
-        .unwrap_or(&"no-chip".to_string())
-        .to_owned();
-
-    info!("Client connected: {id} {version} {chip} (version build time: {build_time})",);
-    tokio::task::spawn(async move {
-        if let Err(e) = tokio::task::unconstrained(crate::handler::handle_client(
-            fut, id, &version, build_time, &chip,
-        ))
-        .await
-        {
-            error!("Error in websocket connection: {}", e);
-        }
-
-        info!("Client disconnected: {id}");
-    });
-
-    Ok(response)
+    info!("Client disconnected: {esp_connect_info:?}");
 }

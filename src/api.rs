@@ -65,7 +65,7 @@ pub async fn send_solve_entry(
     time: u128,
     penalty: i64,
     solved_at: u128,
-    esp_id: u128,
+    esp_id: u64,
     judge_id: u128,
     competitor_id: u128,
     is_delegate: bool,

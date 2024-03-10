@@ -1,8 +1,9 @@
-use crate::structs::{TimerResponse, UpdateStrategy};
+use crate::{
+    http::EspConnectInfo,
+    structs::{TimerResponse, UpdateStrategy},
+};
 use anyhow::Result;
-use fastwebsockets::WebSocketError;
-use hyper::upgrade::Upgraded;
-use hyper_util::rt::TokioIo;
+use axum::extract::ws::{Message, WebSocket};
 use std::{path::PathBuf, time::Duration};
 use tokio::select;
 use tracing::{debug, error, info};
@@ -13,22 +14,22 @@ const UPDATE_STRATEGY_INTERVAL: u64 = 60000;
 
 /// Returns true if client was updated
 pub async fn update_client(
-    ws: &mut fastwebsockets::FragmentCollector<TokioIo<Upgraded>>,
-    id: u128,
-    version: &str,
-    build_time: u128,
-    chip: &str,
-) -> Result<bool, WebSocketError> {
+    socket: &mut WebSocket,
+    esp_connect_info: &EspConnectInfo,
+) -> Result<bool> {
     let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
-    let mut latest_firmware: (Option<PathBuf>, u128, String) = (None, build_time, String::new());
+    let eci_build_time = u128::from_str_radix(&esp_connect_info.build_time, 16)?;
+    let mut latest_firmware: (Option<PathBuf>, u128, String) =
+        (None, eci_build_time, String::new());
+
     for entry in firmware_dir.read_dir()? {
         let entry = entry?;
         let file_name = entry.file_name();
         let name_split: Vec<&str> = file_name.to_str().unwrap().split('.').collect();
 
-        if name_split.len() != 4 || name_split[0] != chip {
+        if name_split.len() != 4 || name_split[0] != esp_connect_info.chip {
             continue;
         }
 
@@ -40,49 +41,48 @@ pub async fn update_client(
     }
 
     if latest_firmware.0.is_none()
-        || build_time >= latest_firmware.1
-        || latest_firmware.2 == version
+        || eci_build_time >= latest_firmware.1
+        || latest_firmware.2 == esp_connect_info.version
     {
         return Ok(false);
     }
 
     info!(
         "Updating client from version: {} to version {}",
-        version, latest_firmware.2
+        esp_connect_info.version, latest_firmware.2
     );
     debug!("Firmware file: {:?}", latest_firmware.0);
 
     let firmware_file = tokio::fs::read(latest_firmware.0.unwrap()).await?;
-    let frame = fastwebsockets::Frame::text(
-        serde_json::to_vec(&TimerResponse::StartUpdate {
-            esp_id: id,
-            version: latest_firmware.2,
-            build_time: latest_firmware.1,
-            size: firmware_file.len() as i64,
-        })
-        .unwrap()
-        .into(),
-    );
-    ws.write_frame(frame).await?;
+    let start_update_resp = TimerResponse::StartUpdate {
+        esp_id: esp_connect_info.id,
+        version: latest_firmware.2,
+        build_time: latest_firmware.1,
+        size: firmware_file.len() as i64,
+    };
+
+    socket
+        .send(Message::Text(serde_json::to_string(&start_update_resp)?))
+        .await?;
 
     // wait for esp to respond
-    tokio::time::timeout(std::time::Duration::from_secs(10), ws.read_frame())
+    tokio::time::timeout(std::time::Duration::from_secs(10), socket.recv())
         .await
         .or_else(|_| {
             error!("Timeout while updating");
-            Err(WebSocketError::ConnectionClosed)
-        })??;
+            Err(anyhow::anyhow!("Timeout while updating"))
+        })?;
 
     let mut firmware_chunks = firmware_file.chunks(UPDATE_CHUNK_SIZE);
 
     while let Some(chunk) = firmware_chunks.next() {
-        let frame = fastwebsockets::Frame::binary(chunk.into());
-        ws.write_frame(frame).await?;
+        let msg = Message::Binary(chunk.to_vec());
+        socket.send(msg).await?;
 
         if firmware_chunks.len() % 10 == 0 {
             debug!(
                 "[{}] {}/{} chunks left",
-                id,
+                esp_connect_info.id,
                 firmware_chunks.len(),
                 firmware_file.len() / UPDATE_CHUNK_SIZE
             );
@@ -95,16 +95,19 @@ pub async fn update_client(
             break;
         }
 
-        let frame = tokio::time::timeout(std::time::Duration::from_secs(10), ws.read_frame())
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(10), socket.recv())
             .await
             .or_else(|_| {
                 error!("Timeout while updating");
-                Err(WebSocketError::ConnectionClosed)
+                Err(anyhow::anyhow!("Timeout while updating"))
             })?;
 
-        let frame = frame?;
-        if frame.opcode == fastwebsockets::OpCode::Close {
-            return Ok(false);
+        let frame = frame.ok_or_else(|| anyhow::anyhow!("Frame option is none"))??;
+        match frame {
+            Message::Close(_) => {
+                return Ok(false);
+            }
+            _ => {}
         }
     }
 

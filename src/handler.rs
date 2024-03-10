@@ -1,23 +1,14 @@
-use crate::structs::{TimerResponse, UpdateStrategy};
+use crate::{
+    http::EspConnectInfo,
+    structs::{TimerResponse, UpdateStrategy},
+};
 use anyhow::Result;
-use base64::prelude::*;
-use fastwebsockets::{OpCode, WebSocketError};
-use hyper::upgrade::Upgraded;
-use hyper_util::rt::TokioIo;
-use std::io::BufRead;
-use tracing::{error, info, trace};
+use axum::extract::ws::{Message, WebSocket};
+use tracing::{debug, error, info, trace};
 
-pub async fn handle_client(
-    fut: fastwebsockets::upgrade::UpgradeFut,
-    id: u128,
-    version: &str,
-    build_time: u128,
-    chip: &str,
-) -> Result<(), WebSocketError> {
-    let mut ws = fastwebsockets::FragmentCollector::new(fut.await?);
-
+pub async fn handle_client(mut socket: WebSocket, esp_connect_info: &EspConnectInfo) -> Result<()> {
     if UpdateStrategy::should_update()
-        && super::updater::update_client(&mut ws, id, version, build_time, chip).await?
+        && super::updater::update_client(&mut socket, esp_connect_info).await?
     {
         return Ok(());
     }
@@ -35,12 +26,12 @@ pub async fn handle_client(
         tokio::select! {
             _ = hb_interval.tick() => {
                 if !hb_received {
-                    error!("Closing connection due to no heartbeat ({id})");
+                    error!("Closing connection due to no heartbeat ({})", esp_connect_info.id);
                     break;
                 }
 
-                let frame = fastwebsockets::Frame::new(true, OpCode::Ping, None, vec![].into());
-                ws.write_frame(frame).await?;
+                let msg = Message::Ping(vec![]);
+                socket.send(msg).await?;
                 hb_received = false;
             }
             _ = update_broadcast.recv() => {
@@ -48,14 +39,14 @@ pub async fn handle_client(
                     continue;
                 }
 
-                let res = super::updater::update_client(&mut ws, id, version, build_time, chip).await?;
+                let res = super::updater::update_client(&mut socket, esp_connect_info).await?;
                 if res {
                     break;
                 }
             }
-            frame = ws.read_frame() => {
-                let frame = frame?;
-                let res = on_ws_frame(&mut ws, id, build_time, chip, frame, &mut hb_received).await;
+            msg = socket.recv() => {
+                let msg = msg.ok_or_else(|| anyhow::anyhow!("Frame option is null"))??;
+                let res = on_ws_msg(&mut socket, msg, esp_connect_info, &mut hb_received).await;
 
                 match res {
                     Ok(true) => break,
@@ -71,39 +62,35 @@ pub async fn handle_client(
     Ok(())
 }
 
-async fn on_ws_frame(
-    ws: &mut fastwebsockets::FragmentCollector<TokioIo<Upgraded>>,
-    _id: u128,
-    _version_time: u128,
-    _chip: &str,
-    frame: fastwebsockets::Frame<'_>,
+async fn on_ws_msg(
+    socket: &mut WebSocket,
+    msg: Message,
+    _esp_connect_info: &EspConnectInfo,
     hb_received: &mut bool,
 ) -> Result<bool> {
-    match frame.opcode {
-        OpCode::Close => {
+    match msg {
+        Message::Close(_) => {
             info!("Closing connection");
             return Ok(true);
         }
-        OpCode::Pong => {
+        Message::Pong(_) => {
             *hb_received = true;
         }
-        OpCode::Text => {
-            let response: TimerResponse = serde_json::from_slice(&frame.payload).unwrap();
-            let res = on_timer_response(ws, response).await;
+        Message::Text(payload) => {
+            let response: TimerResponse = serde_json::from_str(&payload).unwrap();
+            let res = on_timer_response(socket, response).await;
             if let Err(e) = res {
                 error!("on_timer_response error: {e:?}");
             }
         }
+
         _ => {}
     }
 
     Ok(false)
 }
 
-async fn on_timer_response(
-    ws: &mut fastwebsockets::FragmentCollector<TokioIo<Upgraded>>,
-    response: TimerResponse,
-) -> Result<()> {
+async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> Result<()> {
     let (client, api_url) = crate::api::ApiClient::get_api_client()?;
 
     match response {
@@ -128,9 +115,8 @@ async fn on_timer_response(
                 },
             };
 
-            let response = serde_json::to_vec(&response).unwrap();
-            let frame = fastwebsockets::Frame::text(response.into());
-            ws.write_frame(frame).await?;
+            let response = serde_json::to_string(&response)?;
+            socket.send(Message::Text(response)).await?;
         }
         TimerResponse::Solve {
             solve_time,
@@ -171,16 +157,13 @@ async fn on_timer_response(
                 },
             };
 
-            let response = serde_json::to_vec(&resp).unwrap();
-            let frame = fastwebsockets::Frame::text(response.into());
-            ws.write_frame(frame).await?;
+            let response = serde_json::to_string(&resp)?;
+            socket.send(Message::Text(response)).await?;
         }
         TimerResponse::Logs { esp_id, logs } => {
             let mut msg_buf = String::new();
             for log in logs.iter().rev() {
-                let msg = BASE64_STANDARD.decode(&log.msg.as_bytes()).unwrap();
-                for line in msg.lines() {
-                    let line = line?;
+                for line in log.msg.lines() {
                     if line.is_empty() {
                         continue;
                     }
