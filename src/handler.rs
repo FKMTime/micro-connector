@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use tracing::{debug, error, info, trace};
+use tracing::{error, info, trace};
 
 pub async fn handle_client(mut socket: WebSocket, esp_connect_info: &EspConnectInfo) -> Result<()> {
     if UpdateStrategy::should_update()
@@ -77,7 +77,7 @@ async fn on_ws_msg(
             *hb_received = true;
         }
         Message::Text(payload) => {
-            let response: TimerResponse = serde_json::from_str(&payload).unwrap();
+            let response: TimerResponse = serde_json::from_str(&payload)?;
             let res = on_timer_response(socket, response).await;
             if let Err(e) = res {
                 error!("on_timer_response error: {e:?}");

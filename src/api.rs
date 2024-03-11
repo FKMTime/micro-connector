@@ -62,7 +62,7 @@ pub async fn get_competitor_info(
 pub async fn send_solve_entry(
     client: &reqwest::Client,
     api_url: &str,
-    time: u128,
+    time: i128,
     penalty: i64,
     solved_at: u128,
     esp_id: u64,

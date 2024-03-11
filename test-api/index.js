@@ -50,6 +50,14 @@ const requestListener = function(req, res) {
         });
         req.on('end', () => {
             let result = JSON.parse(body);
+            if (result.value <= 0) {
+                console.log("Delegate called (without time)");
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end('');
+                return;
+            }
+
             let competitor = people.find(person => person.cardId === result.competitorId);
             let judge = people.find(person => person.cardId === result.judgeId);
 
