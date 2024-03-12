@@ -16,7 +16,7 @@ pub enum TimerResponse {
         size: i64,
     },
     Solve {
-        solve_time: i128,
+        solve_time: u128,
         offset: i64,
         competitor_id: u128,
         judge_id: u128,

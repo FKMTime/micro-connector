@@ -62,7 +62,7 @@ pub async fn get_competitor_info(
 pub async fn send_solve_entry(
     client: &reqwest::Client,
     api_url: &str,
-    time: i128,
+    time: u128,
     penalty: i64,
     solved_at: u128,
     esp_id: u64,
@@ -72,8 +72,7 @@ pub async fn send_solve_entry(
     session_id: &str,
 ) -> Result<(), ApiErrorRes> {
     let time = time / 10; // Convert to centiseconds
-    let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)
-        .unwrap()
+    let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)?
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
     let url = format!("{api_url}/result/enter");

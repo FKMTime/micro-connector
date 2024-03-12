@@ -27,14 +27,18 @@ pub async fn update_client(
     for entry in firmware_dir.read_dir()? {
         let entry = entry?;
         let file_name = entry.file_name();
-        let name_split: Vec<&str> = file_name.to_str().unwrap().split('.').collect();
+        let name_split: Vec<&str> = file_name
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("file_name is none"))?
+            .split('.')
+            .collect();
 
         if name_split.len() != 4 || name_split[0] != esp_connect_info.chip {
             continue;
         }
 
         let version = name_split[1].to_string();
-        let build_time = u128::from_str_radix(name_split[2], 16).unwrap();
+        let build_time = u128::from_str_radix(name_split[2], 16)?;
         if build_time > latest_firmware.1 {
             latest_firmware = (Some(entry.path()), build_time, version);
         }
@@ -53,7 +57,7 @@ pub async fn update_client(
     );
     debug!("Firmware file: {:?}", latest_firmware.0);
 
-    let firmware_file = tokio::fs::read(latest_firmware.0.unwrap()).await?;
+    let firmware_file = tokio::fs::read(latest_firmware.0.expect("Cant be none")).await?;
     let start_update_resp = TimerResponse::StartUpdate {
         esp_id: esp_connect_info.id,
         version: latest_firmware.2,
