@@ -72,7 +72,11 @@ pub async fn send_solve_entry(
     session_id: &str,
 ) -> Result<(), ApiErrorRes> {
     let time = time / 10; // Convert to centiseconds
-    let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)?
+    let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)
+        .ok_or_else(|| ApiErrorRes {
+            message: format!("Error parsing timestamp"),
+            should_reset_time: false,
+        })?
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
     let url = format!("{api_url}/result/enter");
