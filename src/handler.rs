@@ -173,6 +173,13 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
 
             info!("LOGS:\n{}", msg_buf);
         }
+        TimerResponse::Battery {
+            esp_id,
+            level,
+            voltage,
+        } => {
+            trace!("Battery: {} {} {}", esp_id, level, voltage);
+        }
         _ => {
             trace!("Not implemented timer response received: {:?}", response);
         }

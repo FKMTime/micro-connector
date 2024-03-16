@@ -50,6 +50,11 @@ pub enum TimerResponse {
         esp_id: u64,
         logs: Vec<LogData>,
     },
+    Battery {
+        esp_id: u64,
+        level: f64,
+        voltage: f64,
+    },
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Deserialize)]
