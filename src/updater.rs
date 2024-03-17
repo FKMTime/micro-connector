@@ -8,7 +8,7 @@ use std::{path::PathBuf, time::Duration};
 use tokio::select;
 use tracing::{debug, error, info};
 
-const UPDATE_CHUNK_SIZE: usize = 1024 * 6;
+const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 const GITHUB_UPDATE_INTERVAL: u64 = 90000;
 const UPDATE_STRATEGY_INTERVAL: u64 = 60000;
 
