@@ -119,6 +119,33 @@ pub async fn send_solve_entry(
     Ok(())
 }
 
+pub async fn send_battery_status(
+    client: &reqwest::Client,
+    api_url: &str,
+    esp_id: u64,
+    battery: f64,
+) -> Result<()> {
+    let battery: u8 = battery.round() as u8;
+
+    let url = format!("{api_url}/device/battery");
+    let body = serde_json::json!({
+        "espId": esp_id,
+        "batteryPercentage": battery,
+    });
+
+    let res = client.post(&url).json(&body).send().await?;
+    let success = res.status().is_success();
+    let status_code = res.status().as_u16();
+    let text = res.text().await.unwrap_or_default();
+
+    trace!("Battery status response (SC: {status_code}): {}", text);
+    if !success {
+        anyhow::bail!("Error sending solve entry (not success): {}", text);
+    }
+
+    Ok(())
+}
+
 // It returns (should_update, use_stable_releases)
 pub async fn should_update_devices(
     client: &reqwest::Client,

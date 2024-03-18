@@ -178,6 +178,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
             level,
             voltage,
         } => {
+            crate::api::send_battery_status(&client, &api_url, 543543, 68.3215).await?;
             trace!("Battery: {} {} {}", esp_id, level, voltage);
         }
         _ => {

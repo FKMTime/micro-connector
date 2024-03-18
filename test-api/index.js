@@ -71,6 +71,23 @@ const requestListener = function(req, res) {
             res.writeHead(200);
             res.end('');
         });
+    } else if (req.url === "/device/battery") {
+        let body = '';
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+        req.on('end', () => {
+            let result = JSON.parse(body);
+            if (!result.hasOwnProperty('espId') || !result.hasOwnProperty('batteryPercentage')) {
+                res.writeHead(400);
+                res.end('Invalid request');
+                return;
+            }
+
+            console.log("Battery percentage: " + result.batteryPercentage + "% (ESP ID: " + result.espId + ")");
+            res.writeHead(200);
+            res.end('');
+        });
     } else if (req.url === "/competition/should-update") {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ shouldUpdate: true, useStableReleases: false }));
