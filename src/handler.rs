@@ -102,7 +102,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
                         card_id,
                         esp_id,
                         country_iso2: info.country_iso2.unwrap_or_default(),
-                        display: format!("{} ID: {}", info.name, info.registrant_id.unwrap_or(-1)),
+                        display: format!("{} ({})", info.name, info.registrant_id.unwrap_or(-1)),
                         can_compete: info.can_compete,
                     };
 
