@@ -17,7 +17,7 @@ pub enum TimerResponse {
     },
     Solve {
         solve_time: u128,
-        offset: i64,
+        penalty: i64,
         competitor_id: u128,
         judge_id: u128,
         esp_id: u64,

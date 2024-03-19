@@ -140,7 +140,7 @@ pub async fn send_battery_status(
 
     trace!("Battery status response (SC: {status_code}): {}", text);
     if !success {
-        anyhow::bail!("Error sending solve entry (not success): {}", text);
+        anyhow::bail!("Error sending battery status (not success): {}", text);
     }
 
     Ok(())

@@ -120,7 +120,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
         }
         TimerResponse::Solve {
             solve_time,
-            offset,
+            penalty,
             competitor_id: solver_id,
             judge_id,
             esp_id,
@@ -128,13 +128,13 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
             session_id,
             delegate,
         } => {
-            trace!("Solve: {solve_time} ({offset}) {solver_id} {esp_id} {timestamp} {session_id} {delegate}");
+            trace!("Solve: {solve_time} ({penalty}) {solver_id} {esp_id} {timestamp} {session_id} {delegate}");
 
             let res = crate::api::send_solve_entry(
                 &client,
                 &api_url,
                 solve_time,
-                offset,
+                penalty,
                 timestamp,
                 esp_id,
                 judge_id,
