@@ -160,6 +160,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
             timestamp,
             session_id,
             delegate,
+            inspection_time,
         } => {
             trace!("Solve: {solve_time} ({penalty}) {solver_id} {esp_id} {timestamp} {session_id} {delegate}");
 
@@ -174,6 +175,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
                 solver_id,
                 delegate,
                 &session_id,
+                inspection_time,
             )
             .await;
 

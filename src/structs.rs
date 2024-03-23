@@ -26,6 +26,7 @@ pub enum TimerResponse {
         timestamp: u128,
         session_id: String, // UUID
         delegate: bool,
+        inspection_time: u128,
     },
     SolveConfirm {
         esp_id: u32,

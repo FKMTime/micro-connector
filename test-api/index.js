@@ -2,7 +2,7 @@ const http = require('http');
 
 const people = [
     {
-        id: 1,
+        id: "dsadsadsa-vcxvcxvcx-rerewer",
         cardId: 3004425529,
         registrantId: 1,
         name: "Filip Sciurka",
@@ -12,7 +12,7 @@ const people = [
         canCompete: true
     },
     {
-        id: 2,
+        id: "different-uuid",
         cardId: 2156233370,
         name: "Kim Joon",
         wcaId: null,
