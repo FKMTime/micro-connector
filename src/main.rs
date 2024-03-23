@@ -14,6 +14,8 @@ mod updater;
 
 pub static NEW_BUILD_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> =
     OnceCell::const_new();
+pub static REFRESH_DEVICE_SETTINGS_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> =
+    OnceCell::const_new();
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -37,6 +39,9 @@ async fn main() -> Result<()> {
     let (tx, _) = tokio::sync::broadcast::channel::<()>(1);
     _ = NEW_BUILD_BROADCAST.set(tx.clone());
 
+    let (tx2, _) = tokio::sync::broadcast::channel::<()>(1);
+    _ = REFRESH_DEVICE_SETTINGS_BROADCAST.set(tx2.clone());
+
     let comp_status = structs::SharedCompetitionStatus::new(tokio::sync::RwLock::new(
         structs::CompetitionStatus {
             should_update: false,
@@ -45,7 +50,7 @@ async fn main() -> Result<()> {
         },
     ));
 
-    updater::spawn_watchers(tx, comp_status.clone()).await?;
+    updater::spawn_watchers(tx, tx2, comp_status.clone()).await?;
     tokio::task::spawn(http::start_server(port, comp_status.clone()));
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;

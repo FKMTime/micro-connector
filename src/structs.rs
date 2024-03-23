@@ -48,6 +48,10 @@ pub enum TimerResponse {
         country_iso2: String,
         can_compete: bool,
     },
+    DeviceSettings {
+        esp_id: u32,
+        use_inspection: bool,
+    },
     Logs {
         esp_id: u32,
         logs: Vec<LogData>,

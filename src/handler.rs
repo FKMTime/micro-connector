@@ -16,10 +16,16 @@ pub async fn handle_client(
     {
         return Ok(());
     }
+    send_device_status(&mut socket, esp_connect_info, &comp_status).await?;
 
     let mut update_broadcast = super::NEW_BUILD_BROADCAST
         .get()
         .expect("build broadcast channel not set")
+        .subscribe();
+
+    let mut update_device_settings_broadcast = super::REFRESH_DEVICE_SETTINGS_BROADCAST
+        .get()
+        .expect("device settings broadcast channel not set")
         .subscribe();
 
     let interval_time = std::time::Duration::from_secs(5);
@@ -48,6 +54,9 @@ pub async fn handle_client(
                     break;
                 }
             }
+            _ = update_device_settings_broadcast.recv() => {
+                send_device_status(&mut socket, esp_connect_info, &comp_status).await?;
+            }
             msg = socket.recv() => {
                 let msg = msg.ok_or_else(|| anyhow::anyhow!("Frame option is null"))??;
                 let res = on_ws_msg(&mut socket, msg, esp_connect_info, &mut hb_received).await;
@@ -61,6 +70,26 @@ pub async fn handle_client(
                 }
             }
         }
+    }
+
+    Ok(())
+}
+
+async fn send_device_status(
+    socket: &mut WebSocket,
+    esp_connect_info: &EspConnectInfo,
+    comp_status: &SharedCompetitionStatus,
+) -> Result<()> {
+    let comp_status = comp_status.read().await;
+    let settings = comp_status.devices_settings.get(&esp_connect_info.id);
+    if let Some(settings) = settings {
+        let frame = TimerResponse::DeviceSettings {
+            esp_id: esp_connect_info.id,
+            use_inspection: settings.use_inspection,
+        };
+
+        let response = serde_json::to_string(&frame)?;
+        socket.send(Message::Text(response)).await?;
     }
 
     Ok(())

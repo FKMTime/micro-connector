@@ -7,7 +7,7 @@ use crate::structs::CompetitionStatusResp;
 #[derive(serde::Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct CompetitorInfo {
-    pub id: i64,
+    pub id: String,
     pub registrant_id: Option<i64>,
     pub name: String,
     pub wca_id: Option<String>,
@@ -159,11 +159,9 @@ pub async fn get_competition_status(
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
 
-    //trace!("Competition status response (SC: {status_code}): {}", text);
+    trace!("Competition status response (SC: {status_code}): {}", text);
     if !success {
-        return Err(anyhow::anyhow!(
-            "Cannot get competition status (SC: {status_code}): {text}"
-        ));
+        return Err(anyhow::anyhow!("Cannot get competition status"));
     }
 
     let json: CompetitionStatusResp = serde_json::from_str(&text)?;

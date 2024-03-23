@@ -120,6 +120,7 @@ pub async fn update_client(
 
 pub async fn spawn_watchers(
     broadcaster: tokio::sync::broadcast::Sender<()>,
+    device_settings_broadcaster: tokio::sync::broadcast::Sender<()>,
     comp_status: SharedCompetitionStatus,
 ) -> Result<()> {
     let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
@@ -153,7 +154,7 @@ pub async fn spawn_watchers(
                     }
                 }
                 _ = comp_status_interval.tick() => {
-                    let res = comp_status_watcher(&client, &api_url, &comp_status).await;
+                    let res = comp_status_watcher(&client, &api_url, &comp_status, &device_settings_broadcaster).await;
                     if let Err(e) = res {
                         error!("Error in update strategy watcher: {:?}", e);
                     }
@@ -221,6 +222,7 @@ async fn comp_status_watcher(
     client: &reqwest::Client,
     api_url: &str,
     comp_status: &SharedCompetitionStatus,
+    device_settings_broadcaster: &tokio::sync::broadcast::Sender<()>,
 ) -> Result<()> {
     let comp_status_res = crate::api::get_competition_status(client, api_url).await?;
     let mut comp_status = comp_status.write().await;
@@ -228,17 +230,24 @@ async fn comp_status_watcher(
     comp_status.should_update = comp_status_res.should_update;
     comp_status.release_channel = comp_status_res.release_channel;
 
-    comp_status.devices_settings.clear();
+    let mut changed = false;
     for room in comp_status_res.rooms {
         for device in room.devices {
-            comp_status.devices_settings.insert(
+            let old = comp_status.devices_settings.insert(
                 device,
                 crate::structs::CompetitionDeviceSettings {
                     use_inspection: room.use_inspection,
                 },
             );
+
+            if old.is_none() || old.unwrap().use_inspection != room.use_inspection {
+                changed = true;
+            }
         }
     }
 
+    if changed {
+        _ = device_settings_broadcaster.send(());
+    }
     Ok(())
 }
