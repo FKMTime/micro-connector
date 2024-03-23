@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use tracing::{error, info, trace};
+use tracing::{debug, error, info, trace};
 
 pub async fn handle_client(
     mut socket: WebSocket,
@@ -82,16 +82,22 @@ async fn send_device_status(
 ) -> Result<()> {
     let comp_status = comp_status.read().await;
     let settings = comp_status.devices_settings.get(&esp_connect_info.id);
-    if let Some(settings) = settings {
-        let frame = TimerResponse::DeviceSettings {
+    let frame = if let Some(settings) = settings {
+        TimerResponse::DeviceSettings {
             esp_id: esp_connect_info.id,
             use_inspection: settings.use_inspection,
-        };
+            added: true,
+        }
+    } else {
+        TimerResponse::DeviceSettings {
+            esp_id: esp_connect_info.id,
+            use_inspection: false,
+            added: false,
+        }
+    };
 
-        let response = serde_json::to_string(&frame)?;
-        socket.send(Message::Text(response)).await?;
-    }
-
+    let response = serde_json::to_string(&frame)?;
+    socket.send(Message::Text(response)).await?;
     Ok(())
 }
 
@@ -215,6 +221,10 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
         } => {
             crate::api::send_battery_status(&client, &api_url, esp_id, level).await?;
             trace!("Battery: {} {} {}", esp_id, level, voltage);
+        }
+        TimerResponse::Add { esp_id } => {
+            crate::api::add_device(&client, &api_url, esp_id).await?;
+            trace!("Add device: {}", esp_id);
         }
         _ => {
             trace!("Not implemented timer response received: {:?}", response);

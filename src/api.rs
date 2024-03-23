@@ -170,6 +170,25 @@ pub async fn get_competition_status(
     Ok(json)
 }
 
+pub async fn add_device(client: &reqwest::Client, api_url: &str, esp_id: u32) -> Result<()> {
+    let url = format!("{api_url}/device/connect");
+    let body = serde_json::json!({
+        "espId": esp_id,
+    });
+
+    let res = client.post(&url).json(&body).send().await?;
+    let success = res.status().is_success();
+    let status_code = res.status().as_u16();
+    let text = res.text().await.unwrap_or_default();
+
+    trace!("Add device response (SC: {status_code}): {}", text);
+    if !success {
+        anyhow::bail!("Error adding device (not success): {}", text);
+    }
+
+    Ok(())
+}
+
 static API_URL: OnceCell<String> = OnceCell::const_new();
 static API_CLIENT: OnceCell<reqwest::Client> = OnceCell::const_new();
 pub struct ApiClient {}

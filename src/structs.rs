@@ -52,6 +52,7 @@ pub enum TimerResponse {
     DeviceSettings {
         esp_id: u32,
         use_inspection: bool,
+        added: bool,
     },
     Logs {
         esp_id: u32,
@@ -61,6 +62,9 @@ pub enum TimerResponse {
         esp_id: u32,
         level: f64,
         voltage: f64,
+    },
+    Add {
+        esp_id: u32,
     },
 }
 

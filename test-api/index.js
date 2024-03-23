@@ -22,6 +22,8 @@ const people = [
     }
 ];
 
+let devices = [];
+
 const requestListener = function(req, res) {
     console.log(req.method, req.url);
     let splitUrl = req.url.split('/');
@@ -88,9 +90,34 @@ const requestListener = function(req, res) {
             res.writeHead(200);
             res.end('');
         });
+    } else if (req.url === "/device/connect") {
+        let body = '';
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+        req.on('end', () => {
+            let result = JSON.parse(body);
+            if (!result.hasOwnProperty('espId')) {
+                res.writeHead(400);
+                res.end('Invalid request');
+                return;
+            }
+
+            console.log("Device connected (ESP ID: " + result.espId + ")");
+            devices.push(result.espId);
+            res.writeHead(200);
+            res.end('');
+        });
     } else if (req.url === "/competition/status") {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ shouldUpdate: true, releaseChannel: "STABLE", devices: [], rooms: [] }));
+        res.end(JSON.stringify({
+            shouldUpdate: true, releaseChannel: "STABLE", devices, rooms: [{
+                id: "dsadsa",
+                name: "Room 1",
+                useInspection: true,
+                devices
+            }]
+        }));
     } else {
         res.writeHead(404);
         res.end('Not Found');

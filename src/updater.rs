@@ -231,6 +231,16 @@ async fn comp_status_watcher(
     comp_status.release_channel = comp_status_res.release_channel;
 
     let mut changed = false;
+
+    // delete devices that are not in the new status
+    let devices_clone = comp_status.devices_settings.clone();
+    for (k, _) in devices_clone {
+        if !comp_status_res.rooms.iter().any(|r| r.devices.contains(&k)) {
+            comp_status.devices_settings.remove(&k);
+            changed = true;
+        }
+    }
+
     for room in comp_status_res.rooms {
         for device in room.devices {
             let old = comp_status.devices_settings.insert(
