@@ -16,7 +16,7 @@ fn default_chip() -> String {
 
 #[derive(Debug, Deserialize)]
 pub struct EspConnectInfo {
-    pub id: u64,
+    pub id: u32,
 
     #[serde(rename = "ver")]
     pub version: String,

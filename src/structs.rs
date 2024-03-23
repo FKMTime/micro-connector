@@ -10,7 +10,7 @@ pub struct LogData {
 #[serde(rename_all = "snake_case")]
 pub enum TimerResponse {
     StartUpdate {
-        esp_id: u64,
+        esp_id: u32,
         version: String,
         build_time: u128, // NOT USED
         size: i64,
@@ -20,38 +20,38 @@ pub enum TimerResponse {
         penalty: i64,
         competitor_id: u128,
         judge_id: u128,
-        esp_id: u64,
+        esp_id: u32,
         timestamp: u128,
         session_id: String, // UUID
         delegate: bool,
     },
     SolveConfirm {
-        esp_id: u64,
+        esp_id: u32,
         competitor_id: u128,
         session_id: String,
     },
     ApiError {
-        esp_id: u64,
+        esp_id: u32,
         error: String,
         should_reset_time: bool,
     },
     CardInfoRequest {
         card_id: u128,
-        esp_id: u64,
+        esp_id: u32,
     },
     CardInfoResponse {
         card_id: u128,
-        esp_id: u64,
+        esp_id: u32,
         display: String,
         country_iso2: String,
         can_compete: bool,
     },
     Logs {
-        esp_id: u64,
+        esp_id: u32,
         logs: Vec<LogData>,
     },
     Battery {
-        esp_id: u64,
+        esp_id: u32,
         level: f64,
         voltage: f64,
     },

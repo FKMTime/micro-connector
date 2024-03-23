@@ -65,7 +65,7 @@ pub async fn send_solve_entry(
     time: u128,
     penalty: i64,
     solved_at: u128,
-    esp_id: u64,
+    esp_id: u32,
     judge_id: u128,
     competitor_id: u128,
     is_delegate: bool,
@@ -122,7 +122,7 @@ pub async fn send_solve_entry(
 pub async fn send_battery_status(
     client: &reqwest::Client,
     api_url: &str,
-    esp_id: u64,
+    esp_id: u32,
     battery: f64,
 ) -> Result<()> {
     let battery: u8 = battery.round() as u8;
