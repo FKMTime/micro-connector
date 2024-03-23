@@ -1,6 +1,6 @@
 use crate::{
     http::EspConnectInfo,
-    structs::{TimerResponse, UpdateStrategy},
+    structs::{SharedCompetitionStatus, TimerResponse},
 };
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
@@ -10,7 +10,7 @@ use tracing::{debug, error, info};
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 const GITHUB_UPDATE_INTERVAL: u64 = 90000;
-const UPDATE_STRATEGY_INTERVAL: u64 = 60000;
+const UPDATE_STRATEGY_INTERVAL: u64 = 15000;
 
 /// Returns true if client was updated
 pub async fn update_client(
@@ -118,7 +118,10 @@ pub async fn update_client(
     Ok(true)
 }
 
-pub async fn spawn_watchers(broadcaster: tokio::sync::broadcast::Sender<()>) -> Result<()> {
+pub async fn spawn_watchers(
+    broadcaster: tokio::sync::broadcast::Sender<()>,
+    comp_status: SharedCompetitionStatus,
+) -> Result<()> {
     let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
@@ -127,7 +130,7 @@ pub async fn spawn_watchers(broadcaster: tokio::sync::broadcast::Sender<()>) -> 
     let mut build_interval = tokio::time::interval(Duration::from_secs(1));
     let mut github_releases_interval =
         tokio::time::interval(Duration::from_millis(GITHUB_UPDATE_INTERVAL));
-    let mut update_strategy_interval =
+    let mut comp_status_interval =
         tokio::time::interval(Duration::from_millis(UPDATE_STRATEGY_INTERVAL));
 
     tokio::task::spawn(async move {
@@ -140,17 +143,17 @@ pub async fn spawn_watchers(broadcaster: tokio::sync::broadcast::Sender<()>) -> 
                     }
                 }
                 _ = github_releases_interval.tick() => {
-                    if !UpdateStrategy::should_update() {
+                    if !comp_status.read().await.should_update {
                         continue;
                     }
 
-                    let res = github_releases_watcher(&client, &firmware_dir).await;
+                    let res = github_releases_watcher(&client, &firmware_dir, &comp_status).await;
                     if let Err(e) = res {
                         error!("Error in github releases watcher: {:?}", e);
                     }
                 }
-                _ = update_strategy_interval.tick() => {
-                    let res = update_strategy_watcher(&client, &api_url).await;
+                _ = comp_status_interval.tick() => {
+                    let res = comp_status_watcher(&client, &api_url, &comp_status).await;
                     if let Err(e) = res {
                         error!("Error in update strategy watcher: {:?}", e);
                     }
@@ -194,9 +197,12 @@ async fn build_watcher(
     Ok(())
 }
 
-async fn github_releases_watcher(client: &reqwest::Client, firmware_dir: &PathBuf) -> Result<()> {
-    let update_strategy = UpdateStrategy::get();
-    let releases = crate::github::get_releases(client, update_strategy).await?;
+async fn github_releases_watcher(
+    client: &reqwest::Client,
+    firmware_dir: &PathBuf,
+    comp_status: &SharedCompetitionStatus,
+) -> Result<()> {
+    let releases = crate::github::get_releases(client, comp_status).await?;
 
     for release in releases {
         let release_path = firmware_dir.join(&release.name);
@@ -211,14 +217,28 @@ async fn github_releases_watcher(client: &reqwest::Client, firmware_dir: &PathBu
     Ok(())
 }
 
-async fn update_strategy_watcher(client: &reqwest::Client, api_url: &str) -> Result<()> {
-    let should_update = crate::api::should_update_devices(client, api_url).await?;
-    let update_strategy = match should_update {
-        (true, true) => UpdateStrategy::Stable,
-        (true, false) => UpdateStrategy::Prerelease,
-        (false, _) => UpdateStrategy::Disabled,
-    };
+async fn comp_status_watcher(
+    client: &reqwest::Client,
+    api_url: &str,
+    comp_status: &SharedCompetitionStatus,
+) -> Result<()> {
+    let comp_status_res = crate::api::get_competition_status(client, api_url).await?;
+    let mut comp_status = comp_status.write().await;
 
-    UpdateStrategy::set(update_strategy);
+    comp_status.should_update = comp_status_res.should_update;
+    comp_status.release_channel = comp_status_res.release_channel;
+
+    comp_status.devices_settings.clear();
+    for room in comp_status_res.rooms {
+        for device in room.devices {
+            comp_status.devices_settings.insert(
+                device,
+                crate::structs::CompetitionDeviceSettings {
+                    use_inspection: room.use_inspection,
+                },
+            );
+        }
+    }
+
     Ok(())
 }

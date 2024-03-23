@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::Deserialize;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -65,36 +67,44 @@ pub struct GithubReleaseItem {
     pub url: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum UpdateStrategy {
-    Disabled,
+pub type SharedCompetitionStatus = std::sync::Arc<tokio::sync::RwLock<CompetitionStatus>>;
+
+#[derive(Debug, Clone)]
+pub struct CompetitionStatus {
+    pub should_update: bool,
+    pub release_channel: ReleaseChannel,
+    pub devices_settings: HashMap<u32, CompetitionDeviceSettings>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompetitionDeviceSettings {
+    pub use_inspection: bool,
+}
+
+// API RESPONSE
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompetitionStatusResp {
+    pub should_update: bool,
+    pub release_channel: ReleaseChannel,
+    pub devices: Vec<u32>,
+    pub rooms: Vec<Room>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub enum ReleaseChannel {
+    #[serde(rename = "STABLE")]
     Stable,
+
+    #[serde(rename = "PRE_RELEASE")]
     Prerelease,
 }
 
-impl UpdateStrategy {
-    pub fn get() -> Self {
-        crate::UPDATE_STRATEGY
-            .get()
-            .expect("Should be set")
-            .read()
-            .map_or_else(|_| UpdateStrategy::Disabled, |x| x.clone())
-    }
-
-    pub fn should_update() -> bool {
-        match Self::get() {
-            UpdateStrategy::Disabled => false,
-            UpdateStrategy::Stable => true,
-            UpdateStrategy::Prerelease => true,
-        }
-    }
-
-    pub fn set(strategy: UpdateStrategy) {
-        crate::UPDATE_STRATEGY
-            .get()
-            .expect("Should be set")
-            .write()
-            .map(|mut x| *x = strategy)
-            .expect("Should write");
-    }
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Room {
+    pub id: String,
+    pub name: String,
+    pub use_inspection: bool,
+    pub devices: Vec<u32>,
 }

@@ -1,13 +1,17 @@
 use crate::{
     http::EspConnectInfo,
-    structs::{TimerResponse, UpdateStrategy},
+    structs::{SharedCompetitionStatus, TimerResponse},
 };
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
 use tracing::{error, info, trace};
 
-pub async fn handle_client(mut socket: WebSocket, esp_connect_info: &EspConnectInfo) -> Result<()> {
-    if UpdateStrategy::should_update()
+pub async fn handle_client(
+    mut socket: WebSocket,
+    esp_connect_info: &EspConnectInfo,
+    comp_status: SharedCompetitionStatus,
+) -> Result<()> {
+    if comp_status.read().await.should_update
         && super::updater::update_client(&mut socket, esp_connect_info).await?
     {
         return Ok(());
@@ -35,7 +39,7 @@ pub async fn handle_client(mut socket: WebSocket, esp_connect_info: &EspConnectI
                 hb_received = false;
             }
             _ = update_broadcast.recv() => {
-                if !UpdateStrategy::should_update() {
+                if !comp_status.read().await.should_update {
                     continue;
                 }
 

@@ -2,6 +2,8 @@ use anyhow::{anyhow, Result};
 use tokio::sync::OnceCell;
 use tracing::{error, trace};
 
+use crate::structs::CompetitionStatusResp;
+
 #[derive(serde::Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct CompetitorInfo {
@@ -146,37 +148,26 @@ pub async fn send_battery_status(
     Ok(())
 }
 
-// It returns (should_update, use_stable_releases)
-pub async fn should_update_devices(
+pub async fn get_competition_status(
     client: &reqwest::Client,
     api_url: &str,
-) -> Result<(bool, bool)> {
-    let url = format!("{api_url}/competition/should-update");
+) -> Result<CompetitionStatusResp> {
+    let url = format!("{api_url}/competition/status");
 
     let res = client.get(&url).send().await?;
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
 
-    trace!("Should update response (SC: {status_code}): {}", text);
+    //trace!("Competition status response (SC: {status_code}): {}", text);
     if !success {
-        return Err(anyhow::anyhow!("Cannot get 'should-update' status"));
+        return Err(anyhow::anyhow!(
+            "Cannot get competition status (SC: {status_code}): {text}"
+        ));
     }
 
-    let json: serde_json::Value = serde_json::from_str(&text)?;
-    let should_update = json
-        .get("shouldUpdate")
-        .ok_or_else(|| anyhow::anyhow!("Field not found"))?
-        .as_bool()
-        .ok_or_else(|| anyhow::anyhow!("Cannot convert to boolean"))?;
-
-    let use_stable_releases = json
-        .get("useStableReleases")
-        .ok_or_else(|| anyhow::anyhow!("Field not found"))?
-        .as_bool()
-        .ok_or_else(|| anyhow::anyhow!("Cannot convert to boolean"))?;
-
-    Ok((should_update, use_stable_releases))
+    let json: CompetitionStatusResp = serde_json::from_str(&text)?;
+    Ok(json)
 }
 
 static API_URL: OnceCell<String> = OnceCell::const_new();

@@ -1,6 +1,6 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
-use std::sync::{Arc, RwLock};
-use structs::UpdateStrategy;
 use tokio::sync::OnceCell;
 use tracing::info;
 
@@ -14,13 +14,10 @@ mod updater;
 
 pub static NEW_BUILD_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> =
     OnceCell::const_new();
-pub static UPDATE_STRATEGY: OnceCell<Arc<RwLock<UpdateStrategy>>> = OnceCell::const_new();
 
 #[tokio::main]
 async fn main() -> Result<()> {
     _ = dotenvy::dotenv();
-    _ = UPDATE_STRATEGY.set(Arc::new(RwLock::new(UpdateStrategy::Disabled)));
-
     tracing_subscriber::fmt::init();
 
     let port: u16 = std::env::var("PORT")
@@ -40,8 +37,16 @@ async fn main() -> Result<()> {
     let (tx, _) = tokio::sync::broadcast::channel::<()>(1);
     _ = NEW_BUILD_BROADCAST.set(tx.clone());
 
-    updater::spawn_watchers(tx).await?;
-    tokio::task::spawn(http::start_server(port));
+    let comp_status = structs::SharedCompetitionStatus::new(tokio::sync::RwLock::new(
+        structs::CompetitionStatus {
+            should_update: false,
+            release_channel: structs::ReleaseChannel::Stable,
+            devices_settings: HashMap::new(),
+        },
+    ));
+
+    updater::spawn_watchers(tx, comp_status.clone()).await?;
+    tokio::task::spawn(http::start_server(port, comp_status.clone()));
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     tokio::select! {

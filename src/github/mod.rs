@@ -1,4 +1,3 @@
-use crate::structs::UpdateStrategy;
 use anyhow::{Context, Result};
 
 mod structs;
@@ -9,21 +8,20 @@ const GH_REPO: &str = "fkm-timer";
 
 pub async fn get_releases(
     client: &reqwest::Client,
-    update_strategy: UpdateStrategy,
+    comp_status: &crate::structs::SharedCompetitionStatus,
 ) -> Result<Vec<structs::ReleaseAssetItem>> {
-    if update_strategy == UpdateStrategy::Disabled {
-        return Err(anyhow::anyhow!("Udpdates disabled!"));
+    let comp_status = comp_status.read().await;
+
+    if !comp_status.should_update {
+        return Err(anyhow::anyhow!("Updates disabled!"));
     }
 
-    let url = match update_strategy {
-        UpdateStrategy::Stable => {
+    let url = match comp_status.release_channel {
+        crate::structs::ReleaseChannel::Stable => {
             format!("{GITHUB_API_URL}/repos/{GH_OWNER}/{GH_REPO}/releases/latest")
         }
-        UpdateStrategy::Prerelease => {
+        crate::structs::ReleaseChannel::Prerelease => {
             format!("{GITHUB_API_URL}/repos/{GH_OWNER}/{GH_REPO}/releases")
-        }
-        UpdateStrategy::Disabled => {
-            return Err(anyhow::anyhow!("Udpdates disabled!"));
         }
     };
 
@@ -33,21 +31,18 @@ pub async fn get_releases(
         .send()
         .await?;
 
-    let release: structs::GithubRelease = match update_strategy {
-        UpdateStrategy::Stable => res
+    let release: structs::GithubRelease = match comp_status.release_channel {
+        crate::structs::ReleaseChannel::Stable => res
             .json()
             .await
             .context("No releases found or failed to parse latest release")?,
-        UpdateStrategy::Prerelease => {
+        crate::structs::ReleaseChannel::Prerelease => {
             let json: Vec<structs::GithubRelease> = res.json().await?;
             json.iter()
                 .filter(|r| r.prerelease)
                 .next()
                 .ok_or_else(|| anyhow::anyhow!("No releases found!"))?
                 .to_owned()
-        }
-        UpdateStrategy::Disabled => {
-            return Err(anyhow::anyhow!("Udpdates disabled!"));
         }
     };
 

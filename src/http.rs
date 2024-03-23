@@ -1,7 +1,8 @@
 use crate::handler::handle_client;
+use crate::structs::SharedCompetitionStatus;
 use anyhow::Result;
 use axum::extract::ws::WebSocket;
-use axum::extract::Query;
+use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 use axum::Router;
 use axum::{extract::WebSocketUpgrade, routing::get};
@@ -28,13 +29,17 @@ pub struct EspConnectInfo {
     pub build_time: String,
 }
 
-pub async fn start_server(port: u16) -> Result<()> {
+pub async fn start_server(port: u16, comp_status: SharedCompetitionStatus) -> Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     info!("Server started, listening on 0.0.0.0:{port}");
 
-    let app = Router::new().route("/", get(ws_handler)).layer(
-        TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default().include_headers(true)),
-    );
+    let app = Router::new()
+        .route("/", get(ws_handler))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+        )
+        .with_state(comp_status);
 
     axum::serve(listener, app.into_make_service()).await?;
     Ok(())
@@ -43,14 +48,19 @@ pub async fn start_server(port: u16) -> Result<()> {
 async fn ws_handler(
     ws: WebSocketUpgrade,
     Query(esp_connect_info): Query<EspConnectInfo>,
+    State(comp_status): State<SharedCompetitionStatus>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info))
+    ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info, comp_status))
 }
 
-async fn handle_socket(socket: WebSocket, esp_connect_info: EspConnectInfo) {
+async fn handle_socket(
+    socket: WebSocket,
+    esp_connect_info: EspConnectInfo,
+    comp_status: SharedCompetitionStatus,
+) {
     info!("Client connected: {esp_connect_info:?}");
 
-    let res = handle_client(socket, &esp_connect_info).await;
+    let res = handle_client(socket, &esp_connect_info, comp_status).await;
     if let Err(e) = res {
         error!("Handle client error: {e}");
     }
