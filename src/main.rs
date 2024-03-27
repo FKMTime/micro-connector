@@ -1,16 +1,17 @@
-use std::collections::HashMap;
-
 use anyhow::Result;
+use std::collections::HashMap;
 use tokio::sync::OnceCell;
 use tracing::info;
 
 mod api;
+mod bluetooth;
 mod github;
 mod handler;
 mod http;
 mod mdns;
 mod structs;
 mod updater;
+mod watchers;
 
 pub static NEW_BUILD_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> =
     OnceCell::const_new();
@@ -50,7 +51,8 @@ async fn main() -> Result<()> {
         },
     ));
 
-    updater::spawn_watchers(tx, tx2, comp_status.clone()).await?;
+    bluetooth::start_bluetooth_task().await?;
+    watchers::spawn_watchers(tx, tx2, comp_status.clone()).await?;
     tokio::task::spawn(http::start_server(port, comp_status.clone()));
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
