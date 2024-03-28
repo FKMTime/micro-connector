@@ -29,14 +29,22 @@ pub async fn get_competitor_info(
     card_id: u128,
 ) -> Result<CompetitorInfo, ApiErrorRes> {
     let url = format!("{api_url}/person/card/{card_id}");
-    let res = client.get(&url).send().await.map_err(|e| {
-        error!("Error getting competitor info (send error): {}", e);
+    let res = client
+        .get(&url)
+        .header(
+            "Authorization",
+            crate::api::ApiClient::get_fkm_api_token().expect("API_TOKEN not set"),
+        )
+        .send()
+        .await
+        .map_err(|e| {
+            error!("Error getting competitor info (send error): {}", e);
 
-        ApiErrorRes {
-            message: format!("Error getting competitor info"),
-            should_reset_time: false,
-        }
-    })?;
+            ApiErrorRes {
+                message: format!("Error getting competitor info"),
+                should_reset_time: false,
+            }
+        })?;
 
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
@@ -95,14 +103,23 @@ pub async fn send_solve_entry(
         "inspectionTime": inspection_time,
     });
 
-    let res = client.post(&url).json(&body).send().await.map_err(|e| {
-        error!("Error sending solve entry (send error): {}", e);
+    let res = client
+        .post(&url)
+        .header(
+            "Authorization",
+            crate::api::ApiClient::get_fkm_api_token().expect("API_TOKEN not set"),
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| {
+            error!("Error sending solve entry (send error): {}", e);
 
-        ApiErrorRes {
-            message: format!("Error sending solve entry"),
-            should_reset_time: false,
-        }
-    })?;
+            ApiErrorRes {
+                message: format!("Error sending solve entry"),
+                should_reset_time: false,
+            }
+        })?;
 
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
@@ -137,7 +154,16 @@ pub async fn send_battery_status(
         "batteryPercentage": battery,
     });
 
-    let res = client.post(&url).json(&body).send().await?;
+    let res = client
+        .post(&url)
+        .header(
+            "Authorization",
+            crate::api::ApiClient::get_fkm_api_token().expect("API_TOKEN not set"),
+        )
+        .json(&body)
+        .send()
+        .await?;
+
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
@@ -156,7 +182,15 @@ pub async fn get_competition_status(
 ) -> Result<CompetitionStatusResp> {
     let url = format!("{api_url}/competition/status");
 
-    let res = client.get(&url).send().await?;
+    let res = client
+        .get(&url)
+        .header(
+            "Authorization",
+            crate::api::ApiClient::get_fkm_api_token().expect("API_TOKEN not set"),
+        )
+        .send()
+        .await?;
+
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
@@ -176,7 +210,16 @@ pub async fn add_device(client: &reqwest::Client, api_url: &str, esp_id: u32) ->
         "espId": esp_id,
     });
 
-    let res = client.post(&url).json(&body).send().await?;
+    let res = client
+        .post(&url)
+        .header(
+            "Authorization",
+            crate::api::ApiClient::get_fkm_api_token().expect("API_TOKEN not set"),
+        )
+        .json(&body)
+        .send()
+        .await?;
+
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
@@ -194,7 +237,15 @@ pub async fn get_wifi_settings(
     api_url: &str,
 ) -> Result<(String, String)> {
     let url = format!("{api_url}/competition/wifi");
-    let res = client.get(&url).send().await?;
+    let res = client
+        .get(&url)
+        .header(
+            "Authorization",
+            crate::api::ApiClient::get_fkm_api_token().expect("API_TOKEN not set"),
+        )
+        .send()
+        .await?;
+
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
@@ -210,11 +261,17 @@ pub async fn get_wifi_settings(
 
 static API_URL: OnceCell<String> = OnceCell::const_new();
 static API_CLIENT: OnceCell<reqwest::Client> = OnceCell::const_new();
+static FKM_API_TOKEN: OnceCell<String> = OnceCell::const_new();
 pub struct ApiClient {}
 impl ApiClient {
-    pub fn set_api_client(client: reqwest::Client, api_url: String) -> Result<()> {
+    pub fn set_api_client(
+        client: reqwest::Client,
+        api_url: String,
+        fkm_api_token: String,
+    ) -> Result<()> {
         API_CLIENT.set(client)?;
         API_URL.set(api_url)?;
+        FKM_API_TOKEN.set(fkm_api_token)?;
 
         Ok(())
     }
@@ -231,5 +288,12 @@ impl ApiClient {
             .to_owned();
 
         Ok((client, api_url))
+    }
+
+    pub fn get_fkm_api_token() -> Result<String> {
+        Ok(FKM_API_TOKEN
+            .get()
+            .ok_or_else(|| anyhow::anyhow!("API_TOKEN not set"))?
+            .to_owned())
     }
 }
