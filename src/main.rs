@@ -29,8 +29,17 @@ async fn main() -> Result<()> {
     mdns::register_mdns(&port)?;
 
     let api_url = std::env::var("API_URL").unwrap_or_else(|_| "http://localhost:5000".to_string());
+    let api_token = std::env::var("API_TOKEN").map_err(|_| anyhow::anyhow!("API_TOKEN not set"))?;
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::AUTHORIZATION,
+        reqwest::header::HeaderValue::from_str(&format!("Token {}", api_token))?,
+    );
+
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
+        .default_headers(headers)
         .user_agent("FKM-Timer/0.1")
         .timeout(std::time::Duration::from_secs(15))
         .build()?;
