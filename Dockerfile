@@ -1,4 +1,6 @@
-FROM rust:slim-bookworm AS builder
+FROM rust:alpine AS builder
+RUN apk add --no-cache musl-dev pkgconfig dbus-dev
+
 WORKDIR /app
 
 # Build cache
@@ -13,7 +15,7 @@ COPY . .
 RUN cargo build --release
 RUN cp -r target/release/$(cat Cargo.toml | awk '/name/ {print}' | cut -d '"' -f 2) /app/backend
 
-FROM debian:bookworm-slim
+FROM alpine
 WORKDIR /app
 
 COPY --from=builder /app/backend /app/backend
