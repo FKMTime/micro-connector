@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use tokio::sync::OnceCell;
 use tracing::{error, trace};
 
-use crate::structs::CompetitionStatusResp;
+use crate::structs::{self, CompetitionStatusResp};
 
 #[derive(serde::Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -187,6 +187,25 @@ pub async fn add_device(client: &reqwest::Client, api_url: &str, esp_id: u32) ->
     }
 
     Ok(())
+}
+
+pub async fn get_wifi_settings(
+    client: &reqwest::Client,
+    api_url: &str,
+) -> Result<(String, String)> {
+    let url = format!("{api_url}/competition/wifi");
+    let res = client.get(&url).send().await?;
+    let success = res.status().is_success();
+    let status_code = res.status().as_u16();
+    let text = res.text().await.unwrap_or_default();
+
+    trace!("Wifi settings response (SC: {status_code}): {}", text);
+    if !success {
+        anyhow::bail!("Error getting wifi settings (not success): {}", text);
+    }
+
+    let json: structs::WifiSettings = serde_json::from_str(&text)?;
+    Ok((json.wifi_ssid, json.wifi_password))
 }
 
 static API_URL: OnceCell<String> = OnceCell::const_new();

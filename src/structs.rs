@@ -117,3 +117,10 @@ pub struct Room {
     pub use_inspection: bool,
     pub devices: Vec<u32>,
 }
+
+#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WifiSettings {
+    pub wifi_ssid: String,
+    pub wifi_password: String,
+}

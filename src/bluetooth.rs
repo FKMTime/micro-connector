@@ -21,6 +21,8 @@ pub async fn start_bluetooth_task() -> Result<()> {
 }
 
 async fn bluetooth_task() -> Result<()> {
+    let (api_client, api_url) = crate::api::ApiClient::get_api_client()?;
+
     let manager = Manager::new().await?;
     let adapter = manager
         .adapters()
@@ -65,9 +67,18 @@ async fn bluetooth_task() -> Result<()> {
                     .find(|c| c.uuid == SET_WIFI_UUID)
                     .ok_or_else(|| anyhow::anyhow!("Couldn't find SET_WIFI characteristic!"))?;
 
-                // TODO: GET /api/wifi or sth like that
-                let ssid = std::env::var("WIFI_SSID")?;
-                let psk = std::env::var("WIFI_PSK")?;
+                // get wifi settings from API or env
+                let (ssid, psk) = if let Ok((ssid, psk)) =
+                    crate::api::get_wifi_settings(&api_client, &api_url).await
+                {
+                    (ssid, psk)
+                } else {
+                    let ssid = std::env::var("WIFI_SSID")?;
+                    let psk = std::env::var("WIFI_PSK")?;
+                    (ssid, psk)
+                };
+                println!("ssid: {}, psk: {}", ssid, psk);
+
                 let set_wifi_data = format!("{ssid}|{psk}");
                 let set_wifi_data = set_wifi_data.as_bytes();
 
