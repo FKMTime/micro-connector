@@ -77,7 +77,6 @@ async fn bluetooth_task() -> Result<()> {
                     let psk = std::env::var("WIFI_PSK")?;
                     (ssid, psk)
                 };
-                println!("ssid: {}, psk: {}", ssid, psk);
 
                 let set_wifi_data = format!("{ssid}|{psk}");
                 let set_wifi_data = set_wifi_data.as_bytes();
