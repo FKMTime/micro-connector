@@ -291,9 +291,10 @@ impl ApiClient {
     }
 
     pub fn get_fkm_api_token() -> Result<String> {
-        Ok(FKM_API_TOKEN
+        let api_token = FKM_API_TOKEN
             .get()
-            .ok_or_else(|| anyhow::anyhow!("API_TOKEN not set"))?
-            .to_owned())
+            .ok_or_else(|| anyhow!("API_TOKEN not set"))?;
+
+        Ok(format!("Token {api_token}"))
     }
 }
