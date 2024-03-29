@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use tracing::{debug, error, info, trace};
+use tracing::{error, info, trace};
 
 pub async fn handle_client(
     mut socket: WebSocket,

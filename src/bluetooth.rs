@@ -58,40 +58,49 @@ async fn bluetooth_task() -> Result<()> {
                     properties.local_name.unwrap_or("none".to_string())
                 );
 
-                device.connect().await?;
-                device.discover_services().await?;
-
-                let characteristics = device.characteristics();
-                let set_wifi = characteristics
-                    .iter()
-                    .find(|c| c.uuid == SET_WIFI_UUID)
-                    .ok_or_else(|| anyhow::anyhow!("Couldn't find SET_WIFI characteristic!"))?;
-
-                // get wifi settings from API or env
-                let (ssid, psk) = if let Ok((ssid, psk)) =
-                    crate::api::get_wifi_settings(&api_client, &api_url).await
-                {
-                    (ssid, psk)
-                } else {
-                    let ssid = std::env::var("WIFI_SSID")?;
-                    let psk = std::env::var("WIFI_PSK")?;
-                    (ssid, psk)
-                };
-
-                let set_wifi_data = format!("{ssid}|{psk}");
-                let set_wifi_data = set_wifi_data.as_bytes();
-
-                device
-                    .write(
-                        set_wifi,
-                        set_wifi_data,
-                        btleplug::api::WriteType::WithoutResponse,
-                    )
-                    .await?;
+                tokio::task::spawn(setup_bt_device(device, api_client.clone(), api_url.clone()));
             }
             _ => {}
         }
     }
+
+    Ok(())
+}
+
+async fn setup_bt_device(
+    device: btleplug::platform::Peripheral,
+    api_client: reqwest::Client,
+    api_url: String,
+) -> Result<()> {
+    device.connect().await?;
+    device.discover_services().await?;
+
+    let characteristics = device.characteristics();
+    let set_wifi = characteristics
+        .iter()
+        .find(|c| c.uuid == SET_WIFI_UUID)
+        .ok_or_else(|| anyhow::anyhow!("Couldn't find SET_WIFI characteristic!"))?;
+
+    // get wifi settings from API or env
+    let (ssid, psk) =
+        if let Ok((ssid, psk)) = crate::api::get_wifi_settings(&api_client, &api_url).await {
+            (ssid, psk)
+        } else {
+            let ssid = std::env::var("WIFI_SSID")?;
+            let psk = std::env::var("WIFI_PSK")?;
+            (ssid, psk)
+        };
+
+    let set_wifi_data = format!("{ssid}|{psk}");
+    let set_wifi_data = set_wifi_data.as_bytes();
+
+    _ = device
+        .write(
+            set_wifi,
+            set_wifi_data,
+            btleplug::api::WriteType::WithoutResponse,
+        )
+        .await;
 
     Ok(())
 }
