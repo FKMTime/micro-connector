@@ -1,5 +1,6 @@
-FROM rust:alpine AS builder
-RUN apk add --no-cache musl-dev pkgconfig dbus-dev
+FROM rust:slim-bookworm AS builder
+RUN apt update && apt install pkg-config libdbus-1-dev -y
+RUN rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -15,9 +16,8 @@ COPY . .
 RUN cargo build --release
 RUN cp -r target/release/$(cat Cargo.toml | awk '/name/ {print}' | cut -d '"' -f 2) /app/backend
 
-FROM alpine
+FROM debian:bookworm-slim
 WORKDIR /app
 
 COPY --from=builder /app/backend /app/backend
-
 ENTRYPOINT ["/app/backend"]
