@@ -58,7 +58,7 @@ async fn bluetooth_task() -> Result<()> {
                     properties.local_name.unwrap_or("none".to_string())
                 );
 
-                tokio::task::spawn(setup_bt_device(device, api_client.clone(), api_url.clone()));
+                _ = setup_bt_device(device, &api_client, &api_url).await;
             }
             _ => {}
         }
@@ -69,8 +69,8 @@ async fn bluetooth_task() -> Result<()> {
 
 async fn setup_bt_device(
     device: btleplug::platform::Peripheral,
-    api_client: reqwest::Client,
-    api_url: String,
+    api_client: &reqwest::Client,
+    api_url: &str,
 ) -> Result<()> {
     device.connect().await?;
     device.discover_services().await?;
