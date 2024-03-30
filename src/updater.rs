@@ -15,8 +15,8 @@ pub async fn update_client(
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
     let eci_build_time = u128::from_str_radix(&esp_connect_info.build_time, 16)?;
-    let mut latest_firmware: (Option<PathBuf>, u128, String) =
-        (None, eci_build_time, String::new());
+    let mut latest_firmware: (Option<PathBuf>, u128, String, String) =
+        (None, eci_build_time, String::new(), String::new());
 
     for entry in firmware_dir.read_dir()? {
         let entry = entry?;
@@ -27,14 +27,18 @@ pub async fn update_client(
             .split('.')
             .collect();
 
-        if name_split.len() != 4 || name_split[0] != esp_connect_info.chip {
+        if name_split.len() != 5
+            || name_split[0] != esp_connect_info.chip
+            || name_split[1] != esp_connect_info.firmware
+        {
             continue;
         }
 
-        let version = name_split[1].to_string();
-        let build_time = u128::from_str_radix(name_split[2], 16)?;
+        let version = name_split[2].to_string();
+        let build_time = u128::from_str_radix(name_split[3], 16)?;
+        let firmware = name_split[1].to_string();
         if build_time > latest_firmware.1 {
-            latest_firmware = (Some(entry.path()), build_time, version);
+            latest_firmware = (Some(entry.path()), build_time, version, firmware);
         }
     }
 
@@ -46,8 +50,8 @@ pub async fn update_client(
     }
 
     info!(
-        "Updating client from version: {} to version {}",
-        esp_connect_info.version, latest_firmware.2
+        "[{}] Updating client from version: {} to version {}",
+        esp_connect_info.firmware, esp_connect_info.version, latest_firmware.2
     );
     debug!("Firmware file: {:?}", latest_firmware.0);
 
@@ -57,6 +61,7 @@ pub async fn update_client(
         version: latest_firmware.2,
         build_time: latest_firmware.1,
         size: firmware_file.len() as i64,
+        firmware: latest_firmware.3,
     };
 
     socket

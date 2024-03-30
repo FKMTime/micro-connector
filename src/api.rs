@@ -204,10 +204,16 @@ pub async fn get_competition_status(
     Ok(json)
 }
 
-pub async fn add_device(client: &reqwest::Client, api_url: &str, esp_id: u32) -> Result<()> {
+pub async fn add_device(
+    client: &reqwest::Client,
+    api_url: &str,
+    esp_id: u32,
+    firmware_type: &str,
+) -> Result<()> {
     let url = format!("{api_url}/device/connect");
     let body = serde_json::json!({
         "espId": esp_id,
+        "type": firmware_type,
     });
 
     let res = client

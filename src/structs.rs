@@ -16,6 +16,7 @@ pub enum TimerResponse {
         version: String,
         build_time: u128, // NOT USED
         size: i64,
+        firmware: String,
     },
     Solve {
         solve_time: u128,
@@ -65,6 +66,7 @@ pub enum TimerResponse {
     },
     Add {
         esp_id: u32,
+        firmware: String,
     },
 }
 
