@@ -15,6 +15,10 @@ fn default_chip() -> String {
     "no-chip".to_string()
 }
 
+fn default_firmware() -> String {
+    "no-firmware".to_string()
+}
+
 #[derive(Debug, Deserialize)]
 pub struct EspConnectInfo {
     pub id: u32,
@@ -27,6 +31,9 @@ pub struct EspConnectInfo {
 
     #[serde(rename = "bt")]
     pub build_time: String,
+
+    #[serde(default = "default_firmware")]
+    pub firmware: String,
 }
 
 pub async fn start_server(port: u16, comp_status: SharedCompetitionStatus) -> Result<()> {
