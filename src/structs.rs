@@ -42,6 +42,7 @@ pub enum TimerResponse {
     CardInfoRequest {
         card_id: u128,
         esp_id: u32,
+        attendance_device: Option<bool>,
     },
     CardInfoResponse {
         card_id: u128,
@@ -49,6 +50,9 @@ pub enum TimerResponse {
         display: String,
         country_iso2: String,
         can_compete: bool,
+    },
+    AttendanceMarked {
+        esp_id: u32,
     },
     DeviceSettings {
         esp_id: u32,

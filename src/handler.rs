@@ -133,7 +133,20 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
     let (client, api_url) = crate::api::ApiClient::get_api_client()?;
 
     match response {
-        TimerResponse::CardInfoRequest { card_id, esp_id } => {
+        TimerResponse::CardInfoRequest {
+            card_id,
+            esp_id,
+            attendance_device,
+        } => {
+            let attendance_device = attendance_device.unwrap_or(false);
+            if attendance_device {
+                _ = crate::api::mark_attendance(&client, &api_url, esp_id, card_id).await;
+                let resp = serde_json::to_string(&TimerResponse::AttendanceMarked { esp_id })?;
+                socket.send(Message::Text(resp)).await?;
+
+                return Ok(());
+            }
+
             let response = match crate::api::get_competitor_info(&client, &api_url, card_id).await {
                 Ok(info) => {
                     trace!("Card info: {} {} {:?}", card_id, esp_id, info);

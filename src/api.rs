@@ -69,6 +69,41 @@ pub async fn get_competitor_info(
     Ok(info)
 }
 
+pub async fn mark_attendance(
+    client: &reqwest::Client,
+    api_url: &str,
+    esp_id: u32,
+    card_id: u128,
+) -> Result<()> {
+    let url = format!("{api_url}/attendance");
+    let body = serde_json::json!({
+        "espId": esp_id,
+        "cardId": card_id,
+    });
+    let res = client
+        .post(&url)
+        .body(body.to_string())
+        .header(
+            "Authorization",
+            crate::api::ApiClient::get_fkm_api_token().expect("API_TOKEN not set"),
+        )
+        .header("Content-Type", "application/json")
+        .send()
+        .await?;
+
+    let success = res.status().is_success();
+    let status_code = res.status().as_u16();
+    let text = res.text().await.unwrap_or_default();
+    trace!("Attendance mark response (SC: {status_code}): {}", text);
+
+    if !success {
+        error!("Error marking attendance (not success): {}", text);
+        return Err(anyhow!("Error marking attendance"));
+    }
+
+    Ok(())
+}
+
 pub async fn send_solve_entry(
     client: &reqwest::Client,
     api_url: &str,
