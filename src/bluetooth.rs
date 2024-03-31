@@ -1,7 +1,6 @@
 use anyhow::Result;
-use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral, ScanFilter};
+use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::Manager;
-use futures::StreamExt;
 
 const FKM_UUID: uuid::Uuid = uuid::Uuid::from_u128(0x3ee59312_20bc_4c38_9e23_e785b6c385b1);
 const SET_WIFI_UUID: uuid::Uuid = uuid::Uuid::from_u128(0xe2ed1fc5_0d2e_4c2d_a0a7_31e38431cc0c);
@@ -31,43 +30,39 @@ async fn bluetooth_task() -> Result<()> {
         .next()
         .ok_or_else(|| anyhow::anyhow!("No adapters found"))?;
 
-    // idk why but this filter doesn't seem to work
-    let filter = ScanFilter {
-        services: vec![FKM_UUID],
-    };
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-    let mut events = adapter.events().await?;
-    adapter.start_scan(filter).await?;
+        let filter = ScanFilter {
+            services: vec![FKM_UUID],
+        };
+        adapter.start_scan(filter).await?;
 
-    while let Some(event) = events.next().await {
-        match event {
-            CentralEvent::DeviceDiscovered(id) => {
-                let device = adapter.peripheral(&id).await?;
-                let properties = device
-                    .properties()
-                    .await?
-                    .ok_or_else(|| anyhow::anyhow!("No device properties found!"))?;
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        for device in adapter.peripherals().await? {
+            let properties = device
+                .properties()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("No device properties found!"))?;
 
-                let is_fkm = properties.services.contains(&FKM_UUID);
-                if !is_fkm {
-                    continue;
-                }
-
-                tracing::info!(
-                    "Found FKM device with name: \"{}\"!",
-                    properties.local_name.unwrap_or("none".to_string())
-                );
-
-                let res = setup_bt_device(device, &api_client, &api_url).await;
-                if let Err(e) = res {
-                    tracing::error!("Failed to setup BT device: {:?}", e);
-                }
+            let is_fkm = properties.services.contains(&FKM_UUID);
+            if !is_fkm {
+                continue;
             }
-            _ => {}
-        }
-    }
 
-    Ok(())
+            tracing::info!(
+                "Found FKM device with name: \"{}\"!",
+                properties.local_name.unwrap_or("none".to_string())
+            );
+
+            let res = setup_bt_device(device, &api_client, &api_url).await;
+            if let Err(e) = res {
+                tracing::error!("Failed to setup BT device: {:?}", e);
+            }
+        }
+
+        adapter.stop_scan().await?;
+    }
 }
 
 async fn setup_bt_device(
@@ -113,6 +108,7 @@ async fn setup_bt_device(
         .await;
 
     tracing::info!("Wrote wifi settings to device");
+    _ = device.disconnect().await;
 
     Ok(())
 }

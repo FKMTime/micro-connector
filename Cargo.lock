@@ -132,7 +132,6 @@ dependencies = [
  "chrono",
  "dbus",
  "dotenvy",
- "futures",
  "local-ip-address",
  "mdns-sd",
  "reqwest",
