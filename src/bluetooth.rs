@@ -58,7 +58,10 @@ async fn bluetooth_task() -> Result<()> {
                     properties.local_name.unwrap_or("none".to_string())
                 );
 
-                _ = setup_bt_device(device, &api_client, &api_url).await;
+                let res = setup_bt_device(device, &api_client, &api_url).await;
+                if let Err(e) = res {
+                    tracing::error!("Failed to setup BT device: {:?}", e);
+                }
             }
             _ => {}
         }
@@ -72,16 +75,22 @@ async fn setup_bt_device(
     api_client: &reqwest::Client,
     api_url: &str,
 ) -> Result<()> {
+    tracing::trace!("Connecting to device");
     device.connect().await?;
+    tracing::trace!("Connected to device");
     device.discover_services().await?;
+    tracing::trace!("Discovered services");
 
+    tracing::trace!("Getting characteristics");
     let characteristics = device.characteristics();
     let set_wifi = characteristics
         .iter()
         .find(|c| c.uuid == SET_WIFI_UUID)
         .ok_or_else(|| anyhow::anyhow!("Couldn't find SET_WIFI characteristic!"))?;
+    tracing::trace!("Got characteristics");
 
     // get wifi settings from API or env
+    tracing::trace!("Getting wifi settings");
     let (ssid, psk) =
         if let Ok((ssid, psk)) = crate::api::get_wifi_settings(&api_client, &api_url).await {
             (ssid, psk)
@@ -93,6 +102,7 @@ async fn setup_bt_device(
 
     let set_wifi_data = format!("{ssid}|{psk}");
     let set_wifi_data = set_wifi_data.as_bytes();
+    tracing::trace!("Got wifi settings");
 
     _ = device
         .write(
@@ -101,6 +111,8 @@ async fn setup_bt_device(
             btleplug::api::WriteType::WithoutResponse,
         )
         .await;
+
+    tracing::info!("Wrote wifi settings to device");
 
     Ok(())
 }
