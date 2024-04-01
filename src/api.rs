@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use tokio::sync::OnceCell;
-use tracing::{error, trace};
+use tracing::error;
 
 use crate::structs::{self, CompetitionStatusResp};
 
@@ -49,10 +49,8 @@ pub async fn get_competitor_info(
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
-    trace!("Competitor info response (SC: {status_code}): {}", text);
-
     if !success {
-        error!("Error getting competitor info (not success): {}", text);
+        error!("Error getting competitor info (SC: {status_code}): {text}");
 
         return Err(
             serde_json::from_str::<ApiErrorRes>(&text).map_err(|_| ApiErrorRes {
@@ -62,9 +60,14 @@ pub async fn get_competitor_info(
         );
     }
 
-    let info = serde_json::from_str::<CompetitorInfo>(&text).map_err(|_| ApiErrorRes {
-        message: format!("Error parsing competitor info"),
-        should_reset_time: false,
+    let info = serde_json::from_str::<CompetitorInfo>(&text).map_err(|e| {
+        error!("Competitor info response: {}", text);
+        error!("Error parsing competitor info: {}", e);
+
+        return ApiErrorRes {
+            message: format!("Error parsing competitor info"),
+            should_reset_time: false,
+        };
     })?;
     Ok(info)
 }
@@ -94,10 +97,8 @@ pub async fn mark_attendance(
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
-    trace!("Attendance mark response (SC: {status_code}): {}", text);
-
     if !success {
-        error!("Error marking attendance (not success): {}", text);
+        error!("Error marking attendance (SC: {status_code}): {text}");
         return Err(anyhow!("Error marking attendance"));
     }
 
@@ -159,10 +160,8 @@ pub async fn send_solve_entry(
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
-
-    trace!("Solve entry response (SC: {status_code}): {}", text);
     if !success {
-        error!("Error sending solve entry (not success): {}", text);
+        error!("Error sending solve entry ({status_code}): {text}");
 
         let res = serde_json::from_str::<ApiErrorRes>(&text).map_err(|_| ApiErrorRes {
             message: format!("Error parsing error message"),
@@ -202,10 +201,9 @@ pub async fn send_battery_status(
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
-
-    trace!("Battery status response (SC: {status_code}): {}", text);
     if !success {
-        anyhow::bail!("Error sending battery status (not success): {}", text);
+        error!("Error sending battery status ({status_code}): {text}");
+        anyhow::bail!("Error sending battery status ({status_code}): {text}");
     }
 
     Ok(())
@@ -229,9 +227,8 @@ pub async fn get_competition_status(
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
-
-    trace!("Competition status response (SC: {status_code}): {}", text);
     if !success {
+        error!("Error getting competition status (SC: {status_code}): {text}");
         return Err(anyhow::anyhow!("Cannot get competition status"));
     }
 
@@ -264,9 +261,8 @@ pub async fn add_device(
     let success = res.status().is_success();
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
-
-    trace!("Add device response (SC: {status_code}): {}", text);
     if !success {
+        error!("Error adding device (SC: {status_code}): {text}");
         anyhow::bail!("Error adding device (not success): {}", text);
     }
 
@@ -291,8 +287,8 @@ pub async fn get_wifi_settings(
     let status_code = res.status().as_u16();
     let text = res.text().await.unwrap_or_default();
 
-    trace!("Wifi settings response (SC: {status_code}): {}", text);
     if !success {
+        error!("Error getting wifi settings (SC: {status_code}): {text}");
         anyhow::bail!("Error getting wifi settings (not success): {}", text);
     }
 

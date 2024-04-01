@@ -225,7 +225,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
                 }
             }
 
-            info!("LOGS:\n{}", msg_buf);
+            info!("LOGS:\n{}", msg_buf.trim());
         }
         TimerResponse::Battery {
             esp_id,
