@@ -6,12 +6,27 @@ use tracing::{debug, error, info};
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 
-/// Returns true if client was updated
-pub async fn update_client(
-    socket: &mut WebSocket,
-    esp_connect_info: &EspConnectInfo,
-) -> Result<bool> {
-    let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
+pub struct Firmware {
+    pub data: Vec<u8>,
+    pub version: String,
+    pub build_time: u128,
+    pub firmware: String,
+}
+
+pub async fn should_update(esp_connect_info: &EspConnectInfo) -> Result<Option<Firmware>> {
+    let dev_mode = crate::DEV_MODE
+        .get()
+        .ok_or_else(|| anyhow::anyhow!("DEV_MODE not set"))?;
+
+    if *dev_mode {
+        should_update_dev_mode(esp_connect_info).await
+    } else {
+        should_update_no_dev_mode(esp_connect_info).await
+    }
+}
+
+async fn should_update_dev_mode(esp_connect_info: &EspConnectInfo) -> Result<Option<Firmware>> {
+    let firmware_dir = std::env::var("FIRMWARE_DIR")?;
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
     let eci_build_time = u128::from_str_radix(&esp_connect_info.build_time, 16)?;
@@ -46,22 +61,39 @@ pub async fn update_client(
         || eci_build_time >= latest_firmware.1
         || latest_firmware.2 == esp_connect_info.version
     {
-        return Ok(false);
+        return Ok(None);
     }
 
-    info!(
-        "[{}] Updating client from version: {} to version {}",
-        esp_connect_info.firmware, esp_connect_info.version, latest_firmware.2
-    );
-    debug!("Firmware file: {:?}", latest_firmware.0);
-
-    let firmware_file = tokio::fs::read(latest_firmware.0.expect("Cant be none")).await?;
-    let start_update_resp = TimerResponse::StartUpdate {
-        esp_id: esp_connect_info.id,
+    Ok(Some(Firmware {
+        data: tokio::fs::read(latest_firmware.0.expect("Cant be none")).await?,
         version: latest_firmware.2,
         build_time: latest_firmware.1,
-        size: firmware_file.len() as i64,
         firmware: latest_firmware.3,
+    }))
+}
+
+async fn should_update_no_dev_mode(esp_connect_info: &EspConnectInfo) -> Result<Option<Firmware>> {
+    let (client, api_url) = crate::api::ApiClient::get_api_client()?;
+
+    Ok(None)
+}
+
+pub async fn update_client(
+    socket: &mut WebSocket,
+    esp_connect_info: &EspConnectInfo,
+    latest_firmware: Firmware,
+) -> Result<bool> {
+    info!(
+        "[{}] Updating client from version: {} to version {}",
+        esp_connect_info.firmware, esp_connect_info.version, latest_firmware.version
+    );
+
+    let start_update_resp = TimerResponse::StartUpdate {
+        esp_id: esp_connect_info.id,
+        version: latest_firmware.version,
+        build_time: latest_firmware.build_time,
+        size: latest_firmware.data.len() as i64,
+        firmware: latest_firmware.firmware,
     };
 
     socket
@@ -76,7 +108,7 @@ pub async fn update_client(
             Err(anyhow::anyhow!("Timeout while updating"))
         })?;
 
-    let mut firmware_chunks = firmware_file.chunks(UPDATE_CHUNK_SIZE);
+    let mut firmware_chunks = latest_firmware.data.chunks(UPDATE_CHUNK_SIZE);
 
     while let Some(chunk) = firmware_chunks.next() {
         let msg = Message::Binary(chunk.to_vec());
@@ -87,7 +119,7 @@ pub async fn update_client(
                 "[{}] {}/{} chunks left",
                 esp_connect_info.id,
                 firmware_chunks.len(),
-                firmware_file.len() / UPDATE_CHUNK_SIZE
+                latest_firmware.data.len() / UPDATE_CHUNK_SIZE
             );
         }
 

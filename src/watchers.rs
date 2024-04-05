@@ -58,6 +58,14 @@ async fn build_watcher(
     broadcaster: &tokio::sync::broadcast::Sender<()>,
     firmware_dir: &PathBuf,
 ) -> Result<()> {
+    // only run in dev mode
+    if !*crate::DEV_MODE
+        .get()
+        .ok_or_else(|| anyhow::anyhow!("DEV_MODE not set"))?
+    {
+        return Ok(());
+    }
+
     let mut latest_modified: u128 = 0;
 
     let mut modified_state = false;

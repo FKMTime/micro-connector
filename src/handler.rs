@@ -11,13 +11,15 @@ pub async fn handle_client(
     esp_connect_info: &EspConnectInfo,
     comp_status: SharedCompetitionStatus,
 ) -> Result<()> {
-    if comp_status.read().await.should_update
-        && super::updater::update_client(&mut socket, esp_connect_info).await?
-    {
-        return Ok(());
-    }
-    send_device_status(&mut socket, esp_connect_info, &comp_status).await?;
+    if comp_status.read().await.should_update {
+        if let Some(firmware) = super::updater::should_update(esp_connect_info).await? {
+            super::updater::update_client(&mut socket, &esp_connect_info, firmware).await?;
 
+            return Ok(());
+        }
+    }
+
+    send_device_status(&mut socket, esp_connect_info, &comp_status).await?;
     let mut update_broadcast = super::NEW_BUILD_BROADCAST
         .get()
         .expect("build broadcast channel not set")
@@ -49,7 +51,8 @@ pub async fn handle_client(
                     continue;
                 }
 
-                let res = super::updater::update_client(&mut socket, esp_connect_info).await?;
+                let firmware = super::updater::should_update(esp_connect_info).await?.ok_or_else(|| anyhow::anyhow!("No firmware to update"))?;
+                let res = super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
                 if res {
                     break;
                 }
