@@ -11,11 +11,17 @@ pub async fn handle_client(
     esp_connect_info: &EspConnectInfo,
     comp_status: SharedCompetitionStatus,
 ) -> Result<()> {
-    if comp_status.read().await.should_update {
-        if let Some(firmware) = super::updater::should_update(esp_connect_info).await? {
-            super::updater::update_client(&mut socket, &esp_connect_info, firmware).await?;
+    {
+        let comp_status = comp_status.read().await;
+        if comp_status.should_update {
+            if let Some(firmware) =
+                super::updater::should_update(esp_connect_info, comp_status.release_channel.clone())
+                    .await?
+            {
+                super::updater::update_client(&mut socket, &esp_connect_info, firmware).await?;
 
-            return Ok(());
+                return Ok(());
+            }
         }
     }
 
@@ -47,11 +53,12 @@ pub async fn handle_client(
                 hb_received = false;
             }
             _ = update_broadcast.recv() => {
-                if !comp_status.read().await.should_update {
+                let comp_status = comp_status.read().await;
+                if !comp_status.should_update {
                     continue;
                 }
 
-                let firmware = super::updater::should_update(esp_connect_info).await?;
+                let firmware = super::updater::should_update(esp_connect_info, comp_status.release_channel.clone()).await?;
                 if let Some(firmware) = firmware {
                     let res = super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
                     if res {

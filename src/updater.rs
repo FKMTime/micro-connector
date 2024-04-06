@@ -1,6 +1,10 @@
-use crate::{http::EspConnectInfo, structs::TimerResponse};
+use crate::{
+    http::EspConnectInfo,
+    structs::{ReleaseChannel, TimerResponse},
+};
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
+use serde::Deserialize;
 use std::path::PathBuf;
 use tracing::{debug, error, info};
 
@@ -14,7 +18,10 @@ pub struct Firmware {
     pub firmware: String,
 }
 
-pub async fn should_update(esp_connect_info: &EspConnectInfo) -> Result<Option<Firmware>> {
+pub async fn should_update(
+    esp_connect_info: &EspConnectInfo,
+    channel: ReleaseChannel,
+) -> Result<Option<Firmware>> {
     let dev_mode = crate::DEV_MODE
         .get()
         .ok_or_else(|| anyhow::anyhow!("DEV_MODE not set"))?;
@@ -22,7 +29,7 @@ pub async fn should_update(esp_connect_info: &EspConnectInfo) -> Result<Option<F
     if *dev_mode {
         should_update_dev_mode(esp_connect_info).await
     } else {
-        should_update_no_dev_mode(esp_connect_info).await
+        should_update_ota(esp_connect_info, channel).await
     }
 }
 
@@ -69,10 +76,65 @@ async fn should_update_dev_mode(esp_connect_info: &EspConnectInfo) -> Result<Opt
     }))
 }
 
-async fn should_update_no_dev_mode(esp_connect_info: &EspConnectInfo) -> Result<Option<Firmware>> {
+const OTA_URL: &str = "https://ota.filipton.space";
+
+#[derive(Debug, Deserialize)]
+struct OtaLatestFirmware {
+    version: String,
+    file: String,
+}
+
+async fn should_update_ota(
+    esp_connect_info: &EspConnectInfo,
+    channel: ReleaseChannel,
+) -> Result<Option<Firmware>> {
     let (client, _) = crate::api::ApiClient::get_api_client()?;
 
+    let channel = match channel {
+        ReleaseChannel::Stable => "stable",
+        ReleaseChannel::Prerelease => "prerelease",
+    };
+
+    let url = format!(
+        "{OTA_URL}/firmware/{}/{}/{}/latest.json",
+        esp_connect_info.firmware, channel, esp_connect_info.chip
+    );
+
+    let res = client.get(url).send().await?;
+    let success = res.status().is_success();
+    let status_code = res.status().as_u16();
+    let text = res.text().await?;
+
+    if !success {
+        tracing::error!("Ota response not success ({status_code}): {text}");
+        return Err(anyhow::anyhow!("Ota response not success"));
+    }
+
+    tracing::trace!("Ota response: {text}");
+
+    let json: OtaLatestFirmware = serde_json::from_str(&text)?;
+    if is_greater_version(json.version.clone(), esp_connect_info.version.clone()) {
+        return Ok(Some(Firmware {
+            data: vec![],
+            version: json.version,
+            build_time: 0,
+            firmware: esp_connect_info.firmware.clone(),
+        }));
+    }
+
     Ok(None)
+}
+
+fn is_greater_version(v1: String, v2: String) -> bool {
+    let v1: i128 = v1.replace(".", "").parse().unwrap_or(-1);
+    let v2: i128 = v2.replace(".", "").parse().unwrap_or(-1);
+
+    // if version fails to parse, always update to different one!
+    if v1 == -1 || v2 == -1 {
+        return true;
+    }
+
+    return v1 > v2;
 }
 
 pub async fn update_client(
