@@ -6,6 +6,7 @@ use tracing::{debug, error, info};
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 
+#[derive(Debug)]
 pub struct Firmware {
     pub data: Vec<u8>,
     pub version: String,
@@ -29,9 +30,7 @@ async fn should_update_dev_mode(esp_connect_info: &EspConnectInfo) -> Result<Opt
     let firmware_dir = std::env::var("FIRMWARE_DIR")?;
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
-    let eci_build_time = u128::from_str_radix(&esp_connect_info.build_time, 16)?;
-    let mut latest_firmware: (Option<PathBuf>, u128, String, String) =
-        (None, eci_build_time, String::new(), String::new());
+    let mut latest_firmware: (Option<PathBuf>, u128, String) = (None, 0, String::new());
 
     for entry in firmware_dir.read_dir()? {
         let entry = entry?;
@@ -42,7 +41,7 @@ async fn should_update_dev_mode(esp_connect_info: &EspConnectInfo) -> Result<Opt
             .split('.')
             .collect();
 
-        if name_split.len() != 5
+        if name_split.len() != 4
             || name_split[0] != esp_connect_info.chip
             || name_split[1] != esp_connect_info.firmware
         {
@@ -50,30 +49,28 @@ async fn should_update_dev_mode(esp_connect_info: &EspConnectInfo) -> Result<Opt
         }
 
         let version = name_split[2].to_string();
-        let build_time = u128::from_str_radix(name_split[3], 16)?;
-        let firmware = name_split[1].to_string();
-        if build_time > latest_firmware.1 {
-            latest_firmware = (Some(entry.path()), build_time, version, firmware);
+        let firmware = name_split[0].to_string();
+
+        let version: u128 = version.parse().unwrap_or(0);
+        if version > latest_firmware.1 {
+            latest_firmware = (Some(entry.path()), version, firmware);
         }
     }
 
-    if latest_firmware.0.is_none()
-        || eci_build_time >= latest_firmware.1
-        || latest_firmware.2 == esp_connect_info.version
-    {
+    if latest_firmware.0.is_none() || latest_firmware.1.to_string() == esp_connect_info.version {
         return Ok(None);
     }
 
     Ok(Some(Firmware {
         data: tokio::fs::read(latest_firmware.0.expect("Cant be none")).await?,
-        version: latest_firmware.2,
-        build_time: latest_firmware.1,
-        firmware: latest_firmware.3,
+        version: latest_firmware.1.to_string(),
+        build_time: 0,
+        firmware: latest_firmware.2,
     }))
 }
 
 async fn should_update_no_dev_mode(esp_connect_info: &EspConnectInfo) -> Result<Option<Firmware>> {
-    let (client, api_url) = crate::api::ApiClient::get_api_client()?;
+    let (client, _) = crate::api::ApiClient::get_api_client()?;
 
     Ok(None)
 }

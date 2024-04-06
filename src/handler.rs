@@ -51,10 +51,12 @@ pub async fn handle_client(
                     continue;
                 }
 
-                let firmware = super::updater::should_update(esp_connect_info).await?.ok_or_else(|| anyhow::anyhow!("No firmware to update"))?;
-                let res = super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
-                if res {
-                    break;
+                let firmware = super::updater::should_update(esp_connect_info).await?;
+                if let Some(firmware) = firmware {
+                    let res = super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
+                    if res {
+                        break;
+                    }
                 }
             }
             _ = update_device_settings_broadcast.recv() => {
