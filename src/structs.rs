@@ -14,7 +14,7 @@ pub enum TimerResponse {
     StartUpdate {
         esp_id: u32,
         version: String,
-        build_time: u128, // NOT USED
+        build_time: u64, // NOT USED
         size: i64,
         firmware: String,
     },

@@ -15,7 +15,7 @@ const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 pub struct Firmware {
     pub data: Vec<u8>,
     pub version: String,
-    pub build_time: u128,
+    pub build_time: u64,
     pub firmware: String,
 }
 
@@ -83,6 +83,8 @@ const OTA_URL: &str = "https://ota.filipton.space";
 struct OtaLatestFirmware {
     version: String,
     file: String,
+
+    #[serde(rename = "buildTime")]
     build_time: u64,
 }
 
@@ -143,7 +145,7 @@ async fn should_update_ota(
         return Ok(Some(Firmware {
             data: cache_bytes,
             version: json.version,
-            build_time: 0,
+            build_time: json.build_time,
             firmware: esp_connect_info.firmware.clone(),
         }));
     }
