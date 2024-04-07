@@ -142,6 +142,7 @@ async fn should_update_ota(
             *firmware_cache = Some((json.version.clone(), firmware_bytes));
         }
 
+        tracing::trace!("dsa");
         return Ok(Some(Firmware {
             data: cache_bytes,
             version: json.version,
