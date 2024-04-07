@@ -111,7 +111,7 @@ const requestListener = function(req, res) {
     } else if (req.url === "/competition/status") {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
-            shouldUpdate: true, releaseChannel: "STABLE", devices, rooms: [{
+            shouldUpdate: true, releaseChannel: "PRE_RELEASE", devices, rooms: [{
                 id: "dsadsa",
                 name: "Room 1",
                 useInspection: true,

@@ -1,6 +1,7 @@
 use crate::{
     http::EspConnectInfo,
     structs::{ReleaseChannel, TimerResponse},
+    FIRMWARE_CACHE,
 };
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
@@ -82,6 +83,7 @@ const OTA_URL: &str = "https://ota.filipton.space";
 struct OtaLatestFirmware {
     version: String,
     file: String,
+    build_time: u64,
 }
 
 async fn should_update_ota(
@@ -113,9 +115,33 @@ async fn should_update_ota(
     tracing::trace!("Ota response: {text}");
 
     let json: OtaLatestFirmware = serde_json::from_str(&text)?;
-    if is_greater_version(json.version.clone(), esp_connect_info.version.clone()) {
+    if json.build_time > esp_connect_info.build_time {
+        let mut firmware_cache = FIRMWARE_CACHE.get().expect("Should be set").lock().await;
+        let (cache_ver, mut cache_bytes) =
+            firmware_cache.clone().unwrap_or(("".to_string(), vec![]));
+
+        if firmware_cache.is_none() || json.version != cache_ver {
+            let firmware_url = format!("{OTA_URL}/{}", json.file);
+            let firmware_bytes = client
+                .get(firmware_url)
+                .send()
+                .await?
+                .bytes()
+                .await?
+                .to_vec();
+
+            tracing::trace!(
+                "Downloaded firmware with version: {}, Size: {}!",
+                json.version,
+                firmware_bytes.len()
+            );
+
+            cache_bytes = firmware_bytes.clone();
+            *firmware_cache = Some((json.version.clone(), firmware_bytes));
+        }
+
         return Ok(Some(Firmware {
-            data: vec![],
+            data: cache_bytes,
             version: json.version,
             build_time: 0,
             firmware: esp_connect_info.firmware.clone(),
@@ -123,18 +149,6 @@ async fn should_update_ota(
     }
 
     Ok(None)
-}
-
-fn is_greater_version(v1: String, v2: String) -> bool {
-    let v1: i128 = v1.replace(".", "").parse().unwrap_or(-1);
-    let v2: i128 = v2.replace(".", "").parse().unwrap_or(-1);
-
-    // if version fails to parse, always update to different one!
-    if v1 == -1 || v2 == -1 {
-        return true;
-    }
-
-    return v1 > v2;
 }
 
 pub async fn update_client(

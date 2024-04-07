@@ -30,7 +30,7 @@ pub struct EspConnectInfo {
     pub chip: String,
 
     #[serde(rename = "bt")]
-    pub build_time: String,
+    pub build_time: u64,
 
     #[serde(default = "default_firmware")]
     pub firmware: String,

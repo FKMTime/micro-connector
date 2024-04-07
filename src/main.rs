@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::collections::HashMap;
-use tokio::sync::OnceCell;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::{Mutex, OnceCell};
 use tracing::info;
 
 mod api;
@@ -17,6 +17,7 @@ pub static NEW_BUILD_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> =
     OnceCell::const_new();
 pub static REFRESH_DEVICE_SETTINGS_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> =
     OnceCell::const_new();
+pub static FIRMWARE_CACHE: OnceCell<Arc<Mutex<Option<(String, Vec<u8>)>>>> = OnceCell::const_new();
 
 pub static DEV_MODE: OnceCell<bool> = OnceCell::const_new();
 
@@ -41,6 +42,7 @@ async fn main() -> Result<()> {
 
     api::ApiClient::set_api_client(client, api_url, api_token)?;
     _ = DEV_MODE.set(std::env::var("DEV").is_ok());
+    _ = FIRMWARE_CACHE.set(Arc::new(Mutex::new(None)));
 
     let (tx, _) = tokio::sync::broadcast::channel::<()>(1);
     _ = NEW_BUILD_BROADCAST.set(tx.clone());
