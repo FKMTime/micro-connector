@@ -114,8 +114,6 @@ async fn should_update_ota(
         return Err(anyhow::anyhow!("Ota response not success"));
     }
 
-    tracing::trace!("Ota response: {text}");
-
     let json: OtaLatestFirmware = serde_json::from_str(&text)?;
     if json.build_time > esp_connect_info.build_time {
         let mut firmware_cache = FIRMWARE_CACHE.get().expect("Should be set").lock().await;
@@ -142,7 +140,6 @@ async fn should_update_ota(
             *firmware_cache = Some((json.version.clone(), firmware_bytes));
         }
 
-        tracing::trace!("dsa");
         return Ok(Some(Firmware {
             data: cache_bytes,
             version: json.version,
