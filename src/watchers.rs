@@ -124,8 +124,6 @@ async fn comp_status_watcher(
     let mut comp_status = comp_status.write().await;
 
     comp_status.should_update = comp_status_res.should_update;
-    comp_status.release_channel = comp_status_res.release_channel;
-
     let mut changed = false;
 
     // delete devices that are not in the new status

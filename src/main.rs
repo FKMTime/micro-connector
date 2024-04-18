@@ -53,7 +53,6 @@ async fn main() -> Result<()> {
     let comp_status = structs::SharedCompetitionStatus::new(tokio::sync::RwLock::new(
         structs::CompetitionStatus {
             should_update: false,
-            release_channel: structs::ReleaseChannel::Stable,
             devices_settings: HashMap::new(),
         },
     ));

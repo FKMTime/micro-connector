@@ -15,7 +15,7 @@ pub async fn handle_client(
         let comp_status = comp_status.read().await;
         if comp_status.should_update {
             if let Some(firmware) =
-                super::updater::should_update(esp_connect_info, comp_status.release_channel.clone())
+                super::updater::should_update(esp_connect_info)
                     .await?
             {
                 super::updater::update_client(&mut socket, &esp_connect_info, firmware).await?;
@@ -58,7 +58,7 @@ pub async fn handle_client(
                     continue;
                 }
 
-                let firmware = super::updater::should_update(esp_connect_info, comp_status.release_channel.clone()).await?;
+                let firmware = super::updater::should_update(esp_connect_info).await?;
                 if let Some(firmware) = firmware {
                     let res = super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
                     if res {

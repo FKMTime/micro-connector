@@ -1,6 +1,6 @@
 use crate::{
     http::EspConnectInfo,
-    structs::{ReleaseChannel, TimerResponse},
+    structs::TimerResponse,
     FIRMWARE_CACHE,
 };
 use anyhow::Result;
@@ -21,7 +21,6 @@ pub struct Firmware {
 
 pub async fn should_update(
     esp_connect_info: &EspConnectInfo,
-    channel: ReleaseChannel,
 ) -> Result<Option<Firmware>> {
     let dev_mode = crate::DEV_MODE
         .get()
@@ -30,7 +29,7 @@ pub async fn should_update(
     if *dev_mode {
         should_update_dev_mode(esp_connect_info).await
     } else {
-        should_update_ota(esp_connect_info, channel).await
+        should_update_ota(esp_connect_info).await
     }
 }
 
@@ -77,76 +76,10 @@ async fn should_update_dev_mode(esp_connect_info: &EspConnectInfo) -> Result<Opt
     }))
 }
 
-const OTA_URL: &str = "https://ota.filipton.space";
-
-#[derive(Debug, Deserialize)]
-struct OtaLatestFirmware {
-    version: String,
-    file: String,
-
-    #[serde(rename = "buildTime")]
-    build_time: u64,
-}
-
 async fn should_update_ota(
     esp_connect_info: &EspConnectInfo,
-    channel: ReleaseChannel,
 ) -> Result<Option<Firmware>> {
     let (client, _) = crate::api::ApiClient::get_api_client()?;
-
-    let channel = match channel {
-        ReleaseChannel::Stable => "stable",
-        ReleaseChannel::Prerelease => "prerelease",
-    };
-
-    let url = format!(
-        "{OTA_URL}/firmware/{}/{}/{}/latest.json",
-        esp_connect_info.firmware, channel, esp_connect_info.chip
-    );
-
-    let res = client.get(url).send().await?;
-    let success = res.status().is_success();
-    let status_code = res.status().as_u16();
-    let text = res.text().await?;
-
-    if !success {
-        tracing::error!("Ota response not success ({status_code}): {text}");
-        return Err(anyhow::anyhow!("Ota response not success"));
-    }
-
-    let json: OtaLatestFirmware = serde_json::from_str(&text)?;
-    if json.build_time > esp_connect_info.build_time {
-        let mut firmware_cache = FIRMWARE_CACHE.get().expect("Should be set").lock().await;
-        let (cache_ver, mut cache_bytes) =
-            firmware_cache.clone().unwrap_or(("".to_string(), vec![]));
-
-        if firmware_cache.is_none() || json.version != cache_ver {
-            let firmware_url = format!("{OTA_URL}/{}", json.file);
-            let firmware_bytes = client
-                .get(firmware_url)
-                .send()
-                .await?
-                .bytes()
-                .await?
-                .to_vec();
-
-            tracing::trace!(
-                "Downloaded firmware with version: {}, Size: {}!",
-                json.version,
-                firmware_bytes.len()
-            );
-
-            cache_bytes = firmware_bytes.clone();
-            *firmware_cache = Some((json.version.clone(), firmware_bytes));
-        }
-
-        return Ok(Some(Firmware {
-            data: cache_bytes,
-            version: json.version,
-            build_time: json.build_time,
-            firmware: esp_connect_info.firmware.clone(),
-        }));
-    }
 
     Ok(None)
 }

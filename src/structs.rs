@@ -87,7 +87,6 @@ pub type SharedCompetitionStatus = std::sync::Arc<tokio::sync::RwLock<Competitio
 #[derive(Debug, Clone)]
 pub struct CompetitionStatus {
     pub should_update: bool,
-    pub release_channel: ReleaseChannel,
     pub devices_settings: HashMap<u32, CompetitionDeviceSettings>,
 }
 
@@ -101,18 +100,8 @@ pub struct CompetitionDeviceSettings {
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionStatusResp {
     pub should_update: bool,
-    pub release_channel: ReleaseChannel,
     pub devices: Vec<u32>,
     pub rooms: Vec<Room>,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub enum ReleaseChannel {
-    #[serde(rename = "STABLE")]
-    Stable,
-
-    #[serde(rename = "PRE_RELEASE")]
-    Prerelease,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
