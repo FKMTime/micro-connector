@@ -1,11 +1,9 @@
 use crate::{
     http::EspConnectInfo,
     structs::TimerResponse,
-    FIRMWARE_CACHE,
 };
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use serde::Deserialize;
 use std::path::PathBuf;
 use tracing::{debug, error, info};
 
@@ -22,18 +20,6 @@ pub struct Firmware {
 pub async fn should_update(
     esp_connect_info: &EspConnectInfo,
 ) -> Result<Option<Firmware>> {
-    let dev_mode = crate::DEV_MODE
-        .get()
-        .ok_or_else(|| anyhow::anyhow!("DEV_MODE not set"))?;
-
-    if *dev_mode {
-        should_update_dev_mode(esp_connect_info).await
-    } else {
-        should_update_ota(esp_connect_info).await
-    }
-}
-
-async fn should_update_dev_mode(esp_connect_info: &EspConnectInfo) -> Result<Option<Firmware>> {
     let firmware_dir = std::env::var("FIRMWARE_DIR")?;
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
@@ -74,14 +60,6 @@ async fn should_update_dev_mode(esp_connect_info: &EspConnectInfo) -> Result<Opt
         build_time: 0,
         firmware: latest_firmware.2,
     }))
-}
-
-async fn should_update_ota(
-    esp_connect_info: &EspConnectInfo,
-) -> Result<Option<Firmware>> {
-    let (client, _) = crate::api::ApiClient::get_api_client()?;
-
-    Ok(None)
 }
 
 pub async fn update_client(

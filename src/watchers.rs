@@ -3,7 +3,7 @@ use anyhow::Result;
 use std::{path::PathBuf, time::Duration};
 use tracing::error;
 
-const GITHUB_UPDATE_INTERVAL: u64 = 90000;
+const GITHUB_UPDATE_INTERVAL: u64 = 60000 * 5;
 const UPDATE_STRATEGY_INTERVAL: u64 = 15000;
 
 pub async fn spawn_watchers(
@@ -36,7 +36,7 @@ pub async fn spawn_watchers(
                         continue;
                     }
 
-                    let res = github_releases_watcher(&client, &firmware_dir, &comp_status).await;
+                    let res = github_releases_watcher(&client, &firmware_dir).await;
                     if let Err(e) = res {
                         error!("Error in github releases watcher: {:?}", e);
                     }
@@ -58,14 +58,6 @@ async fn build_watcher(
     broadcaster: &tokio::sync::broadcast::Sender<()>,
     firmware_dir: &PathBuf,
 ) -> Result<()> {
-    // only run in dev mode
-    if !*crate::DEV_MODE
-        .get()
-        .ok_or_else(|| anyhow::anyhow!("DEV_MODE not set"))?
-    {
-        return Ok(());
-    }
-
     let mut latest_modified: u128 = 0;
 
     let mut modified_state = false;
@@ -97,16 +89,17 @@ async fn build_watcher(
 async fn github_releases_watcher(
     client: &reqwest::Client,
     firmware_dir: &PathBuf,
-    comp_status: &SharedCompetitionStatus,
 ) -> Result<()> {
-    let releases = crate::github::get_releases(client, comp_status).await?;
+    let files = crate::github::get_releases(client).await?;
 
-    for release in releases {
-        let release_path = firmware_dir.join(&release.name);
+    for file in files {
+        let release_path = firmware_dir.join(&file.name);
+        let tmp_path = PathBuf::from("/tmp").join(&file.name);
         if let Ok(exists) = tokio::fs::try_exists(&release_path).await {
             if !exists {
-                let resp = client.get(&release.download_url).send().await?;
-                tokio::fs::write(&release_path, resp.bytes().await?).await?;
+                let resp = client.get(&file.download_url).send().await?;
+                tokio::fs::write(&tmp_path, resp.bytes().await?).await?;
+                tokio::fs::rename(&tmp_path, &release_path).await?;
             }
         }
     }

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 mod structs;
 
@@ -8,14 +8,7 @@ const GH_REPO: &str = "fkm-timer";
 
 pub async fn get_releases(
     client: &reqwest::Client,
-    comp_status: &crate::structs::SharedCompetitionStatus,
 ) -> Result<Vec<structs::ReleaseAssetItem>> {
-    let comp_status = comp_status.read().await;
-
-    if !comp_status.should_update {
-        return Err(anyhow::anyhow!("Updates disabled!"));
-    }
-
     let url = format!("{GITHUB_API_URL}/repos/{GH_OWNER}/{GH_REPO}/releases");
 
     let res = client
@@ -27,7 +20,6 @@ pub async fn get_releases(
     let release: structs::GithubRelease = {
         let json: Vec<structs::GithubRelease> = res.json().await?;
         json.iter()
-            .filter(|r| r.prerelease)
             .next()
             .ok_or_else(|| anyhow::anyhow!("No releases found!"))?
             .to_owned()
