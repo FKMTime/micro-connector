@@ -1,10 +1,7 @@
-use crate::{
-    http::EspConnectInfo,
-    structs::TimerResponse,
-};
+use crate::{http::EspConnectInfo, structs::TimerResponse};
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use std::path::PathBuf;
+use std::{path::PathBuf, time::SystemTime};
 use tracing::{debug, error, info};
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
@@ -17,36 +14,41 @@ pub struct Firmware {
     pub firmware: String,
 }
 
-pub async fn should_update(
-    esp_connect_info: &EspConnectInfo,
-) -> Result<Option<Firmware>> {
+pub async fn should_update(esp_connect_info: &EspConnectInfo) -> Result<Option<Firmware>> {
     let firmware_dir = std::env::var("FIRMWARE_DIR")?;
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
-    let mut latest_firmware: (Option<PathBuf>, u128, String) = (None, 0, String::new());
+    let mut latest_firmware: (Option<PathBuf>, String, String, SystemTime) =
+        (None, String::new(), String::new(), SystemTime::UNIX_EPOCH);
 
     for entry in firmware_dir.read_dir()? {
         let entry = entry?;
-        let file_name = entry.file_name();
+        let modified = entry.metadata()?.modified()?;
+        let path = entry.path();
+        let file_name = path.file_stem();
         let name_split: Vec<&str> = file_name
+            .ok_or_else(|| anyhow::anyhow!("file_name is none"))?
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("file_name is none"))?
-            .split('.')
+            .split('_')
             .collect();
 
-        if name_split.len() != 4
-            || name_split[0] != esp_connect_info.chip
-            || name_split[1] != esp_connect_info.firmware
-        {
+        if name_split.len() != 3 {
             continue;
         }
 
-        let version = name_split[2].to_string();
-        let firmware = name_split[0].to_string();
+        let (chip, firmware, version) = (name_split[0], name_split[1], name_split[2]);
+        if chip != esp_connect_info.chip || firmware != esp_connect_info.firmware {
+            continue;
+        }
 
-        let version: u128 = version.parse().unwrap_or(0);
-        if version > latest_firmware.1 {
-            latest_firmware = (Some(entry.path()), version, firmware);
+        if version != latest_firmware.1 && modified > latest_firmware.3 {
+            latest_firmware = (
+                Some(entry.path()),
+                version.to_string(),
+                firmware.to_string(),
+                modified,
+            );
         }
     }
 

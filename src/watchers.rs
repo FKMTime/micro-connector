@@ -100,6 +100,8 @@ async fn github_releases_watcher(
                 let resp = client.get(&file.download_url).send().await?;
                 tokio::fs::write(&tmp_path, resp.bytes().await?).await?;
                 tokio::fs::rename(&tmp_path, &release_path).await?;
+
+                tracing::info!("Downloaded new release: {}", file.name);
             }
         }
     }
