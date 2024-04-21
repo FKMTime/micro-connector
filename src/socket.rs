@@ -96,31 +96,17 @@ async fn socket_task(socket_path: String, rx: UnboundedReceiver<UnixRequest>) {
 async fn inner_socket_task(socket_path: &str, rx: &UnboundedReceiver<UnixRequest>) -> Result<()> {
     let mut stream = UnixStream::connect(socket_path).await?;
 
+    let mut buf = [0u8; 8192];
     loop {
-        let str = read_line(&mut stream).await?;
-        //stream.write_all(b"Hello, world!\n").await?;
+        let n = stream.read_u32().await? as usize;
+        let n = stream.read_exact(&mut buf [..n]).await?;
 
-        println!("Received: {str}");
+        tracing::trace!("Recv: {}", String::from_utf8_lossy(&buf[..n]));
     }
     /*
     tokio::select! {
     }
     */
-}
-
-async fn read_line(stream: &mut UnixStream) -> Result<String> {
-    let mut buf = Vec::new();
-    let mut byte = [0u8; 1];
-
-    loop {
-        stream.read_exact(&mut byte).await?;
-        if byte[0] == b'\n' {
-            break;
-        }
-        buf.push(byte[0]);
-    }
-
-    Ok(String::from_utf8(buf)?)
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
