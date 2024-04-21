@@ -9,6 +9,7 @@ mod github;
 mod handler;
 mod http;
 mod mdns;
+mod socket;
 mod structs;
 mod updater;
 mod watchers;
@@ -19,6 +20,7 @@ pub static REFRESH_DEVICE_SETTINGS_BROADCAST: OnceCell<tokio::sync::broadcast::S
     OnceCell::const_new();
 
 pub static DEV_MODE: OnceCell<bool> = OnceCell::const_new();
+pub static UNIX_SOCKET: socket::Socket = socket::Socket::const_new();
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -30,8 +32,10 @@ async fn main() -> Result<()> {
         .parse()?;
     mdns::register_mdns(&port)?;
 
-    let api_url = std::env::var("API_URL").unwrap_or_else(|_| "http://localhost:5000".to_string());
-    let api_token = std::env::var("API_TOKEN").map_err(|_| anyhow::anyhow!("API_TOKEN not set"))?;
+    let socket_path = env_or_default("SOCKET_PATH", "/tmp/socket.sock");
+    let api_url = env_or_default("API_URL", "http://localhost:5000");
+    let api_token = env_or_err("API_TOKEN")?;
+    UNIX_SOCKET.init(&socket_path).await?;
 
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
@@ -70,4 +74,12 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn env_or_default(key: &str, default: &str) -> String {
+    std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+fn env_or_err(key: &str) -> Result<String> {
+    std::env::var(key).map_err(|_| anyhow::anyhow!(format!("{key} not set!")))
 }
