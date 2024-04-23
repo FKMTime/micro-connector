@@ -1,8 +1,7 @@
+use crate::structs::{self, CompetitionStatusResp};
 use anyhow::{anyhow, Result};
 use tokio::sync::OnceCell;
 use tracing::error;
-
-use crate::structs::{self, CompetitionStatusResp};
 
 #[derive(serde::Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -294,44 +293,4 @@ pub async fn get_wifi_settings(
 
     let json: structs::WifiSettings = serde_json::from_str(&text)?;
     Ok((json.wifi_ssid, json.wifi_password))
-}
-
-static API_URL: OnceCell<String> = OnceCell::const_new();
-static API_CLIENT: OnceCell<reqwest::Client> = OnceCell::const_new();
-static FKM_API_TOKEN: OnceCell<String> = OnceCell::const_new();
-pub struct ApiClient {}
-impl ApiClient {
-    pub fn set_api_client(
-        client: reqwest::Client,
-        api_url: String,
-        fkm_api_token: String,
-    ) -> Result<()> {
-        API_CLIENT.set(client)?;
-        API_URL.set(api_url)?;
-        FKM_API_TOKEN.set(fkm_api_token)?;
-
-        Ok(())
-    }
-
-    pub fn get_api_client() -> Result<(reqwest::Client, String)> {
-        let client = API_CLIENT
-            .get()
-            .ok_or_else(|| anyhow!("API_CLIENT not set"))?
-            .to_owned();
-
-        let api_url = API_URL
-            .get()
-            .ok_or_else(|| anyhow!("API_URL not set"))?
-            .to_owned();
-
-        Ok((client, api_url))
-    }
-
-    pub fn get_fkm_api_token() -> Result<String> {
-        let api_token = FKM_API_TOKEN
-            .get()
-            .ok_or_else(|| anyhow!("API_TOKEN not set"))?;
-
-        Ok(format!("Token {api_token}"))
-    }
 }

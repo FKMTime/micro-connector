@@ -20,8 +20,6 @@ pub async fn start_bluetooth_task() -> Result<()> {
 }
 
 async fn bluetooth_task() -> Result<()> {
-    let (api_client, api_url) = crate::api::ApiClient::get_api_client()?;
-
     let manager = Manager::new().await?;
     let adapter = manager
         .adapters()
@@ -55,7 +53,7 @@ async fn bluetooth_task() -> Result<()> {
                 properties.local_name.unwrap_or("none".to_string())
             );
 
-            let res = setup_bt_device(device, &api_client, &api_url).await;
+            let res = setup_bt_device(device).await;
             if let Err(e) = res {
                 tracing::error!("Failed to setup BT device: {:?}", e);
             }
@@ -65,11 +63,7 @@ async fn bluetooth_task() -> Result<()> {
     }
 }
 
-async fn setup_bt_device(
-    device: btleplug::platform::Peripheral,
-    api_client: &reqwest::Client,
-    api_url: &str,
-) -> Result<()> {
+async fn setup_bt_device(device: btleplug::platform::Peripheral) -> Result<()> {
     tracing::trace!("Connecting to device");
     device.connect().await?;
     tracing::trace!("Connected to device");
@@ -86,14 +80,13 @@ async fn setup_bt_device(
 
     // get wifi settings from API or env
     tracing::trace!("Getting wifi settings");
-    let (ssid, psk) =
-        if let Ok((ssid, psk)) = crate::api::get_wifi_settings(&api_client, &api_url).await {
-            (ssid, psk)
-        } else {
-            let ssid = std::env::var("WIFI_SSID")?;
-            let psk = std::env::var("WIFI_PSK")?;
-            (ssid, psk)
-        };
+    let (ssid, psk) = if let Ok((ssid, psk)) = get_wifi_settings().await {
+        (ssid, psk)
+    } else {
+        let ssid = std::env::var("WIFI_SSID")?;
+        let psk = std::env::var("WIFI_PSK")?;
+        (ssid, psk)
+    };
 
     let set_wifi_data = format!("{ssid}|{psk}");
     let set_wifi_data = set_wifi_data.as_bytes();
@@ -111,4 +104,20 @@ async fn setup_bt_device(
     _ = device.disconnect().await;
 
     Ok(())
+}
+
+async fn get_wifi_settings() -> Result<(String, String)> {
+    let res = super::UNIX_SOCKET
+        .send_tagged_request(crate::socket::structs::UnixRequestData::WifiSettings)
+        .await?;
+
+    if let crate::socket::structs::UnixResponseData::WifiSettings {
+        wifi_ssid,
+        wifi_password,
+    } = res
+    {
+        return Ok((wifi_ssid, wifi_password));
+    }
+
+    Err(anyhow::anyhow!("Cant get wifi settings!"))
 }

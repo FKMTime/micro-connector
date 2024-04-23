@@ -22,3 +22,4 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["json", "env-filter"] }
 uuid = "1.8.0"
 dbus = { version = "0.9.7", features = ["vendored"] }
+rand = "0.8.5"

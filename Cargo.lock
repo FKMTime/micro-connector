@@ -134,6 +134,7 @@ dependencies = [
  "dotenvy",
  "local-ip-address",
  "mdns-sd",
+ "rand",
  "reqwest",
  "serde",
  "serde_json",

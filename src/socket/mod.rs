@@ -1,11 +1,16 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
+use structs::{UnixRequest, UnixRequestData, UnixResponse, UnixResponseData};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
     sync::{mpsc::UnboundedReceiver, OnceCell, RwLock},
 };
+
+use self::structs::UnixError;
+
+pub mod api;
+pub mod structs;
 
 const UNIX_TIMEOUT: Duration = Duration::from_millis(2500);
 
@@ -19,7 +24,7 @@ pub struct Socket {
 pub struct SocketInner {
     //stream: UnixStream,
     socket_channel: tokio::sync::mpsc::UnboundedSender<UnixRequest>,
-    tag_channels: HashMap<u64, tokio::sync::oneshot::Sender<Option<UnixResponseData>>>,
+    tag_channels: HashMap<u32, tokio::sync::oneshot::Sender<Option<UnixResponseData>>>,
 }
 
 impl Socket {
@@ -50,12 +55,59 @@ impl Socket {
             .cloned()
     }
 
-    pub async fn send_request(
+    /// Request with response (waiting)
+    pub async fn send_tagged_request(
         &self,
-        tag: Option<u64>,
+        data: UnixRequestData,
+    ) -> Result<UnixResponseData, UnixError> {
+        // i think its not likely that tags would generate the same in short amount of time
+        let tag: u32 = rand::random();
+
+        let resp = self
+            .send_request(Some(tag), data)
+            .await
+            .map_err(|_| UnixError {
+                message: "IDK".to_string(),
+                should_reset_time: false,
+            })?;
+
+        if let Some(resp) = resp {
+            return match resp {
+                UnixResponseData::Error {
+                    message,
+                    should_reset_time,
+                } => Err(UnixError {
+                    message,
+                    should_reset_time,
+                }),
+                _ => Ok(resp),
+            };
+        }
+
+        Err(UnixError {
+            message: "No response".to_string(),
+            should_reset_time: false,
+        })
+    }
+
+    /// Request without response (non-waiting)
+    pub async fn send_async_request(&self, data: UnixRequestData) -> Result<(), UnixError> {
+        _ = self.send_request(None, data).await.map_err(|_| UnixError {
+            message: "IDK".to_string(),
+            should_reset_time: false,
+        })?;
+
+        Ok(())
+    }
+
+    async fn send_request(
+        &self,
+        tag: Option<u32>,
         data: UnixRequestData,
     ) -> Result<Option<UnixResponseData>> {
         let req = UnixRequest { tag, data };
+        tracing::trace!("Sending Unix request: {req:?}");
+
         let inner = self.get_inner().await?;
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
 
@@ -80,7 +132,7 @@ impl Socket {
 
     pub async fn send_resp_to_channel(
         &self,
-        tag: u64,
+        tag: u32,
         resp: Option<UnixResponseData>,
     ) -> Result<()> {
         let inner = self.get_inner().await?;
@@ -149,45 +201,4 @@ async fn read_until_null(stream: &mut UnixStream, buf: &mut Vec<u8>) -> Result<V
 
         buf.push(byte);
     }
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct UnixResponse {
-    pub tag: Option<u64>,
-
-    #[serde(flatten)]
-    pub data: Option<UnixResponseData>,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-#[serde(tag = "type", content = "data")]
-#[serde(rename_all_fields = "camelCase")]
-pub enum UnixResponseData {
-    WifiSettings {
-        wifi_ssid: String,
-        wifi_password: String,
-    },
-    PersonInfo {
-        id: String,
-        registrant_id: Option<i64>,
-        name: String,
-        wca_id: Option<String>,
-        country_iso2: Option<String>,
-        gender: String,
-        can_compete: bool,
-    },
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct UnixRequest {
-    pub tag: Option<u64>,
-
-    #[serde(flatten)]
-    pub data: UnixRequestData,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-#[serde(tag = "type", content = "data")]
-pub enum UnixRequestData {
-    PersonInfo { card_id: u128 },
 }

@@ -14,10 +14,7 @@ pub async fn handle_client(
     {
         let comp_status = comp_status.read().await;
         if comp_status.should_update {
-            if let Some(firmware) =
-                super::updater::should_update(esp_connect_info)
-                    .await?
-            {
+            if let Some(firmware) = super::updater::should_update(esp_connect_info).await? {
                 super::updater::update_client(&mut socket, &esp_connect_info, firmware).await?;
 
                 return Ok(());
@@ -142,8 +139,6 @@ async fn on_ws_msg(
 }
 
 async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> Result<()> {
-    let (client, api_url) = crate::api::ApiClient::get_api_client()?;
-
     match response {
         TimerResponse::CardInfoRequest {
             card_id,
