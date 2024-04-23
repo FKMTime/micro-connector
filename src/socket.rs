@@ -78,7 +78,11 @@ impl Socket {
         Ok(None)
     }
 
-    pub async fn send_resp_to_channel(&self, tag: u64, resp: Option<UnixResponseData>) -> Result<()> {
+    pub async fn send_resp_to_channel(
+        &self,
+        tag: u64,
+        resp: Option<UnixResponseData>,
+    ) -> Result<()> {
         let inner = self.get_inner().await?;
         let mut inner = inner.write().await;
 
@@ -109,9 +113,10 @@ async fn inner_socket_task(
 ) -> Result<()> {
     let mut stream = UnixStream::connect(socket_path).await?;
 
+    let mut buf: Vec<u8> = Vec::with_capacity(512);
     loop {
         tokio::select! {
-            recv = read_until_null(&mut stream) => {
+            recv = read_until_null(&mut stream, &mut buf) => {
                 let recv = recv?;
 
                 tracing::trace!("Unix response: {}", String::from_utf8_lossy(&recv));
@@ -132,18 +137,18 @@ async fn inner_socket_task(
     }
 }
 
-async fn read_until_null(stream: &mut UnixStream) -> Result<Vec<u8>> {
-    let mut buf: Vec<u8> = Vec::with_capacity(512);
+async fn read_until_null(stream: &mut UnixStream, buf: &mut Vec<u8>) -> Result<Vec<u8>> {
     loop {
         let byte = stream.read_u8().await?;
         if byte == 0x00 {
-            break;
+            let ret = buf.to_owned();
+            buf.clear();
+
+            return Ok(ret);
         }
 
         buf.push(byte);
     }
-
-    Ok(buf)
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
