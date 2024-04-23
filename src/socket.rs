@@ -19,7 +19,7 @@ pub struct Socket {
 pub struct SocketInner {
     //stream: UnixStream,
     socket_channel: tokio::sync::mpsc::UnboundedSender<UnixRequest>,
-    tag_channels: HashMap<u64, tokio::sync::oneshot::Sender<UnixResponseData>>,
+    tag_channels: HashMap<u64, tokio::sync::oneshot::Sender<Option<UnixResponseData>>>,
 }
 
 impl Socket {
@@ -66,25 +66,35 @@ impl Socket {
                 inner.tag_channels.insert(tag, resp_tx);
             }
 
-            // TODO: if write_all fails, maybe retry???
             inner.socket_channel.send(req)?;
-            //inner.stream.write_all(&buf).await?;
         }
 
         if tag.is_some() {
             // TODO: add better errors (for timeout, and recv error)
             let resp = tokio::time::timeout(UNIX_TIMEOUT, resp_rx).await??;
-            return Ok(Some(resp));
+            return Ok(resp);
         }
 
         Ok(None)
     }
+
+    pub async fn send_resp_to_channel(&self, tag: u64, resp: Option<UnixResponseData>) -> Result<()> {
+        let inner = self.get_inner().await?;
+        let mut inner = inner.write().await;
+
+        if let Some(chan) = inner.tag_channels.remove(&tag) {
+            // TODO: Maybe retry???
+            _ = chan.send(resp);
+        }
+
+        Ok(())
+    }
 }
 
-async fn socket_task(socket_path: String, rx: UnboundedReceiver<UnixRequest>) {
+async fn socket_task(socket_path: String, mut rx: UnboundedReceiver<UnixRequest>) {
     tokio::task::spawn(async move {
         loop {
-            let res = inner_socket_task(&socket_path, &rx).await;
+            let res = inner_socket_task(&socket_path, &mut rx).await;
             if let Err(e) = res {
                 tracing::error!("Socket task err: {e:?}");
                 _ = tokio::time::sleep(Duration::from_millis(500)).await;
@@ -93,17 +103,33 @@ async fn socket_task(socket_path: String, rx: UnboundedReceiver<UnixRequest>) {
     });
 }
 
-async fn inner_socket_task(socket_path: &str, rx: &UnboundedReceiver<UnixRequest>) -> Result<()> {
+async fn inner_socket_task(
+    socket_path: &str,
+    rx: &mut UnboundedReceiver<UnixRequest>,
+) -> Result<()> {
     let mut stream = UnixStream::connect(socket_path).await?;
 
     loop {
-        let recv = read_until_null(&mut stream).await?;
-        tracing::trace!("Recv: {}", String::from_utf8_lossy(&recv));
+        tokio::select! {
+            recv = read_until_null(&mut stream) => {
+                let recv = recv?;
+
+                tracing::trace!("Unix response: {}", String::from_utf8_lossy(&recv));
+                let resp: UnixResponse = serde_json::from_slice(&recv)?;
+                tracing::debug!("Unix Response Data: {resp:?}");
+
+                if let Some(tag) = resp.tag {
+                    super::UNIX_SOCKET.send_resp_to_channel(tag, resp.data).await?;
+                }
+            }
+            Some(recv) = rx.recv() => {
+                let bytes = serde_json::to_vec(&recv)?;
+
+                stream.write_all(&bytes).await?;
+                stream.write_u8(0x00).await?; // null byte separator
+            }
+        }
     }
-    /*
-    tokio::select! {
-    }
-    */
 }
 
 async fn read_until_null(stream: &mut UnixStream) -> Result<Vec<u8>> {
@@ -125,13 +151,18 @@ pub struct UnixResponse {
     pub tag: Option<u64>,
 
     #[serde(flatten)]
-    pub data: UnixResponseData,
+    pub data: Option<UnixResponseData>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(tag = "type", content = "data")]
+#[serde(rename_all_fields = "camelCase")]
 pub enum UnixResponseData {
-    CompetitorInfo {
+    WifiSettings {
+        wifi_ssid: String,
+        wifi_password: String,
+    },
+    PersonInfo {
         id: String,
         registrant_id: Option<i64>,
         name: String,

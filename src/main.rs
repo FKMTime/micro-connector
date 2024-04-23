@@ -37,6 +37,13 @@ async fn main() -> Result<()> {
     let api_token = env_or_err("API_TOKEN")?;
     UNIX_SOCKET.init(&socket_path).await?;
 
+    let res = UNIX_SOCKET.send_request(
+        Some(321),
+        socket::UnixRequestData::PersonInfo { card_id: 69420 },
+    ).await;
+
+    tracing::debug!("Card req response: {res:?}");
+
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .user_agent("FKM-Timer/0.1")
