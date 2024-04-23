@@ -147,14 +147,14 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
         } => {
             let attendance_device = attendance_device.unwrap_or(false);
             if attendance_device {
-                _ = crate::api::mark_attendance(&client, &api_url, esp_id, card_id).await;
+                _ = crate::socket::api::mark_attendance(esp_id, card_id).await;
                 let resp = serde_json::to_string(&TimerResponse::AttendanceMarked { esp_id })?;
                 socket.send(Message::Text(resp)).await?;
 
                 return Ok(());
             }
 
-            let response = match crate::api::get_competitor_info(&client, &api_url, card_id).await {
+            let response = match crate::socket::api::get_competitor_info(card_id).await {
                 Ok(info) => {
                     trace!("Card info: {} {} {:?}", card_id, esp_id, info);
                     let response = TimerResponse::CardInfoResponse {
@@ -190,9 +190,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
         } => {
             trace!("Solve: {solve_time} ({penalty}) {solver_id} {esp_id} {timestamp} {session_id} {delegate}");
 
-            let res = crate::api::send_solve_entry(
-                &client,
-                &api_url,
+            let res = crate::socket::api::send_solve_entry(
                 solve_time,
                 penalty,
                 timestamp,
@@ -239,11 +237,11 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
             level,
             voltage,
         } => {
-            crate::api::send_battery_status(&client, &api_url, esp_id, level).await?;
+            _ = crate::socket::api::send_battery_status(esp_id, level).await;
             trace!("Battery: {} {} {}", esp_id, level, voltage);
         }
         TimerResponse::Add { esp_id, firmware } => {
-            crate::api::add_device(&client, &api_url, esp_id, &firmware).await?;
+            _ = crate::socket::api::add_device(esp_id, &firmware).await;
             trace!("Add device: {}", esp_id);
         }
         _ => {

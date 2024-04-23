@@ -14,13 +14,9 @@ pub async fn spawn_watchers(
     let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
-    let (client, api_url) = crate::api::ApiClient::get_api_client()?;
-
     let mut build_interval = tokio::time::interval(Duration::from_secs(1));
     let mut github_releases_interval =
         tokio::time::interval(Duration::from_millis(GITHUB_UPDATE_INTERVAL));
-    let mut comp_status_interval =
-        tokio::time::interval(Duration::from_millis(UPDATE_STRATEGY_INTERVAL));
 
     tokio::task::spawn(async move {
         loop {
@@ -36,15 +32,9 @@ pub async fn spawn_watchers(
                         continue;
                     }
 
-                    let res = github_releases_watcher(&client, &firmware_dir).await;
+                    let res = github_releases_watcher(&firmware_dir).await;
                     if let Err(e) = res {
                         error!("Error in github releases watcher: {:?}", e);
-                    }
-                }
-                _ = comp_status_interval.tick() => {
-                    let res = comp_status_watcher(&client, &api_url, &comp_status, &device_settings_broadcaster).await;
-                    if let Err(e) = res {
-                        error!("Error in update strategy watcher: {:?}", e);
                     }
                 }
             }
@@ -86,11 +76,9 @@ async fn build_watcher(
     Ok(())
 }
 
-async fn github_releases_watcher(
-    client: &reqwest::Client,
-    firmware_dir: &PathBuf,
-) -> Result<()> {
-    let files = crate::github::get_releases(client).await?;
+async fn github_releases_watcher(firmware_dir: &PathBuf) -> Result<()> {
+    let client = reqwest::Client::new();
+    let files = crate::github::get_releases(&client).await?;
 
     for file in files {
         let release_path = firmware_dir.join(&file.name);
@@ -109,9 +97,8 @@ async fn github_releases_watcher(
     Ok(())
 }
 
+/*
 async fn comp_status_watcher(
-    client: &reqwest::Client,
-    api_url: &str,
     comp_status: &SharedCompetitionStatus,
     device_settings_broadcaster: &tokio::sync::broadcast::Sender<()>,
 ) -> Result<()> {
@@ -150,3 +137,4 @@ async fn comp_status_watcher(
     }
     Ok(())
 }
+*/

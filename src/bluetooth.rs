@@ -80,7 +80,7 @@ async fn setup_bt_device(device: btleplug::platform::Peripheral) -> Result<()> {
 
     // get wifi settings from API or env
     tracing::trace!("Getting wifi settings");
-    let (ssid, psk) = if let Ok((ssid, psk)) = get_wifi_settings().await {
+    let (ssid, psk) = if let Ok((ssid, psk)) = crate::socket::api::get_wifi_settings().await {
         (ssid, psk)
     } else {
         let ssid = std::env::var("WIFI_SSID")?;
@@ -104,20 +104,4 @@ async fn setup_bt_device(device: btleplug::platform::Peripheral) -> Result<()> {
     _ = device.disconnect().await;
 
     Ok(())
-}
-
-async fn get_wifi_settings() -> Result<(String, String)> {
-    let res = super::UNIX_SOCKET
-        .send_tagged_request(crate::socket::structs::UnixRequestData::WifiSettings)
-        .await?;
-
-    if let crate::socket::structs::UnixResponseData::WifiSettings {
-        wifi_ssid,
-        wifi_password,
-    } = res
-    {
-        return Ok((wifi_ssid, wifi_password));
-    }
-
-    Err(anyhow::anyhow!("Cant get wifi settings!"))
 }

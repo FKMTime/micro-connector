@@ -3,15 +3,15 @@ use std::collections::HashMap;
 use tokio::sync::OnceCell;
 use tracing::info;
 
-//mod bluetooth;
-//mod github;
-//mod handler;
-//mod http;
-//mod mdns;
+mod bluetooth;
+mod github;
+mod handler;
+mod http;
+mod mdns;
 mod socket;
-//mod structs;
-//mod updater;
-//mod watchers;
+mod structs;
+mod updater;
+mod watchers;
 
 pub static NEW_BUILD_BROADCAST: OnceCell<tokio::sync::broadcast::Sender<()>> =
     OnceCell::const_new();
@@ -29,20 +29,11 @@ async fn main() -> Result<()> {
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
         .parse()?;
-    //mdns::register_mdns(&port)?;
+    mdns::register_mdns(&port)?;
 
     let socket_path = env_or_default("SOCKET_PATH", "/tmp/socket.sock");
-    let api_url = env_or_default("API_URL", "http://localhost:5000");
-    let api_token = env_or_err("API_TOKEN")?;
     UNIX_SOCKET.init(&socket_path).await?;
 
-    let res = UNIX_SOCKET
-        .send_tagged_request(socket::structs::UnixRequestData::PersonInfo { card_id: 69420 })
-        .await;
-
-    tracing::debug!("Card req response: {res:?}");
-
-    /*
     // not used yet
     // _ = DEV_MODE.set(std::env::var("DEV").is_ok());
 
@@ -72,7 +63,6 @@ async fn main() -> Result<()> {
             info!("Received SIGINT, stopping server!");
         }
     }
-    */
 
     Ok(())
 }

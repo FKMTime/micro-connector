@@ -38,7 +38,6 @@ impl Socket {
         let (socket_channel, rx) = tokio::sync::mpsc::unbounded_channel();
 
         let inner = Arc::new(RwLock::new(SocketInner {
-            //stream: UnixStream::connect(socket_path).await?,
             socket_channel,
             tag_channels: HashMap::new(),
         }));
@@ -67,7 +66,7 @@ impl Socket {
             .send_request(Some(tag), data)
             .await
             .map_err(|_| UnixError {
-                message: "IDK".to_string(),
+                message: "Send failed".to_string(),
                 should_reset_time: false,
             })?;
 
@@ -93,13 +92,14 @@ impl Socket {
     /// Request without response (non-waiting)
     pub async fn send_async_request(&self, data: UnixRequestData) -> Result<(), UnixError> {
         _ = self.send_request(None, data).await.map_err(|_| UnixError {
-            message: "IDK".to_string(),
+            message: "Send failed".to_string(),
             should_reset_time: false,
         })?;
 
         Ok(())
     }
 
+    // TODO: implement resending if something fails
     async fn send_request(
         &self,
         tag: Option<u32>,
