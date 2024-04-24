@@ -38,6 +38,9 @@ pub enum UnixResponseData {
         message: String,
         should_reset_time: bool,
     },
+    Success {
+        message: String,
+    },
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

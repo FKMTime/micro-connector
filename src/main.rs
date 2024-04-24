@@ -31,9 +31,8 @@ async fn main() -> Result<()> {
         .parse()?;
     mdns::register_mdns(&port)?;
 
-    // not used yet
-    // _ = DEV_MODE.set(std::env::var("DEV").is_ok());
 
+    _ = DEV_MODE.set(std::env::var("DEV").is_ok());
     let (tx, _) = tokio::sync::broadcast::channel::<()>(1);
     _ = NEW_BUILD_BROADCAST.set(tx.clone());
 
@@ -70,8 +69,4 @@ async fn main() -> Result<()> {
 
 fn env_or_default(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
-}
-
-fn env_or_err(key: &str) -> Result<String> {
-    std::env::var(key).map_err(|_| anyhow::anyhow!(format!("{key} not set!")))
 }
