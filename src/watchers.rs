@@ -1,6 +1,9 @@
 use crate::structs::SharedCompetitionStatus;
 use anyhow::Result;
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use tracing::error;
 
 const GITHUB_UPDATE_INTERVAL: u64 = 60000 * 5;
@@ -75,9 +78,7 @@ async fn build_watcher(
 }
 
 async fn github_releases_watcher(firmware_dir: &PathBuf) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .user_agent("Fkm/2.0")
-        .build()?;
+    let client = reqwest::Client::builder().user_agent("Fkm/2.0").build()?;
 
     let files = crate::github::get_releases(&client).await?;
 
@@ -88,12 +89,24 @@ async fn github_releases_watcher(firmware_dir: &PathBuf) -> Result<()> {
             if !exists {
                 let resp = client.get(&file.download_url).send().await?;
                 tokio::fs::write(&tmp_path, resp.bytes().await?).await?;
-                tokio::fs::rename(&tmp_path, &release_path).await?;
+                move_file(&tmp_path, &release_path).await?;
 
                 tracing::info!("Downloaded new release: {}", file.name);
             }
         }
     }
 
+    Ok(())
+}
+
+async fn move_file(src: impl AsRef<Path>, dest: impl AsRef<Path>) -> Result<()> {
+    if let Err(e) = tokio::fs::rename(&src, &dest).await {
+        if e.kind().to_string().contains("cross-device link or rename") {
+            tokio::fs::copy(&src, &dest).await?;
+            tokio::fs::remove_file(&src).await?;
+        } else {
+            return Err(e.into());
+        }
+    }
     Ok(())
 }
