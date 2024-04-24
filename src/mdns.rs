@@ -18,8 +18,7 @@ pub fn register_mdns(port: &u16) -> Result<()> {
         let service_type = "_stackmat._tcp.local.";
         let instance_name = "stackmat_backend";
         let ip = ip.to_string();
-        let host_name = format!("ws://{ip}:{port}"); // TODO: change this to normal .local url and
-                                                     // update mdns_sd package to 0.11.x
+        let host_name = "stackmat.local.";
         let properties = [("ws", format!("ws://{ip}:{port}"))];
 
         let my_service = ServiceInfo::new(
