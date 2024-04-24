@@ -202,7 +202,40 @@ async fn inner_socket_task(
 async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
     match data {
         UnixResponseData::ServerStatus(status) => {
-            //status.
+            let inner = crate::UNIX_SOCKET.get_inner().await?;
+            let inner = inner.read().await;
+            let mut comp_status = inner.comp_status.write().await;
+
+            comp_status.should_update = status.should_update;
+            let mut changed = false;
+
+            // delete devices that are not in the new status
+            let devices_clone = comp_status.devices_settings.clone();
+            for (k, _) in devices_clone {
+                if !status.rooms.iter().any(|r| r.devices.contains(&k)) {
+                    comp_status.devices_settings.remove(&k);
+                    changed = true;
+                }
+            }
+
+            for room in status.rooms {
+                for device in room.devices {
+                    let old = comp_status.devices_settings.insert(
+                        device,
+                        crate::structs::CompetitionDeviceSettings {
+                            use_inspection: room.use_inspection,
+                        },
+                    );
+
+                    if old.is_none() || old.unwrap().use_inspection != room.use_inspection {
+                        changed = true;
+                    }
+                }
+            }
+
+            if changed {
+                _ = comp_status.broadcaster.send(());
+            }
         }
         _ => {}
     }

@@ -88,6 +88,7 @@ pub type SharedCompetitionStatus = std::sync::Arc<tokio::sync::RwLock<Competitio
 pub struct CompetitionStatus {
     pub should_update: bool,
     pub devices_settings: HashMap<u32, CompetitionDeviceSettings>,
+    pub broadcaster: tokio::sync::broadcast::Sender<()>
 }
 
 #[derive(Debug, Clone)]

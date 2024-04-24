@@ -44,6 +44,7 @@ async fn main() -> Result<()> {
         structs::CompetitionStatus {
             should_update: false,
             devices_settings: HashMap::new(),
+            broadcaster: tx2
         },
     ));
 
