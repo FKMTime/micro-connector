@@ -18,7 +18,9 @@ pub async fn get_releases(
         .await?;
 
     let release: structs::GithubRelease = {
-        let json: Vec<structs::GithubRelease> = res.json().await?;
+        let text = res.text().await?;
+
+        let json: Vec<structs::GithubRelease> = serde_json::from_str(&text)?;
         json.iter()
             .next()
             .ok_or_else(|| anyhow::anyhow!("No releases found!"))?

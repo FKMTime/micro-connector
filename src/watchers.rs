@@ -75,7 +75,10 @@ async fn build_watcher(
 }
 
 async fn github_releases_watcher(firmware_dir: &PathBuf) -> Result<()> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent("Fkm/2.0")
+        .build()?;
+
     let files = crate::github::get_releases(&client).await?;
 
     for file in files {
