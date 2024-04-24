@@ -41,6 +41,7 @@ pub enum UnixResponseData {
     Success {
         message: String,
     },
+    Empty
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

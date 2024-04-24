@@ -78,23 +78,17 @@ impl Socket {
                 should_reset_time: false,
             })?;
 
-        if let Some(resp) = resp {
-            return match resp {
-                UnixResponseData::Error {
-                    message,
-                    should_reset_time,
-                } => Err(UnixError {
-                    message,
-                    should_reset_time,
-                }),
-                _ => Ok(resp),
-            };
+        match resp {
+            Some(UnixResponseData::Error {
+                message,
+                should_reset_time,
+            }) => Err(UnixError {
+                message,
+                should_reset_time,
+            }),
+            Some(data) => Ok(data),
+            None => Ok(UnixResponseData::Empty),
         }
-
-        Err(UnixError {
-            message: "No response".to_string(),
-            should_reset_time: false,
-        })
     }
 
     /// Request without response (non-waiting)
