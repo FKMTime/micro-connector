@@ -185,8 +185,8 @@ async fn inner_socket_task(
 
                 if let Some(tag) = resp.tag {
                     super::UNIX_SOCKET.send_resp_to_channel(tag, resp.data).await?;
-                } else {
-                    //resp
+                } else if let Some(data) = resp.data {
+                    process_untagged_response(data).await?;
                 }
             }
             Some(recv) = rx.recv() => {
@@ -197,6 +197,17 @@ async fn inner_socket_task(
             }
         }
     }
+}
+
+async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
+    match data {
+        UnixResponseData::ServerStatus(status) => {
+            //status.
+        }
+        _ => {}
+    }
+
+    Ok(())
 }
 
 async fn read_until_null(stream: &mut UnixStream, buf: &mut Vec<u8>) -> Result<Vec<u8>> {
