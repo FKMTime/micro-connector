@@ -7,6 +7,8 @@ use tokio::{
     sync::{mpsc::UnboundedReceiver, OnceCell, RwLock},
 };
 
+use crate::structs::SharedCompetitionStatus;
+
 use self::structs::UnixError;
 
 pub mod api;
@@ -23,6 +25,7 @@ pub struct Socket {
 #[derive(Debug)]
 pub struct SocketInner {
     //stream: UnixStream,
+    comp_status: SharedCompetitionStatus,
     socket_channel: tokio::sync::mpsc::UnboundedSender<UnixRequest>,
     tag_channels: HashMap<u32, tokio::sync::oneshot::Sender<Option<UnixResponseData>>>,
 }
@@ -34,10 +37,15 @@ impl Socket {
         }
     }
 
-    pub async fn init(&self, socket_path: &str) -> Result<()> {
+    pub async fn init(
+        &self,
+        socket_path: &str,
+        comp_status: SharedCompetitionStatus,
+    ) -> Result<()> {
         let (socket_channel, rx) = tokio::sync::mpsc::unbounded_channel();
 
         let inner = Arc::new(RwLock::new(SocketInner {
+            comp_status,
             socket_channel,
             tag_channels: HashMap::new(),
         }));
@@ -177,6 +185,8 @@ async fn inner_socket_task(
 
                 if let Some(tag) = resp.tag {
                     super::UNIX_SOCKET.send_resp_to_channel(tag, resp.data).await?;
+                } else {
+                    //resp
                 }
             }
             Some(recv) = rx.recv() => {

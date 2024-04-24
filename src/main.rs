@@ -31,9 +31,6 @@ async fn main() -> Result<()> {
         .parse()?;
     mdns::register_mdns(&port)?;
 
-    let socket_path = env_or_default("SOCKET_PATH", "/tmp/socket.sock");
-    UNIX_SOCKET.init(&socket_path).await?;
-
     // not used yet
     // _ = DEV_MODE.set(std::env::var("DEV").is_ok());
 
@@ -50,8 +47,11 @@ async fn main() -> Result<()> {
         },
     ));
 
+    let socket_path = env_or_default("SOCKET_PATH", "/tmp/socket.sock");
+    UNIX_SOCKET.init(&socket_path, comp_status.clone()).await?;
+
     bluetooth::start_bluetooth_task().await?;
-    watchers::spawn_watchers(tx, tx2, comp_status.clone()).await?;
+    watchers::spawn_watchers(tx, comp_status.clone()).await?;
     tokio::task::spawn(http::start_server(port, comp_status.clone()));
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;

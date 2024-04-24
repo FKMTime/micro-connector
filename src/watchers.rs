@@ -4,11 +4,9 @@ use std::{path::PathBuf, time::Duration};
 use tracing::error;
 
 const GITHUB_UPDATE_INTERVAL: u64 = 60000 * 5;
-const UPDATE_STRATEGY_INTERVAL: u64 = 15000;
 
 pub async fn spawn_watchers(
     broadcaster: tokio::sync::broadcast::Sender<()>,
-    device_settings_broadcaster: tokio::sync::broadcast::Sender<()>,
     comp_status: SharedCompetitionStatus,
 ) -> Result<()> {
     let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");

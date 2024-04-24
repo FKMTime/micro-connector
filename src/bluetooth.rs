@@ -21,6 +21,12 @@ pub async fn start_bluetooth_task() -> Result<()> {
 
 async fn bluetooth_task() -> Result<()> {
     let manager = Manager::new().await?;
+
+    // silently fail bluetooth task if no bluetooth adapter found / bluez service not found
+    if manager.adapters().await.is_err() {
+        return Ok(());
+    }
+
     let adapter = manager
         .adapters()
         .await?
