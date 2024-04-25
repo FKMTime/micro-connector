@@ -41,7 +41,13 @@ pub enum UnixResponseData {
     Success {
         message: String,
     },
-    Empty
+    IncidentResolved {
+        esp_id: u32,
+        should_scan_cards: bool,
+
+        attempt: Option<IncidentAttempt>,
+    },
+    Empty,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -85,4 +91,13 @@ pub enum UnixRequestData {
         #[serde(rename = "type")]
         r#type: String,
     },
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct IncidentAttempt {
+    pub session_id: Option<String>,
+    pub penalty: Option<i64>,
+    //pub value: Option<u128>,
+    //pub inspection_time: Option<u128>,
 }
