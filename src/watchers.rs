@@ -1,4 +1,4 @@
-use crate::structs::SharedCompetitionStatus;
+use crate::structs::SharedAppState;
 use anyhow::Result;
 use std::{
     path::{Path, PathBuf},
@@ -8,10 +8,7 @@ use tracing::error;
 
 const GITHUB_UPDATE_INTERVAL: u64 = 60000 * 5;
 
-pub async fn spawn_watchers(
-    broadcaster: tokio::sync::broadcast::Sender<()>,
-    comp_status: SharedCompetitionStatus,
-) -> Result<()> {
+pub async fn spawn_watchers(state: SharedAppState) -> Result<()> {
     let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
@@ -23,16 +20,12 @@ pub async fn spawn_watchers(
         loop {
             tokio::select! {
                 _ = build_interval.tick() => {
-                    let res = build_watcher(&broadcaster, &firmware_dir).await;
+                    let res = build_watcher(&state, &firmware_dir).await;
                     if let Err(e) = res {
                         error!("Error in build watcher: {:?}", e);
                     }
                 }
                 _ = github_releases_interval.tick() => {
-                    if !comp_status.read().await.should_update {
-                        continue;
-                    }
-
                     let res = github_releases_watcher(&firmware_dir).await;
                     if let Err(e) = res {
                         error!("Error in github releases watcher: {:?}", e);
@@ -45,10 +38,7 @@ pub async fn spawn_watchers(
     Ok(())
 }
 
-async fn build_watcher(
-    broadcaster: &tokio::sync::broadcast::Sender<()>,
-    firmware_dir: &PathBuf,
-) -> Result<()> {
+async fn build_watcher(state: &SharedAppState, firmware_dir: &PathBuf) -> Result<()> {
     let mut latest_modified: u128 = 0;
 
     let mut modified_state = false;
@@ -71,7 +61,7 @@ async fn build_watcher(
     }
 
     if modified_state {
-        _ = broadcaster.send(());
+        _ = state.build_broadcast();
     }
 
     Ok(())

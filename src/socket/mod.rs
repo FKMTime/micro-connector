@@ -1,3 +1,5 @@
+use self::structs::UnixError;
+use crate::structs::SharedAppState;
 use anyhow::Result;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use structs::{UnixRequest, UnixRequestData, UnixResponse, UnixResponseData};
@@ -6,10 +8,6 @@ use tokio::{
     net::UnixStream,
     sync::{mpsc::UnboundedReceiver, OnceCell, RwLock},
 };
-
-use crate::structs::SharedCompetitionStatus;
-
-use self::structs::UnixError;
 
 pub mod api;
 pub mod structs;
@@ -25,7 +23,7 @@ pub struct Socket {
 #[derive(Debug)]
 pub struct SocketInner {
     //stream: UnixStream,
-    comp_status: SharedCompetitionStatus,
+    state: SharedAppState,
     socket_channel: tokio::sync::mpsc::UnboundedSender<UnixRequest>,
     tag_channels: HashMap<u32, tokio::sync::oneshot::Sender<Option<UnixResponseData>>>,
 }
@@ -37,15 +35,11 @@ impl Socket {
         }
     }
 
-    pub async fn init(
-        &self,
-        socket_path: &str,
-        comp_status: SharedCompetitionStatus,
-    ) -> Result<()> {
+    pub async fn init(&self, socket_path: &str, state: SharedAppState) -> Result<()> {
         let (socket_channel, rx) = tokio::sync::mpsc::unbounded_channel();
 
         let inner = Arc::new(RwLock::new(SocketInner {
-            comp_status,
+            state,
             socket_channel,
             tag_channels: HashMap::new(),
         }));
@@ -198,7 +192,7 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
         UnixResponseData::ServerStatus(status) => {
             let inner = crate::UNIX_SOCKET.get_inner().await?;
             let inner = inner.read().await;
-            let mut comp_status = inner.comp_status.write().await;
+            let mut comp_status = inner.state.write().await;
 
             comp_status.should_update = status.should_update;
             let mut changed = false;

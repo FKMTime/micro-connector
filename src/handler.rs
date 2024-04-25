@@ -1,6 +1,6 @@
 use crate::{
     http::EspConnectInfo,
-    structs::{SharedCompetitionStatus, TimerResponse},
+    structs::{SharedAppState, TimerPacket},
 };
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
@@ -9,10 +9,11 @@ use tracing::{error, info, trace};
 pub async fn handle_client(
     mut socket: WebSocket,
     esp_connect_info: &EspConnectInfo,
-    comp_status: SharedCompetitionStatus,
+    state: SharedAppState,
 ) -> Result<()> {
     {
-        let comp_status = comp_status.read().await;
+        /*
+        let comp_status = state.read().await;
         if comp_status.should_update {
             if let Some(firmware) = super::updater::should_update(esp_connect_info).await? {
                 super::updater::update_client(&mut socket, &esp_connect_info, firmware).await?;
@@ -20,18 +21,18 @@ pub async fn handle_client(
                 return Ok(());
             }
         }
+        */
     }
 
-    send_device_status(&mut socket, esp_connect_info, &comp_status).await?;
-    let mut update_broadcast = super::NEW_BUILD_BROADCAST
-        .get()
-        .expect("build broadcast channel not set")
-        .subscribe();
+    send_device_status(&mut socket, esp_connect_info, &state).await?;
+    let mut update_broadcast = state.get_build_bc().await;
 
+    /*
     let mut update_device_settings_broadcast = super::REFRESH_DEVICE_SETTINGS_BROADCAST
         .get()
         .expect("device settings broadcast channel not set")
         .subscribe();
+    */
 
     let interval_time = std::time::Duration::from_secs(5);
     let mut hb_interval = tokio::time::interval(interval_time);
@@ -50,10 +51,12 @@ pub async fn handle_client(
                 hb_received = false;
             }
             _ = update_broadcast.recv() => {
-                let comp_status = comp_status.read().await;
+                /*
+                let comp_status = state.read().await;
                 if !comp_status.should_update {
                     continue;
                 }
+                */
 
                 let firmware = super::updater::should_update(esp_connect_info).await?;
                 if let Some(firmware) = firmware {
@@ -63,9 +66,11 @@ pub async fn handle_client(
                     }
                 }
             }
+            /*
             _ = update_device_settings_broadcast.recv() => {
-                send_device_status(&mut socket, esp_connect_info, &comp_status).await?;
+                send_device_status(&mut socket, esp_connect_info, &state).await?;
             }
+            */
             msg = socket.recv() => {
                 let msg = msg.ok_or_else(|| anyhow::anyhow!("Frame option is null"))??;
                 let res = on_ws_msg(&mut socket, msg, esp_connect_info, &mut hb_received).await;
@@ -87,18 +92,18 @@ pub async fn handle_client(
 async fn send_device_status(
     socket: &mut WebSocket,
     esp_connect_info: &EspConnectInfo,
-    comp_status: &SharedCompetitionStatus,
+    state: &SharedAppState,
 ) -> Result<()> {
-    let comp_status = comp_status.read().await;
+    let comp_status = state.read().await;
     let settings = comp_status.devices_settings.get(&esp_connect_info.id);
     let frame = if let Some(settings) = settings {
-        TimerResponse::DeviceSettings {
+        TimerPacket::DeviceSettings {
             esp_id: esp_connect_info.id,
             use_inspection: settings.use_inspection,
             added: true,
         }
     } else {
-        TimerResponse::DeviceSettings {
+        TimerPacket::DeviceSettings {
             esp_id: esp_connect_info.id,
             use_inspection: false,
             added: false,
@@ -125,7 +130,7 @@ async fn on_ws_msg(
             *hb_received = true;
         }
         Message::Text(payload) => {
-            let response: TimerResponse = serde_json::from_str(&payload)?;
+            let response: TimerPacket = serde_json::from_str(&payload)?;
             let res = on_timer_response(socket, response).await;
             if let Err(e) = res {
                 error!("on_timer_response error: {e:?}");
@@ -138,9 +143,9 @@ async fn on_ws_msg(
     Ok(false)
 }
 
-async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> Result<()> {
+async fn on_timer_response(socket: &mut WebSocket, response: TimerPacket) -> Result<()> {
     match response {
-        TimerResponse::CardInfoRequest {
+        TimerPacket::CardInfoRequest {
             card_id,
             esp_id,
             attendance_device,
@@ -148,7 +153,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
             let attendance_device = attendance_device.unwrap_or(false);
             if attendance_device {
                 _ = crate::socket::api::mark_attendance(esp_id, card_id).await;
-                let resp = serde_json::to_string(&TimerResponse::AttendanceMarked { esp_id })?;
+                let resp = serde_json::to_string(&TimerPacket::AttendanceMarked { esp_id })?;
                 socket.send(Message::Text(resp)).await?;
 
                 return Ok(());
@@ -157,7 +162,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
             let response = match crate::socket::api::get_competitor_info(card_id).await {
                 Ok(info) => {
                     trace!("Card info: {} {} {:?}", card_id, esp_id, info);
-                    let response = TimerResponse::CardInfoResponse {
+                    let response = TimerPacket::CardInfoResponse {
                         card_id,
                         esp_id,
                         country_iso2: info.country_iso2.unwrap_or_default(),
@@ -167,7 +172,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
 
                     response
                 }
-                Err(e) => TimerResponse::ApiError {
+                Err(e) => TimerPacket::ApiError {
                     esp_id,
                     error: e.message,
                     should_reset_time: e.should_reset_time,
@@ -177,10 +182,10 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
             let response = serde_json::to_string(&response)?;
             socket.send(Message::Text(response)).await?;
         }
-        TimerResponse::Solve {
+        TimerPacket::Solve {
             solve_time,
             penalty,
-            competitor_id: solver_id,
+            competitor_id,
             judge_id,
             esp_id,
             timestamp,
@@ -188,7 +193,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
             delegate,
             inspection_time,
         } => {
-            trace!("Solve: {solve_time} ({penalty}) {solver_id} {esp_id} {timestamp} {session_id} {delegate}");
+            trace!("Solve: {solve_time} ({penalty}) {competitor_id} {esp_id} {timestamp} {session_id} {delegate}");
 
             let res = crate::socket::api::send_solve_entry(
                 solve_time,
@@ -196,7 +201,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
                 timestamp,
                 esp_id,
                 judge_id,
-                solver_id,
+                competitor_id,
                 delegate,
                 &session_id,
                 inspection_time,
@@ -204,12 +209,12 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
             .await;
 
             let resp = match res {
-                Ok(_) => TimerResponse::SolveConfirm {
+                Ok(_) => TimerPacket::SolveConfirm {
                     esp_id,
                     session_id,
-                    competitor_id: solver_id,
+                    competitor_id,
                 },
-                Err(e) => TimerResponse::ApiError {
+                Err(e) => TimerPacket::ApiError {
                     esp_id,
                     error: e.message,
                     should_reset_time: e.should_reset_time,
@@ -219,20 +224,20 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
             let response = serde_json::to_string(&resp)?;
             socket.send(Message::Text(response)).await?;
         }
-        TimerResponse::Logs { esp_id, logs } => {
+        TimerPacket::Logs { esp_id, logs } => {
             let mut msg_buf = String::new();
             for log in logs.iter().rev() {
                 for line in log.msg.lines() {
                     if line.is_empty() {
                         continue;
                     }
-                    msg_buf.push_str(&format!("{} | {}\n", esp_id, line));
+                    msg_buf.push_str(&format!("LOGS {} | {}\n", esp_id, line));
                 }
             }
 
-            info!("LOGS:\n{}", msg_buf.trim());
+            info!("{}", msg_buf.trim());
         }
-        TimerResponse::Battery {
+        TimerPacket::Battery {
             esp_id,
             level,
             voltage,
@@ -240,7 +245,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerResponse) -> R
             _ = crate::socket::api::send_battery_status(esp_id, level).await;
             trace!("Battery: {} {} {}", esp_id, level, voltage);
         }
-        TimerResponse::Add { esp_id, firmware } => {
+        TimerPacket::Add { esp_id, firmware } => {
             _ = crate::socket::api::add_device(esp_id, &firmware).await;
             trace!("Add device: {}", esp_id);
         }

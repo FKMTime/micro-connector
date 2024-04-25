@@ -1,5 +1,5 @@
 use crate::handler::handle_client;
-use crate::structs::SharedCompetitionStatus;
+use crate::structs::SharedAppState;
 use anyhow::Result;
 use axum::extract::ws::WebSocket;
 use axum::extract::{Query, State};
@@ -36,7 +36,7 @@ pub struct EspConnectInfo {
     pub firmware: String,
 }
 
-pub async fn start_server(port: u16, comp_status: SharedCompetitionStatus) -> Result<()> {
+pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     info!("Server started, listening on 0.0.0.0:{port}");
 
@@ -46,7 +46,7 @@ pub async fn start_server(port: u16, comp_status: SharedCompetitionStatus) -> Re
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
         )
-        .with_state(comp_status);
+        .with_state(state);
 
     axum::serve(listener, app.into_make_service()).await?;
     Ok(())
@@ -55,19 +55,15 @@ pub async fn start_server(port: u16, comp_status: SharedCompetitionStatus) -> Re
 async fn ws_handler(
     ws: WebSocketUpgrade,
     Query(esp_connect_info): Query<EspConnectInfo>,
-    State(comp_status): State<SharedCompetitionStatus>,
+    State(state): State<SharedAppState>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info, comp_status))
+    ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info, state))
 }
 
-async fn handle_socket(
-    socket: WebSocket,
-    esp_connect_info: EspConnectInfo,
-    comp_status: SharedCompetitionStatus,
-) {
+async fn handle_socket(socket: WebSocket, esp_connect_info: EspConnectInfo, state: SharedAppState) {
     info!("Client connected: {esp_connect_info:?}");
 
-    let res = handle_client(socket, &esp_connect_info, comp_status).await;
+    let res = handle_client(socket, &esp_connect_info, state).await;
     if let Err(e) = res {
         error!("Handle client error: {e}");
     }

@@ -1,4 +1,4 @@
-use crate::{http::EspConnectInfo, structs::TimerResponse};
+use crate::{http::EspConnectInfo, structs::TimerPacket};
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
 use std::{path::PathBuf, time::SystemTime};
@@ -74,7 +74,7 @@ pub async fn update_client(
         esp_connect_info.firmware, esp_connect_info.version, latest_firmware.version
     );
 
-    let start_update_resp = TimerResponse::StartUpdate {
+    let start_update_resp = TimerPacket::StartUpdate {
         esp_id: esp_connect_info.id,
         version: latest_firmware.version,
         build_time: latest_firmware.build_time,

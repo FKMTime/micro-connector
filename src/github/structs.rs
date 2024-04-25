@@ -43,3 +43,11 @@ pub struct Asset {
     #[serde(rename = "browser_download_url")]
     pub browser_download_url: String,
 }
+
+#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubReleaseItem {
+    pub name: String,
+    pub tag: String,
+    pub url: String,
+}

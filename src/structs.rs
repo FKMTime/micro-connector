@@ -1,16 +1,15 @@
+use serde::Deserialize;
 use std::collections::HashMap;
 
-use serde::Deserialize;
-
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LogData {
     pub millis: u128,
     pub msg: String,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
-pub enum TimerResponse {
+pub enum TimerPacket {
     StartUpdate {
         esp_id: u32,
         version: String,
@@ -33,6 +32,12 @@ pub enum TimerResponse {
         esp_id: u32,
         competitor_id: u128,
         session_id: String,
+    },
+    DelegateResponse {
+        esp_id: u32,
+        should_scan_cards: bool,
+        solve_time: u128,
+        penalty: i64,
     },
     ApiError {
         esp_id: u32,
@@ -74,21 +79,53 @@ pub enum TimerResponse {
     },
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GithubReleaseItem {
-    pub name: String,
-    pub tag: String,
-    pub url: String,
+#[derive(Debug, Clone)]
+pub struct SharedAppState {
+    inner: std::sync::Arc<tokio::sync::RwLock<AppState>>,
+    build_bc: tokio::sync::broadcast::Sender<()>,
+    resp_bc: tokio::sync::broadcast::Sender<(u32, TimerPacket)>,
 }
 
-pub type SharedCompetitionStatus = std::sync::Arc<tokio::sync::RwLock<CompetitionStatus>>;
-
 #[derive(Debug, Clone)]
-pub struct CompetitionStatus {
+pub struct AppState {
     pub should_update: bool,
     pub devices_settings: HashMap<u32, CompetitionDeviceSettings>,
-    pub broadcaster: tokio::sync::broadcast::Sender<()>
+}
+
+impl SharedAppState {
+    pub async fn new() -> Self {
+        let (resp_bc, _) = tokio::sync::broadcast::channel(1024);
+        let (build_bc, _) = tokio::sync::broadcast::channel(10);
+
+        Self {
+            inner: std::sync::Arc::new(tokio::sync::RwLock::new(AppState {
+                should_update: false,
+                devices_settings: HashMap::new(),
+            })),
+            build_bc,
+            resp_bc,
+        }
+    }
+
+    pub async fn build_broadcast(&self) -> anyhow::Result<()> {
+        self.build_bc.send(())?;
+        Ok(())
+    }
+
+    pub async fn send_timer_packet(&self, esp_id: u32, packet: TimerPacket) -> anyhow::Result<()> {
+        self.resp_bc.send((esp_id, packet))?;
+        Ok(())
+    }
+
+    pub async fn get_build_bc(&self) -> tokio::sync::broadcast::Receiver<()> {
+        self.build_bc.subscribe()
+    }
+
+    pub async fn get_timer_packet_bc(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<(u32, TimerPacket)> {
+        self.resp_bc.subscribe()
+    }
 }
 
 #[derive(Debug, Clone)]
