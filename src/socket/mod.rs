@@ -200,7 +200,7 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
             // delete devices that are not in the new status
             let devices_clone = inner_state.devices_settings.clone();
             for (k, _) in devices_clone {
-                if !status.rooms.iter().any(|r| r.devices.contains(&k)) {
+                if !status.devices.contains(&k) {
                     inner_state.devices_settings.remove(&k);
                     changed = true;
                 }
@@ -211,13 +211,26 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
                     let old = inner_state.devices_settings.insert(
                         device,
                         crate::structs::CompetitionDeviceSettings {
-                            use_inspection: room.use_inspection,
+                            use_inspection: Some(room.use_inspection),
                         },
                     );
 
-                    if old.is_none() || old.unwrap().use_inspection != room.use_inspection {
+                    if old.is_none() || old.unwrap().use_inspection != Some(room.use_inspection) {
                         changed = true;
                     }
+                }
+            }
+
+            for device in status.devices {
+                if !inner_state.devices_settings.contains_key(&device) {
+                    inner_state.devices_settings.insert(
+                        device,
+                        crate::structs::CompetitionDeviceSettings {
+                            use_inspection: None,
+                        },
+                    );
+
+                    changed = true;
                 }
             }
 

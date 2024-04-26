@@ -42,6 +42,8 @@ pub async fn handle_client(
                 hb_received = false;
             }
             Ok(res) = bc.recv() => {
+                tracing::trace!("Bc recv: {:?}", res);
+
                 match res {
                     crate::structs::BroadcastPacket::Build => {
                         let inner_state = state.inner.read().await;
@@ -102,7 +104,7 @@ async fn send_device_status(
     } else {
         TimerPacket::DeviceSettings {
             esp_id: esp_connect_info.id,
-            use_inspection: false,
+            use_inspection: None,
             added: false,
         }
     };

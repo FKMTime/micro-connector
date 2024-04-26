@@ -61,7 +61,7 @@ pub enum TimerPacket {
     },
     DeviceSettings {
         esp_id: u32,
-        use_inspection: bool,
+        use_inspection: Option<bool>,
         added: bool,
     },
     Logs {
@@ -133,7 +133,7 @@ impl SharedAppState {
 
 #[derive(Debug, Clone)]
 pub struct CompetitionDeviceSettings {
-    pub use_inspection: bool,
+    pub use_inspection: Option<bool>,
 }
 
 // API RESPONSE
