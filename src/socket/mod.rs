@@ -1,5 +1,8 @@
 use self::structs::UnixError;
-use crate::structs::SharedAppState;
+use crate::{
+    structs::{SharedAppState, TimerPacket},
+    UNIX_SOCKET,
+};
 use anyhow::Result;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use structs::{UnixRequest, UnixRequestData, UnixResponse, UnixResponseData};
@@ -237,6 +240,24 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
             if changed {
                 _ = inner.state.device_settings_broadcast().await;
             }
+        }
+        UnixResponseData::IncidentResolved {
+            esp_id,
+            should_scan_cards,
+            attempt,
+        } => {
+            let packet = TimerPacket::DelegateResponse {
+                esp_id,
+                should_scan_cards,
+                solve_time: attempt.value as u128 * 10, // from cs to ms
+                penalty: attempt.penalty,
+            };
+
+            let inner = crate::UNIX_SOCKET.get_inner().await?;
+            let inner = inner.read().await;
+            let state = &inner.state;
+
+            state.send_timer_packet(esp_id, packet).await?;
         }
         _ => {}
     }
