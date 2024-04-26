@@ -20,7 +20,7 @@ pub async fn get_competitor_info(card_id: u128) -> Result<CompetitorInfo, UnixEr
         })
         .await?;
 
-    if let structs::UnixResponseData::PersonInfo {
+    if let structs::UnixResponseData::PersonInfoResp {
         id,
         registrant_id,
         name,
@@ -128,7 +128,7 @@ pub async fn get_wifi_settings() -> Result<(String, String)> {
         .await
         .map_err(|e| anyhow::anyhow!("Unix error: {e:?}"))?;
 
-    if let crate::socket::structs::UnixResponseData::WifiSettings {
+    if let crate::socket::structs::UnixResponseData::WifiSettingsResp {
         wifi_ssid,
         wifi_password,
     } = res

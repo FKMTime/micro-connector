@@ -192,23 +192,23 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
         UnixResponseData::ServerStatus(status) => {
             let inner = crate::UNIX_SOCKET.get_inner().await?;
             let inner = inner.read().await;
-            let mut comp_status = inner.state.write().await;
+            let mut inner_state = inner.state.inner.write().await;
 
-            comp_status.should_update = status.should_update;
+            inner_state.should_update = status.should_update;
             let mut changed = false;
 
             // delete devices that are not in the new status
-            let devices_clone = comp_status.devices_settings.clone();
+            let devices_clone = inner_state.devices_settings.clone();
             for (k, _) in devices_clone {
                 if !status.rooms.iter().any(|r| r.devices.contains(&k)) {
-                    comp_status.devices_settings.remove(&k);
+                    inner_state.devices_settings.remove(&k);
                     changed = true;
                 }
             }
 
             for room in status.rooms {
                 for device in room.devices {
-                    let old = comp_status.devices_settings.insert(
+                    let old = inner_state.devices_settings.insert(
                         device,
                         crate::structs::CompetitionDeviceSettings {
                             use_inspection: room.use_inspection,
@@ -222,7 +222,7 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
             }
 
             if changed {
-                _ = comp_status.broadcaster.send(());
+                _ = inner.state.device_settings_broadcast().await;
             }
         }
         _ => {}

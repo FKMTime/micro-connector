@@ -12,27 +12,18 @@ pub async fn handle_client(
     state: SharedAppState,
 ) -> Result<()> {
     {
-        /*
-        let comp_status = state.read().await;
-        if comp_status.should_update {
+        let state = state.inner.read().await;
+        if state.should_update {
             if let Some(firmware) = super::updater::should_update(esp_connect_info).await? {
                 super::updater::update_client(&mut socket, &esp_connect_info, firmware).await?;
 
                 return Ok(());
             }
         }
-        */
     }
 
     send_device_status(&mut socket, esp_connect_info, &state).await?;
-    let mut update_broadcast = state.get_build_bc().await;
-
-    /*
-    let mut update_device_settings_broadcast = super::REFRESH_DEVICE_SETTINGS_BROADCAST
-        .get()
-        .expect("device settings broadcast channel not set")
-        .subscribe();
-    */
+    let mut bc = state.get_bc().await;
 
     let interval_time = std::time::Duration::from_secs(5);
     let mut hb_interval = tokio::time::interval(interval_time);
@@ -50,27 +41,33 @@ pub async fn handle_client(
                 socket.send(msg).await?;
                 hb_received = false;
             }
-            _ = update_broadcast.recv() => {
-                /*
-                let comp_status = state.read().await;
-                if !comp_status.should_update {
-                    continue;
-                }
-                */
+            Ok(res) = bc.recv() => {
+                match res {
+                    crate::structs::BroadcastPacket::Build => {
+                        let inner_state = state.inner.read().await;
+                        if !inner_state.should_update {
+                            continue;
+                        }
 
-                let firmware = super::updater::should_update(esp_connect_info).await?;
-                if let Some(firmware) = firmware {
-                    let res = super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
-                    if res {
-                        break;
+                        let firmware = super::updater::should_update(esp_connect_info).await?;
+                        if let Some(firmware) = firmware {
+                            let res = super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
+                            if res {
+                                break;
+                            }
+                        }
+                    },
+                    crate::structs::BroadcastPacket::Resp((esp_id, packet)) => {
+                        if esp_connect_info.id == esp_id {
+                            let resp = serde_json::to_string(&packet)?;
+                            socket.send(Message::Text(resp)).await?;
+                        }
+                    },
+                    crate::structs::BroadcastPacket::UpdateDeviceSettings => {
+                        send_device_status(&mut socket, esp_connect_info, &state).await?;
                     }
                 }
             }
-            /*
-            _ = update_device_settings_broadcast.recv() => {
-                send_device_status(&mut socket, esp_connect_info, &state).await?;
-            }
-            */
             msg = socket.recv() => {
                 let msg = msg.ok_or_else(|| anyhow::anyhow!("Frame option is null"))??;
                 let res = on_ws_msg(&mut socket, msg, esp_connect_info, &mut hb_received).await;
@@ -94,8 +91,8 @@ async fn send_device_status(
     esp_connect_info: &EspConnectInfo,
     state: &SharedAppState,
 ) -> Result<()> {
-    let comp_status = state.read().await;
-    let settings = comp_status.devices_settings.get(&esp_connect_info.id);
+    let state = state.inner.read().await;
+    let settings = state.devices_settings.get(&esp_connect_info.id);
     let frame = if let Some(settings) = settings {
         TimerPacket::DeviceSettings {
             esp_id: esp_connect_info.id,
@@ -209,11 +206,17 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerPacket) -> Res
             .await;
 
             let resp = match res {
-                Ok(_) => TimerPacket::SolveConfirm {
-                    esp_id,
-                    session_id,
-                    competitor_id,
-                },
+                Ok(_) => {
+                    if delegate {
+                        return Ok(());
+                    }
+
+                    TimerPacket::SolveConfirm {
+                        esp_id,
+                        session_id,
+                        competitor_id,
+                    }
+                }
                 Err(e) => TimerPacket::ApiError {
                     esp_id,
                     error: e.message,

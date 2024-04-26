@@ -80,10 +80,16 @@ pub enum TimerPacket {
 }
 
 #[derive(Debug, Clone)]
+pub enum BroadcastPacket {
+    Build,
+    Resp((u32, TimerPacket)),
+    UpdateDeviceSettings,
+}
+
+#[derive(Debug, Clone)]
 pub struct SharedAppState {
-    inner: std::sync::Arc<tokio::sync::RwLock<AppState>>,
-    build_bc: tokio::sync::broadcast::Sender<()>,
-    resp_bc: tokio::sync::broadcast::Sender<(u32, TimerPacket)>,
+    pub inner: std::sync::Arc<tokio::sync::RwLock<AppState>>,
+    bc: tokio::sync::broadcast::Sender<BroadcastPacket>,
 }
 
 #[derive(Debug, Clone)]
@@ -94,37 +100,34 @@ pub struct AppState {
 
 impl SharedAppState {
     pub async fn new() -> Self {
-        let (resp_bc, _) = tokio::sync::broadcast::channel(1024);
-        let (build_bc, _) = tokio::sync::broadcast::channel(10);
+        let (bc, _) = tokio::sync::broadcast::channel(1024);
 
         Self {
             inner: std::sync::Arc::new(tokio::sync::RwLock::new(AppState {
                 should_update: false,
                 devices_settings: HashMap::new(),
             })),
-            build_bc,
-            resp_bc,
+            bc,
         }
     }
 
     pub async fn build_broadcast(&self) -> anyhow::Result<()> {
-        self.build_bc.send(())?;
+        self.bc.send(BroadcastPacket::Build)?;
+        Ok(())
+    }
+
+    pub async fn device_settings_broadcast(&self) -> anyhow::Result<()> {
+        self.bc.send(BroadcastPacket::UpdateDeviceSettings)?;
         Ok(())
     }
 
     pub async fn send_timer_packet(&self, esp_id: u32, packet: TimerPacket) -> anyhow::Result<()> {
-        self.resp_bc.send((esp_id, packet))?;
+        self.bc.send(BroadcastPacket::Resp((esp_id, packet)))?;
         Ok(())
     }
 
-    pub async fn get_build_bc(&self) -> tokio::sync::broadcast::Receiver<()> {
-        self.build_bc.subscribe()
-    }
-
-    pub async fn get_timer_packet_bc(
-        &self,
-    ) -> tokio::sync::broadcast::Receiver<(u32, TimerPacket)> {
-        self.resp_bc.subscribe()
+    pub async fn get_bc(&self) -> tokio::sync::broadcast::Receiver<BroadcastPacket> {
+        self.bc.subscribe()
     }
 }
 

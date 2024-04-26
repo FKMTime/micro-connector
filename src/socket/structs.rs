@@ -10,6 +10,7 @@ pub struct UnixError {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct UnixResponse {
+    pub error: Option<bool>,
     pub tag: Option<u32>,
 
     #[serde(flatten)]
@@ -20,12 +21,12 @@ pub struct UnixResponse {
 #[serde(tag = "type", content = "data")]
 #[serde(rename_all_fields = "camelCase")]
 pub enum UnixResponseData {
-    WifiSettings {
+    WifiSettingsResp {
         wifi_ssid: String,
         wifi_password: String,
     },
     ServerStatus(CompetitionStatusResp),
-    PersonInfo {
+    PersonInfoResp {
         id: String,
         registrant_id: Option<i64>,
         name: String,
