@@ -1,6 +1,7 @@
 use anyhow::Result;
-use tokio::sync::OnceCell;
 use tracing::info;
+
+use crate::structs::{TestPacketData, TimerPacket};
 
 mod bluetooth;
 mod github;
@@ -12,7 +13,7 @@ mod structs;
 mod updater;
 mod watchers;
 
-pub static DEV_MODE: OnceCell<bool> = OnceCell::const_new(); // TODO: Move to state
+//pub static DEV_MODE: OnceCell<bool> = OnceCell::const_new(); // TODO: Move to state
 pub static UNIX_SOCKET: socket::Socket = socket::Socket::const_new();
 
 #[tokio::main]
@@ -25,7 +26,16 @@ async fn main() -> Result<()> {
         .parse()?;
     mdns::register_mdns(&port)?;
 
-    _ = DEV_MODE.set(std::env::var("DEV").is_ok());
+    let test: TimerPacket = TimerPacket::TestPacket(TestPacketData::Start);
+    tracing::info!("test: {:?}", serde_json::to_string(&test)?);
+
+    let test: TimerPacket = TimerPacket::TestPacket(TestPacketData::SolveTime(69420));
+    tracing::info!("test: {:?}", serde_json::to_string(&test)?);
+
+    let test: TimerPacket = TimerPacket::TestPacket(TestPacketData::ButtonPress{ pins: vec![13, 14], press_time: 69420 });
+    tracing::info!("test: {:?}", serde_json::to_string(&test)?);
+
+    //_ = DEV_MODE.set(std::env::var("DEV").is_ok());
 
     let state = structs::SharedAppState::new().await;
 

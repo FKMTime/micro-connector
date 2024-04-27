@@ -1,8 +1,5 @@
 use self::structs::UnixError;
-use crate::{
-    structs::{SharedAppState, TimerPacket},
-    UNIX_SOCKET,
-};
+use crate::structs::{SharedAppState, TimerPacket};
 use anyhow::Result;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use structs::{UnixRequest, UnixRequestData, UnixResponse, UnixResponseData};

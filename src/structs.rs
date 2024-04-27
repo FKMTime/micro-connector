@@ -77,6 +77,20 @@ pub enum TimerPacket {
         esp_id: u32,
         firmware: String,
     },
+
+    // packet for end to end testing
+    TestPacket(TestPacketData),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum TestPacketData {
+    Start,
+    End,
+    ResetState,
+    ScanCard(u128),
+    ButtonPress { pins: Vec<u8>, press_time: u64 },
+    SolveTime(u128),
 }
 
 #[derive(Debug, Clone)]
