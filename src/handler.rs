@@ -129,13 +129,13 @@ async fn on_ws_msg(
             *hb_received = true;
         }
         Message::Text(payload) => {
-            *hb_received = true;
-
             let response: TimerPacket = serde_json::from_str(&payload)?;
             let res = on_timer_response(socket, response).await;
             if let Err(e) = res {
                 error!("on_timer_response error: {e:?}");
             }
+
+            *hb_received = true;
         }
 
         _ => {}
