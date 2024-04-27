@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
-
-use crate::structs::CompetitionStatusResp;
+use crate::structs::{CompetitionStatusResp, TestPacketData};
 
 #[derive(Debug)]
 pub struct UnixError {
@@ -46,6 +45,10 @@ pub enum UnixResponseData {
         esp_id: u32,
         should_scan_cards: bool,
         attempt: IncidentAttempt,
+    },
+    TestPacket {
+        esp_id: u32,
+        data: TestPacketData
     },
     Empty,
 }
