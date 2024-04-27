@@ -88,9 +88,9 @@ pub enum TestPacketData {
     Start,
     End,
     ResetState,
-    ScanCard(u128),
+    ScanCard(u64),
     ButtonPress { pins: Vec<u8>, press_time: u64 },
-    SolveTime(u128),
+    SolveTime(u64),
 }
 
 #[derive(Debug, Clone)]

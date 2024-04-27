@@ -256,6 +256,15 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
 
             state.send_timer_packet(esp_id, packet).await?;
         }
+        UnixResponseData::TestPacket { esp_id, data } => {
+            let inner = crate::UNIX_SOCKET.get_inner().await?;
+            let inner = inner.read().await;
+            let state = &inner.state;
+
+            state
+                .send_timer_packet(esp_id, TimerPacket::TestPacket(data))
+                .await?;
+        }
         _ => {}
     }
 

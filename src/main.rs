@@ -1,8 +1,6 @@
 use anyhow::Result;
 use tracing::info;
 
-use crate::structs::{TestPacketData, TimerPacket};
-
 mod bluetooth;
 mod github;
 mod handler;
