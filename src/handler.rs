@@ -247,10 +247,9 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerPacket) -> Res
         TimerPacket::Battery {
             esp_id,
             level,
-            voltage,
+            voltage: _,
         } => {
             _ = crate::socket::api::send_battery_status(esp_id, level).await;
-            trace!("Battery: {} {} {}", esp_id, level, voltage);
         }
         TimerPacket::Add { esp_id, firmware } => {
             _ = crate::socket::api::add_device(esp_id, &firmware).await;

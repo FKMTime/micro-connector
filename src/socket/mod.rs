@@ -101,8 +101,17 @@ impl Socket {
         tag: Option<u32>,
         data: UnixRequestData,
     ) -> Result<Option<UnixResponseData>> {
-        let req = UnixRequest { tag, data };
-        tracing::trace!("Sending Unix request: {req:?}");
+        let req = UnixRequest {
+            tag,
+            data: data.clone(),
+        };
+
+        match data {
+            UnixRequestData::UpdateBatteryPercentage { .. } => {}
+            _ => {
+                tracing::trace!("Sending Unix request: {req:?}");
+            }
+        }
 
         let inner = self.get_inner().await?;
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
@@ -167,9 +176,14 @@ async fn inner_socket_task(
             recv = read_until_null(&mut stream, &mut buf) => {
                 let recv = recv?;
 
-                tracing::trace!("Unix response: {}", String::from_utf8_lossy(&recv));
                 let resp: UnixResponse = serde_json::from_slice(&recv)?;
-                tracing::debug!("Unix Response Data: {resp:?}");
+                match resp.data {
+                    Some(UnixResponseData::Empty) => { }
+                    _ => {
+                        tracing::trace!("Unix response: {}", String::from_utf8_lossy(&recv));
+                        tracing::debug!("Unix Response parsed: {resp:?}");
+                    }
+                }
 
                 if let Some(tag) = resp.tag {
                     super::UNIX_SOCKET.send_resp_to_channel(tag, resp.data).await?;
