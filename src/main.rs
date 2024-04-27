@@ -26,15 +26,6 @@ async fn main() -> Result<()> {
         .parse()?;
     mdns::register_mdns(&port)?;
 
-    let test: TimerPacket = TimerPacket::TestPacket(TestPacketData::Start);
-    tracing::info!("test: {:?}", serde_json::to_string(&test)?);
-
-    let test: TimerPacket = TimerPacket::TestPacket(TestPacketData::SolveTime(69420));
-    tracing::info!("test: {:?}", serde_json::to_string(&test)?);
-
-    let test: TimerPacket = TimerPacket::TestPacket(TestPacketData::ButtonPress{ pins: vec![13, 14], press_time: 69420 });
-    tracing::info!("test: {:?}", serde_json::to_string(&test)?);
-
     //_ = DEV_MODE.set(std::env::var("DEV").is_ok());
 
     let state = structs::SharedAppState::new().await;
