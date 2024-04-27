@@ -12,7 +12,7 @@ use tokio::{
 pub mod api;
 pub mod structs;
 
-const UNIX_TIMEOUT: Duration = Duration::from_millis(2500);
+const UNIX_TIMEOUT: Duration = Duration::from_millis(7500);
 
 type InnerRwLock = Arc<RwLock<SocketInner>>;
 #[derive(Debug, Clone)]
@@ -88,7 +88,7 @@ impl Socket {
     /// Request without response (non-waiting)
     pub async fn send_async_request(&self, data: UnixRequestData) -> Result<(), UnixError> {
         _ = self.send_request(None, data).await.map_err(|_| UnixError {
-            message: "Send failed".to_string(),
+            message: "Send failed 2".to_string(),
             should_reset_time: false,
         })?;
 
