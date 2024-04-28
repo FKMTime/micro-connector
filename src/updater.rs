@@ -12,7 +12,7 @@ const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 #[derive(Debug)]
 pub struct Firmware {
     pub data: Vec<u8>,
-    pub version: String,
+    pub version: Version,
     pub build_time: u64,
     pub firmware: String,
 }
@@ -71,7 +71,7 @@ pub async fn should_update(
 
     Ok(Some(Firmware {
         data: tokio::fs::read(latest_firmware.0.expect("Cant be none")).await?,
-        version: latest_firmware.1.to_string(),
+        version: latest_firmware.1,
         build_time: 0,
         firmware: latest_firmware.2,
     }))
@@ -84,12 +84,14 @@ pub async fn update_client(
 ) -> Result<bool> {
     info!(
         "[{}] Updating client from version: {} to version {}",
-        esp_connect_info.firmware, esp_connect_info.version, latest_firmware.version
+        esp_connect_info.firmware,
+        Version::from_str(&esp_connect_info.version),
+        latest_firmware.version
     );
 
     let start_update_resp = TimerPacket::StartUpdate {
         esp_id: esp_connect_info.id,
-        version: latest_firmware.version,
+        version: latest_firmware.version.inner_version(),
         build_time: latest_firmware.build_time,
         size: latest_firmware.data.len() as i64,
         firmware: latest_firmware.firmware,
@@ -151,7 +153,7 @@ pub async fn update_client(
 /// Inner u128 is calculated version number,
 /// if version is newer, the number should be bigger
 /// * Important: you can't compare between Dev and Stable version!
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Version {
     /// Like v2.1.0
     Stable(String),
@@ -167,8 +169,8 @@ impl Version {
     pub fn from_str(string: &str) -> Self {
         if string.starts_with("v") {
             Self::Stable(string.trim_start_matches('v').to_string())
-        } else if string.starts_with("DV") {
-            let nmb = string.trim_start_matches("DV").parse().unwrap_or(0);
+        } else if string.starts_with('D') {
+            let nmb = string.trim_start_matches('D').parse().unwrap_or(0);
             Self::Dev(nmb)
         } else {
             Self::Other
@@ -251,6 +253,14 @@ impl Version {
         match self {
             Self::Stable(s) => s.to_string(),
             _ => "".to_string(),
+        }
+    }
+
+    pub fn inner_version(&self) -> String {
+        match self {
+            Self::Stable(s) => s.to_string(),
+            Self::Dev(nmb) => nmb.to_string(),
+            Self::Other => String::from("Other"),
         }
     }
 }
