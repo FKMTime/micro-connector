@@ -144,7 +144,6 @@ impl Socket {
         let mut inner = inner.write().await;
 
         if let Some(chan) = inner.tag_channels.remove(&tag) {
-            // TODO: Maybe retry???
             _ = chan.send(resp);
         }
 

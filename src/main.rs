@@ -11,7 +11,6 @@ mod structs;
 mod updater;
 mod watchers;
 
-//pub static DEV_MODE: OnceCell<bool> = OnceCell::const_new(); // TODO: Move to state
 pub static UNIX_SOCKET: socket::Socket = socket::Socket::const_new();
 
 #[tokio::main]
@@ -24,9 +23,8 @@ async fn main() -> Result<()> {
         .parse()?;
     mdns::register_mdns(&port)?;
 
-    //_ = DEV_MODE.set(std::env::var("DEV").is_ok());
-
-    let state = structs::SharedAppState::new().await;
+    let dev_mode = std::env::var("DEV").is_ok();
+    let state = structs::SharedAppState::new(dev_mode).await;
 
     let socket_path = env_or_default("SOCKET_PATH", "/tmp/socket.sock");
     UNIX_SOCKET.init(&socket_path, state.clone()).await?;

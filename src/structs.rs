@@ -103,6 +103,7 @@ pub enum BroadcastPacket {
 #[derive(Debug, Clone)]
 pub struct SharedAppState {
     pub inner: std::sync::Arc<tokio::sync::RwLock<AppState>>,
+    pub dev_mode: bool,
     bc: tokio::sync::broadcast::Sender<BroadcastPacket>,
 }
 
@@ -113,10 +114,11 @@ pub struct AppState {
 }
 
 impl SharedAppState {
-    pub async fn new() -> Self {
+    pub async fn new(dev_mode: bool) -> Self {
         let (bc, _) = tokio::sync::broadcast::channel(1024);
 
         Self {
+            dev_mode,
             inner: std::sync::Arc::new(tokio::sync::RwLock::new(AppState {
                 should_update: false,
                 devices_settings: HashMap::new(),

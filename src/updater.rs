@@ -1,7 +1,10 @@
-use crate::{http::EspConnectInfo, structs::TimerPacket};
+use crate::{
+    http::EspConnectInfo,
+    structs::{SharedAppState, TimerPacket},
+};
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use std::{fmt::Write, ops::RangeBounds, path::PathBuf, time::SystemTime};
+use std::path::PathBuf;
 use tracing::{debug, error, info};
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
@@ -14,16 +17,22 @@ pub struct Firmware {
     pub firmware: String,
 }
 
-pub async fn should_update(esp_connect_info: &EspConnectInfo) -> Result<Option<Firmware>> {
+pub async fn should_update(
+    state: &SharedAppState,
+    esp_connect_info: &EspConnectInfo,
+) -> Result<Option<Firmware>> {
     let firmware_dir = std::env::var("FIRMWARE_DIR")?;
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
-    let mut latest_firmware: (Option<PathBuf>, String, String, SystemTime) =
-        (None, String::new(), String::new(), SystemTime::UNIX_EPOCH);
+    let mut latest_firmware: (Option<PathBuf>, Version, String) = (
+        None,
+        Version::from_str(&esp_connect_info.version),
+        String::new(),
+    );
 
     for entry in firmware_dir.read_dir()? {
         let entry = entry?;
-        let modified = entry.metadata()?.modified()?;
+        //let modified = entry.metadata()?.modified()?;
         let path = entry.path();
         let file_name = path.file_stem();
         let name_split: Vec<&str> = file_name
@@ -37,22 +46,26 @@ pub async fn should_update(esp_connect_info: &EspConnectInfo) -> Result<Option<F
             continue;
         }
 
-        let (chip, firmware, version) = (name_split[0], name_split[1], name_split[2]);
+        let (chip, firmware, version) = (
+            name_split[0],
+            name_split[1],
+            Version::from_str(name_split[2]),
+        );
+
         if chip != esp_connect_info.chip || firmware != esp_connect_info.firmware {
             continue;
         }
 
-        if version != latest_firmware.1 && modified > latest_firmware.3 {
-            latest_firmware = (
-                Some(entry.path()),
-                version.to_string(),
-                firmware.to_string(),
-                modified,
-            );
+        if (state.dev_mode && version.is_stable()) || (!state.dev_mode && version.is_dev()) {
+            continue;
+        }
+
+        if latest_firmware.1.is_newer(&version) {
+            latest_firmware = (Some(entry.path()), version, firmware.to_string());
         }
     }
 
-    if latest_firmware.0.is_none() || latest_firmware.1.to_string() == esp_connect_info.version {
+    if latest_firmware.0.is_none() {
         return Ok(None);
     }
 
@@ -141,7 +154,7 @@ pub async fn update_client(
 #[derive(PartialEq)]
 pub enum Version {
     /// Like v2.1.0
-    Stable(u128),
+    Stable(String),
 
     /// Like DV542356675 (epoch build time)
     Dev(u128),
@@ -153,10 +166,9 @@ pub enum Version {
 impl Version {
     pub fn from_str(string: &str) -> Self {
         if string.starts_with("v") {
-            let nmb = Self::read_stable_version_nmb(string.trim_start_matches('v'));
-            Self::Stable(nmb)
+            Self::Stable(string.trim_start_matches('v').to_string())
         } else if string.starts_with("DV") {
-            let nmb: u128 = string.trim_start_matches("DV").parse().unwrap_or(0);
+            let nmb = string.trim_start_matches("DV").parse().unwrap_or(0);
             Self::Dev(nmb)
         } else {
             Self::Other
@@ -164,14 +176,14 @@ impl Version {
     }
 
     /// Check if version provided as input is newer than self
-    pub fn is_version_newer(&self, ver: Self) -> bool {
-        if ver == Version::Other {
+    pub fn is_newer(&self, ver: &Self) -> bool {
+        if ver == &Version::Other {
             return false;
         }
 
         // Only compare if version variants are the same!
         if matches!(ver, Version::Stable(..)) && matches!(self, Version::Stable(..)) {
-            return ver.get_nmb() > self.get_nmb();
+            return Self::compare_stable(&self.get_str(), &ver.get_str());
         } else if matches!(ver, Version::Dev(..)) && matches!(self, Version::Dev(..)) {
             return ver.get_nmb() > self.get_nmb();
         } else {
@@ -179,35 +191,134 @@ impl Version {
         }
     }
 
-    fn get_nmb(&self) -> u128 {
-        match self {
-            &Self::Stable(d) => d,
-            &Self::Dev(d) => d,
-            &Self::Other => 0,
+    pub fn is_stable(&self) -> bool {
+        if let Self::Stable(_) = self {
+            return true;
         }
+
+        false
     }
 
-    fn read_stable_version_nmb(string: &str) -> u128 {
-        let mut tmp = 0;
-        let mut mult = 1;
+    pub fn is_dev(&self) -> bool {
+        if let Self::Dev(_) = self {
+            return true;
+        }
 
-        for c in string.chars().rev() {
-            if let Some(d) = c.to_digit(10) {
-                tmp += mult * d as u128;
-                mult *= 10;
+        false
+    }
+
+    /// return if v2 is newer than v1 (for stable only)
+    fn compare_stable(v1: &str, v2: &str) -> bool {
+        let v1 = v1.split('.').collect::<Vec<_>>();
+        let v2 = v2.split('.').collect::<Vec<_>>();
+
+        let mut same_beg = true;
+        for i in 0..v1.len() {
+            if let Some(v2) = v2.get(i) {
+                if v1[i] != *v2 {
+                    same_beg = false;
+                }
+
+                let v1 = v1[i].parse().unwrap_or(-1);
+                let v2 = v2.parse().unwrap_or(-1);
+
+                if v2 > v1 {
+                    return true;
+                }
+            } else {
+                break;
             }
         }
 
-        tmp
+        // if same beggining and the second one is longer (dot parts)
+        if same_beg && v2.len() > v1.len() {
+            return true;
+        }
+
+        false
+    }
+
+    /// Only used for dev comparison
+    fn get_nmb(&self) -> u128 {
+        match self {
+            Self::Dev(d) => *d,
+            _ => 0,
+        }
+    }
+
+    /// Only used for stable comparison
+    fn get_str(&self) -> String {
+        match self {
+            Self::Stable(s) => s.to_string(),
+            _ => "".to_string(),
+        }
     }
 }
 
 impl std::fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            &Version::Stable(nmb) => f.write_fmt(format_args!("Version::Stable({})", nmb)),
+            &Version::Stable(ref str) => f.write_fmt(format_args!("Version::Stable({})", str)),
             &Version::Dev(nmb) => f.write_fmt(format_args!("Version::Dev({})", nmb)),
             &Version::Other => f.write_str("Version::Other"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn check() {
+        assert_eq!(
+            crate::updater::Version::Other.is_newer(&crate::updater::Version::from_str("v2.1.0")),
+            true
+        );
+
+        assert_eq!(
+            crate::updater::Version::Other.is_newer(&crate::updater::Version::from_str("DV1321")),
+            true
+        );
+
+        assert_eq!(
+            crate::updater::Version::from_str("DV1714320292")
+                .is_newer(&crate::updater::Version::from_str("v2.1.0")),
+            true
+        );
+
+        assert_eq!(
+            crate::updater::Version::from_str("DV1714320292")
+                .is_newer(&crate::updater::Version::from_str("DV1714320295")),
+            true
+        );
+
+        assert_eq!(
+            crate::updater::Version::from_str("DV1714320292")
+                .is_newer(&crate::updater::Version::from_str("DV1714320291")),
+            false
+        );
+
+        assert_eq!(
+            crate::updater::Version::from_str("v2.1")
+                .is_newer(&crate::updater::Version::from_str("v2.1.0")),
+            true
+        );
+
+        assert_eq!(
+            crate::updater::Version::from_str("v2.1.0")
+                .is_newer(&crate::updater::Version::from_str("v2.1.12")),
+            true
+        );
+
+        assert_eq!(
+            crate::updater::Version::from_str("v2.0.1")
+                .is_newer(&crate::updater::Version::from_str("v2.0.0")),
+            false
+        );
+
+        assert_eq!(
+            crate::updater::Version::from_str("v2.0.0")
+                .is_newer(&crate::updater::Version::from_str("v2.0.0")),
+            false
+        );
     }
 }

@@ -12,9 +12,9 @@ pub async fn handle_client(
     state: SharedAppState,
 ) -> Result<()> {
     {
-        let state = state.inner.read().await;
-        if state.should_update {
-            if let Some(firmware) = super::updater::should_update(esp_connect_info).await? {
+        let state_inner = state.inner.read().await;
+        if state_inner.should_update {
+            if let Some(firmware) = super::updater::should_update(&state, esp_connect_info).await? {
                 super::updater::update_client(&mut socket, &esp_connect_info, firmware).await?;
 
                 return Ok(());
@@ -51,7 +51,7 @@ pub async fn handle_client(
                             continue;
                         }
 
-                        let firmware = super::updater::should_update(esp_connect_info).await?;
+                        let firmware = super::updater::should_update(&state, esp_connect_info).await?;
                         if let Some(firmware) = firmware {
                             let res = super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
                             if res {
