@@ -1,6 +1,5 @@
-use super::structs::UnixError;
-use crate::{socket::structs, structs::SnapshotData};
 use anyhow::Result;
+use unix_utils::{request::UnixRequestData, response::UnixResponseData, SnapshotData, UnixError};
 
 #[derive(Debug)]
 pub struct CompetitorInfo {
@@ -15,12 +14,12 @@ pub struct CompetitorInfo {
 
 pub async fn get_competitor_info(card_id: u128) -> Result<CompetitorInfo, UnixError> {
     let res = crate::UNIX_SOCKET
-        .send_tagged_request(structs::UnixRequestData::PersonInfo {
+        .send_tagged_request(UnixRequestData::PersonInfo {
             card_id: card_id.to_string(),
         })
         .await?;
 
-    if let structs::UnixResponseData::PersonInfoResp {
+    if let UnixResponseData::PersonInfoResp {
         id,
         registrant_id,
         name,
@@ -50,7 +49,7 @@ pub async fn get_competitor_info(card_id: u128) -> Result<CompetitorInfo, UnixEr
 // For now, dont parse response (but its there)
 pub async fn mark_attendance(esp_id: u32, card_id: u128) -> Result<(), UnixError> {
     let res = crate::UNIX_SOCKET
-        .send_tagged_request(structs::UnixRequestData::CreateAttendance { card_id, esp_id })
+        .send_tagged_request(UnixRequestData::CreateAttendance { card_id, esp_id })
         .await
         .map(|_| ());
 
@@ -59,7 +58,7 @@ pub async fn mark_attendance(esp_id: u32, card_id: u128) -> Result<(), UnixError
 
 pub async fn send_snapshot_data(data: SnapshotData) -> Result<(), UnixError> {
     let res = crate::UNIX_SOCKET
-        .send_tagged_request(structs::UnixRequestData::Snapshot(data))
+        .send_tagged_request(UnixRequestData::Snapshot(data))
         .await
         .map(|_| ());
 
@@ -85,7 +84,7 @@ pub async fn send_solve_entry(
         })?
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
-    let data = structs::UnixRequestData::EnterAttempt {
+    let data = UnixRequestData::EnterAttempt {
         value: time,
         penalty,
         solved_at,
@@ -109,7 +108,7 @@ pub async fn send_battery_status(esp_id: u32, battery: f64) -> Result<(), UnixEr
     let battery: u8 = battery.round() as u8;
 
     let res = crate::UNIX_SOCKET
-        .send_tagged_request(structs::UnixRequestData::UpdateBatteryPercentage {
+        .send_tagged_request(UnixRequestData::UpdateBatteryPercentage {
             esp_id,
             battery_percentage: battery,
         })
@@ -121,7 +120,7 @@ pub async fn send_battery_status(esp_id: u32, battery: f64) -> Result<(), UnixEr
 
 pub async fn add_device(esp_id: u32, firmware_type: &str) -> Result<(), UnixError> {
     let res = crate::UNIX_SOCKET
-        .send_tagged_request(structs::UnixRequestData::RequestToConnectDevice {
+        .send_tagged_request(UnixRequestData::RequestToConnectDevice {
             esp_id,
             r#type: firmware_type.to_string(),
         })
@@ -133,11 +132,11 @@ pub async fn add_device(esp_id: u32, firmware_type: &str) -> Result<(), UnixErro
 
 pub async fn get_wifi_settings() -> Result<(String, String)> {
     let res = crate::UNIX_SOCKET
-        .send_tagged_request(crate::socket::structs::UnixRequestData::WifiSettings)
+        .send_tagged_request(UnixRequestData::WifiSettings)
         .await
         .map_err(|e| anyhow::anyhow!("Unix error: {e:?}"))?;
 
-    if let crate::socket::structs::UnixResponseData::WifiSettingsResp {
+    if let UnixResponseData::WifiSettingsResp {
         wifi_ssid,
         wifi_password,
     } = res

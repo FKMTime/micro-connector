@@ -1,13 +1,14 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use unix_utils::{SnapshotData, TestPacketData};
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogData {
     pub millis: u128,
     pub msg: String,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum TimerPacket {
     StartUpdate {
@@ -83,18 +84,6 @@ pub enum TimerPacket {
     Snapshot(SnapshotData),
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "type", content = "data")]
-pub enum TestPacketData {
-    Start,
-    End,
-    ResetState,
-    ScanCard(u64),
-    ButtonPress { pins: Vec<u8>, press_time: u64 },
-    SolveTime(u64),
-    Snapshot,
-}
-
 #[derive(Debug, Clone)]
 pub enum BroadcastPacket {
     Build,
@@ -113,6 +102,11 @@ pub struct SharedAppState {
 pub struct AppState {
     pub should_update: bool,
     pub devices_settings: HashMap<u32, CompetitionDeviceSettings>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompetitionDeviceSettings {
+    pub use_inspection: Option<bool>,
 }
 
 impl SharedAppState {
@@ -147,52 +141,4 @@ impl SharedAppState {
     pub async fn get_bc(&self) -> tokio::sync::broadcast::Receiver<BroadcastPacket> {
         self.bc.subscribe()
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct CompetitionDeviceSettings {
-    pub use_inspection: Option<bool>,
-}
-
-// API RESPONSE
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CompetitionStatusResp {
-    pub should_update: bool,
-    pub devices: Vec<u32>,
-    pub rooms: Vec<Room>,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Room {
-    pub id: String,
-    pub name: String,
-    pub use_inspection: bool,
-    pub devices: Vec<u32>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WifiSettings {
-    pub wifi_ssid: String,
-    pub wifi_password: String,
-}
-
-#[derive(Debug, Clone, Deserialize, serde::Serialize)]
-pub struct SnapshotData {
-    pub esp_id: u32,
-    pub scene: u32,
-    pub solve_session_id: String,
-    pub solve_time: i64,
-    pub last_solve_time: i64,
-    pub penalty: i64,
-    pub use_inspection: bool,
-    pub inspection_started: u64,
-    pub inspection_ended: u64,
-    pub competitor_card_id: u64,
-    pub judge_card_id: u64,
-    pub competitor_display: String,
-    pub time_confirmed: bool,
-    pub error_msg: String,
 }

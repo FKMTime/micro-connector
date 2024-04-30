@@ -1,16 +1,18 @@
-use self::structs::UnixError;
 use crate::structs::{SharedAppState, TimerPacket};
 use anyhow::Result;
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use structs::{UnixRequest, UnixRequestData, UnixResponse, UnixResponseData};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
     sync::{mpsc::UnboundedReceiver, OnceCell, RwLock},
 };
+use unix_utils::{
+    request::{UnixRequest, UnixRequestData},
+    response::{UnixResponse, UnixResponseData},
+    UnixError,
+};
 
 pub mod api;
-pub mod structs;
 
 const UNIX_TIMEOUT: Duration = Duration::from_millis(7500);
 
