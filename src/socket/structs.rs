@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::structs::{CompetitionStatusResp, TestPacketData};
+use crate::structs::{CompetitionStatusResp, SnapshotData, TestPacketData};
 
 #[derive(Debug)]
 pub struct UnixError {
@@ -94,6 +94,7 @@ pub enum UnixRequestData {
         #[serde(rename = "type")]
         r#type: String,
     },
+    Snapshot(SnapshotData),
 }
 
 #[derive(Deserialize, Debug, Clone)]

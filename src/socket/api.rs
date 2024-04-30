@@ -1,5 +1,5 @@
 use super::structs::UnixError;
-use crate::socket::structs;
+use crate::{socket::structs, structs::SnapshotData};
 use anyhow::Result;
 
 #[derive(Debug)]
@@ -51,6 +51,15 @@ pub async fn get_competitor_info(card_id: u128) -> Result<CompetitorInfo, UnixEr
 pub async fn mark_attendance(esp_id: u32, card_id: u128) -> Result<(), UnixError> {
     let res = crate::UNIX_SOCKET
         .send_tagged_request(structs::UnixRequestData::CreateAttendance { card_id, esp_id })
+        .await
+        .map(|_| ());
+
+    res
+}
+
+pub async fn send_snapshot_data(data: SnapshotData) -> Result<(), UnixError> {
+    let res = crate::UNIX_SOCKET
+        .send_tagged_request(structs::UnixRequestData::Snapshot(data))
         .await
         .map(|_| ());
 

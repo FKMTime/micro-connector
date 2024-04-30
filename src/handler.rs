@@ -255,6 +255,9 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerPacket) -> Res
             _ = crate::socket::api::add_device(esp_id, &firmware).await;
             trace!("Add device: {}", esp_id);
         }
+        TimerPacket::Snapshot(data) => {
+            _ = crate::socket::api::send_snapshot_data(data).await;
+        }
         _ => {
             trace!("Not implemented timer response received: {:?}", response);
         }

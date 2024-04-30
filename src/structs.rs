@@ -80,6 +80,7 @@ pub enum TimerPacket {
 
     // packet for end to end testing
     TestPacket(TestPacketData),
+    Snapshot(SnapshotData),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -91,6 +92,7 @@ pub enum TestPacketData {
     ScanCard(u64),
     ButtonPress { pins: Vec<u8>, press_time: u64 },
     SolveTime(u64),
+    Snapshot,
 }
 
 #[derive(Debug, Clone)]
@@ -175,4 +177,22 @@ pub struct Room {
 pub struct WifiSettings {
     pub wifi_ssid: String,
     pub wifi_password: String,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct SnapshotData {
+    pub esp_id: u32,
+    pub scene: u32,
+    pub solve_session_id: String,
+    pub solve_time: i64,
+    pub last_solve_time: i64,
+    pub penalty: i64,
+    pub use_inspection: bool,
+    pub inspection_started: u64,
+    pub inspection_ended: u64,
+    pub competitor_card_id: u64,
+    pub judge_card_id: u64,
+    pub competitor_display: String,
+    pub time_confirmed: bool,
+    pub error_msg: String,
 }
