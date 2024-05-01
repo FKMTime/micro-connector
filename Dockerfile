@@ -35,19 +35,19 @@ RUN rm -f target/release/deps/e2e_testing* target/release/deps/libunix_utils* ta
 WORKDIR /app
 COPY . .
 RUN cargo build --release
-RUN cp -r target/release/$(cat Cargo.toml | awk '/name/ {print}' | cut -d '"' -f 2) /app/backend
+RUN cp -r target/release/$(cat Cargo.toml | awk '/name/ {print}' | cut -d '"' -f 2) /backend
 
 WORKDIR /app/e2e-testing
 RUN cargo build --release
-RUN cp -r target/release/e2e-testing /app/e2e-testing
+RUN cp -r target/release/e2e-testing /e2e-testing
 
 
 FROM debian:bookworm-slim as backend
 WORKDIR /app
-COPY --from=builder /app/backend /app/backend
+COPY --from=builder /backend /app/backend
 ENTRYPOINT ["/app/backend"]
 
 FROM debian:bookworm-slim as e2e
 WORKDIR /app
-COPY --from=builder /app/e2e-testing /app/e2e-testing
+COPY --from=builder /e2e-testing /app/e2e-testing
 ENTRYPOINT ["/app/e2e-testing"]
