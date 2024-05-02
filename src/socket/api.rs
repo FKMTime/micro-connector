@@ -14,7 +14,9 @@ pub struct CompetitorInfo {
 
 pub async fn get_competitor_info(card_id: u64) -> Result<CompetitorInfo, UnixError> {
     let res = crate::UNIX_SOCKET
-        .send_tagged_request(UnixRequestData::PersonInfo { card_id })
+        .send_tagged_request(UnixRequestData::PersonInfo {
+            card_id: card_id.to_string(),
+        })
         .await?;
 
     if let UnixResponseData::PersonInfoResp {
@@ -47,7 +49,10 @@ pub async fn get_competitor_info(card_id: u64) -> Result<CompetitorInfo, UnixErr
 // For now, dont parse response (but its there)
 pub async fn mark_attendance(esp_id: u32, card_id: u64) -> Result<(), UnixError> {
     let res = crate::UNIX_SOCKET
-        .send_tagged_request(UnixRequestData::CreateAttendance { card_id, esp_id })
+        .send_tagged_request(UnixRequestData::CreateAttendance {
+            card_id: card_id.to_string(),
+            esp_id,
+        })
         .await
         .map(|_| ());
 

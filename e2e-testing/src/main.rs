@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
-use structs::{CompetitorInfo, SharedSenders, State};
+use structs::{CompetitorInfo, SharedSenders, State, TestData, TestStep, TestsRoot};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
     };
 
     state.cards.insert(
-        "3004425529".to_string(),
+        3004425529,
         CompetitorInfo {
             name: "Filip Sciurka".to_string(),
             registrant_id: state.cards.len() as i64,
@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
     );
 
     state.cards.insert(
-        "69420".to_string(),
+        69420,
         CompetitorInfo {
             name: "Filip Dziurka".to_string(),
             registrant_id: state.cards.len() as i64,
@@ -49,6 +49,18 @@ async fn main() -> Result<()> {
             can_compete: true,
         },
     );
+
+    let tests_root: TestsRoot = TestsRoot {
+        dump_state_after_test: true,
+        cards: state.cards.clone(),
+        buttons: HashMap::new(),
+        tests: vec![TestData {
+            name: "test sleep".to_string(),
+            steps: vec![TestStep::Sleep(300)],
+        }],
+    };
+
+    println!("{}", serde_json::to_string_pretty(&tests_root)?);
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     UNIX_SENDER.set(tx)?;
@@ -85,7 +97,8 @@ async fn handle_stream(
                         new_test_sender(&esp_id, state.senders.clone()).await?;
                     }
                     UnixRequestData::PersonInfo { ref card_id } => {
-                        let competitor = state.cards.get(card_id);
+                        let card_id: u64 = card_id.parse()?;
+                        let competitor = state.cards.get(&card_id);
                         let resp = match competitor {
                             Some(competitor) => UnixResponseData::PersonInfoResp {
                                 id: card_id.to_string(),

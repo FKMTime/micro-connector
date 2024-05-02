@@ -14,11 +14,11 @@ pub struct UnixRequest {
 #[serde(rename_all_fields = "camelCase")]
 pub enum UnixRequestData {
     PersonInfo {
-        card_id: u64,
+        card_id: String,
     },
     WifiSettings,
     CreateAttendance {
-        card_id: u64,
+        card_id: String,
         esp_id: u32,
     },
     EnterAttempt {

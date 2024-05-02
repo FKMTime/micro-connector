@@ -77,5 +77,4 @@ pub struct IncidentAttempt {
     pub session_id: String,
     pub penalty: i64,
     pub value: u64,
-    pub inspection_time: u64,
 }
