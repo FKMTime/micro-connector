@@ -45,8 +45,5 @@ pub enum UnixRequestData {
     Snapshot(SnapshotData),
     TestAck {
         esp_id: u32,
-
-        #[serde(rename = "type")]
-        r#type: String,
     },
 }

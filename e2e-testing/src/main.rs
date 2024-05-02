@@ -5,7 +5,10 @@ use structs::{SharedSenders, State, TestsRoot};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
-    sync::{mpsc::UnboundedReceiver, OnceCell, RwLock},
+    sync::{
+        mpsc::{UnboundedReceiver, UnboundedSender},
+        OnceCell, RwLock,
+    },
 };
 use unix_utils::{
     request::{UnixRequest, UnixRequestData},
@@ -107,8 +110,8 @@ async fn handle_stream(
                         print_log = false;
                         send_resp(stream, UnixResponseData::Empty, packet.tag, false).await?;
                     }
-                    UnixRequestData::TestAck { .. } => {
-                        //send_senders_data(&state.senders, &esp_id, packet.data.clone()).await?;
+                    UnixRequestData::TestAck { esp_id } => {
+                        send_senders_data(&state.senders, &esp_id, packet.data.clone()).await?;
                         //send_resp(stream, UnixResponseData::Empty, packet.tag, false).await?;
                     }
                     _ => {
@@ -142,23 +145,8 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
     let unix_tx = UNIX_SENDER.get().expect("UNIX_SENDER not set!");
     let mut rx = spawn_new_sender(&senders, esp_id).await?;
 
-    unix_tx.send(UnixResponse {
-        error: None,
-        tag: None,
-        data: Some(UnixResponseData::TestPacket {
-            esp_id,
-            data: TestPacketData::Start,
-        }),
-    })?;
-
-    unix_tx.send(UnixResponse {
-        error: None,
-        tag: None,
-        data: Some(UnixResponseData::TestPacket {
-            esp_id,
-            data: TestPacketData::ResetState,
-        }),
-    })?;
+    send_test_packet(&unix_tx, &mut rx, esp_id, TestPacketData::Start).await?;
+    send_test_packet(&unix_tx, &mut rx, esp_id, TestPacketData::ResetState).await?;
 
     loop {
         for test in &tests.tests {
@@ -175,72 +163,56 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
                         continue; // to skip sleep_between after
                     }
                     TestStep::ResetState => {
-                        unix_tx.send(UnixResponse {
-                            error: None,
-                            tag: None,
-                            data: Some(UnixResponseData::TestPacket {
-                                esp_id,
-                                data: TestPacketData::ResetState,
-                            }),
-                        })?;
+                        send_test_packet(&unix_tx, &mut rx, esp_id, TestPacketData::ResetState)
+                            .await?;
                     }
                     TestStep::SolveTime(time) => {
-                        unix_tx.send(UnixResponse {
-                            error: None,
-                            tag: None,
-                            data: Some(UnixResponseData::TestPacket {
-                                esp_id,
-                                data: TestPacketData::SolveTime(*time),
-                            }),
-                        })?;
+                        send_test_packet(
+                            &unix_tx,
+                            &mut rx,
+                            esp_id,
+                            TestPacketData::SolveTime(*time),
+                        )
+                        .await?;
                     }
                     TestStep::SolveTimeRng => {
-                        unix_tx.send(UnixResponse {
-                            error: None,
-                            tag: None,
-                            data: Some(UnixResponseData::TestPacket {
-                                esp_id,
-                                data: TestPacketData::SolveTime(random_time),
-                            }),
-                        })?;
+                        send_test_packet(
+                            &unix_tx,
+                            &mut rx,
+                            esp_id,
+                            TestPacketData::SolveTime(random_time),
+                        )
+                        .await?;
                     }
                     TestStep::Snapshot => {
-                        unix_tx.send(UnixResponse {
-                            error: None,
-                            tag: None,
-                            data: Some(UnixResponseData::TestPacket {
-                                esp_id,
-                                data: TestPacketData::Snapshot,
-                            }),
-                        })?;
+                        send_test_packet(&unix_tx, &mut rx, esp_id, TestPacketData::Snapshot)
+                            .await?;
 
                         let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await?;
                         println!("Snapshot data: {recv:?}");
                     }
                     TestStep::ScanCard(card_id) => {
-                        unix_tx.send(UnixResponse {
-                            error: None,
-                            tag: None,
-                            data: Some(UnixResponseData::TestPacket {
-                                esp_id,
-                                data: TestPacketData::ScanCard(*card_id),
-                            }),
-                        })?;
+                        send_test_packet(
+                            &unix_tx,
+                            &mut rx,
+                            esp_id,
+                            TestPacketData::ScanCard(*card_id),
+                        )
+                        .await?;
                     }
                     TestStep::Button { ref name, time } => {
                         let pins = tests.buttons.get(name);
                         if let Some(pins) = pins {
-                            unix_tx.send(UnixResponse {
-                                error: None,
-                                tag: None,
-                                data: Some(UnixResponseData::TestPacket {
-                                    esp_id,
-                                    data: TestPacketData::ButtonPress {
-                                        pins: pins.to_owned(),
-                                        press_time: *time,
-                                    },
-                                }),
-                            })?;
+                            send_test_packet(
+                                &unix_tx,
+                                &mut rx,
+                                esp_id,
+                                TestPacketData::ButtonPress {
+                                    pins: pins.to_owned(),
+                                    press_time: *time,
+                                },
+                            )
+                            .await?;
                         } else {
                             println!("Wrong button name!");
                         }
@@ -253,7 +225,13 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
                             .await?
                             .ok_or_else(|| anyhow::anyhow!("Shouldnt be none"))?;
 
-                        if let UnixRequestData::EnterAttempt { value, penalty, .. } = recv {
+                        if let UnixRequestData::EnterAttempt {
+                            value,
+                            penalty,
+                            is_delegate,
+                            ..
+                        } = recv
+                        {
                             let time_to_check = time.unwrap_or(random_time) / 10;
                             if value != time_to_check {
                                 anyhow::bail!(
@@ -266,10 +244,52 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
                                 "Wrong penalty value! Real: {penalty} Expected: {penalty_to_check}"
                             )
                             }
+
+                            if is_delegate {
+                                anyhow::bail!(
+                                    "Wrong is_delegate value! Real: {is_delegate} Expected: false"
+                                )
+                            }
                         } else {
                             anyhow::bail!("Wrong packet, cant verify solve time!")
                         }
                     }
+                    TestStep::VerifyDelegateSent => {
+                        let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                            .await?
+                            .ok_or_else(|| anyhow::anyhow!("Shouldnt be none"))?;
+
+                        if let UnixRequestData::EnterAttempt { is_delegate, .. } = recv {
+                            if !is_delegate {
+                                anyhow::bail!(
+                                    "Wrong is_delegate value! Real: {is_delegate} Expected: true"
+                                )
+                            }
+                        } else {
+                            anyhow::bail!("Wrong packet, cant verify delegate!")
+                        }
+                    }
+                    TestStep::DelegateResolve {
+                        should_scan_cards,
+                        penalty,
+                        value,
+                    } => {
+                        unix_tx.send(UnixResponse {
+                            error: None,
+                            tag: None,
+                            data: Some(UnixResponseData::IncidentResolved {
+                                esp_id,
+                                should_scan_cards: *should_scan_cards,
+                                attempt: unix_utils::response::IncidentAttempt {
+                                    session_id: "".to_string(),
+                                    penalty: *penalty,
+                                    value: *value,
+                                },
+                            }),
+                        })?;
+                    }
+
+                    #[allow(unreachable_patterns)]
                     _ => {
                         println!("Step not coded... {step:?}");
                     }
@@ -279,20 +299,40 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
             }
 
             if tests.dump_state_after_test {
-                unix_tx.send(UnixResponse {
-                    error: None,
-                    tag: None,
-                    data: Some(UnixResponseData::TestPacket {
-                        esp_id,
-                        data: TestPacketData::Snapshot,
-                    }),
-                })?;
+                send_test_packet(&unix_tx, &mut rx, esp_id, TestPacketData::Snapshot).await?;
 
                 let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await?;
                 println!("Snapshot data: {recv:?}");
             }
         }
     }
+}
+
+async fn send_test_packet(
+    unix_tx: &UnboundedSender<UnixResponse>,
+    rx: &mut UnboundedReceiver<UnixRequestData>,
+    esp_id: u32,
+    data: TestPacketData,
+) -> Result<()> {
+    unix_tx.send(UnixResponse {
+        error: None,
+        tag: None,
+        data: Some(UnixResponseData::TestPacket { esp_id, data }),
+    })?;
+
+    let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Shouldnt be none"))?;
+
+    if let UnixRequestData::TestAck { esp_id } = recv {
+        if esp_id != esp_id {
+            anyhow::bail!("Wrong esp_id in response!");
+        }
+    } else {
+        anyhow::bail!("Wrong packet, cant verify test ack!");
+    }
+
+    Ok(())
 }
 
 async fn send_resp(

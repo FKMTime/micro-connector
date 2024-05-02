@@ -69,9 +69,6 @@ pub enum TestStep {
         time: Option<u64>,
         penalty: i64,
     },
-    VerifyDelegateSent {
-        time: Option<u64>,
-        penalty: Option<i64>,
-    },
+    VerifyDelegateSent,
     // TODO: VerifySnapshotState (with options like in delegate)
 }

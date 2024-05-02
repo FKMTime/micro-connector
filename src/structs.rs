@@ -84,7 +84,6 @@ pub enum TimerPacket {
     Snapshot(SnapshotData),
     TestAck {
         esp_id: u32,
-        typ: String,
     },
 }
 
