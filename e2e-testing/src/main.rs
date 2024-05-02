@@ -272,6 +272,20 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
 
             tokio::time::sleep(Duration::from_millis(test.sleep_between)).await;
         }
+
+        if tests.dump_state_after_test {
+            unix_tx.send(UnixResponse {
+                error: None,
+                tag: None,
+                data: Some(UnixResponseData::TestPacket {
+                    esp_id,
+                    data: TestPacketData::Snapshot,
+                }),
+            })?;
+
+            let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await?;
+            println!("Snapshot data: {recv:?}");
+        }
     }
 
     Ok(())

@@ -68,7 +68,7 @@
         {
           "type": "VerifySolveTime",
           "data": {
-            "penalty": 2
+            "penalty": 4
           }
         }
       ]
