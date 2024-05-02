@@ -1,4 +1,5 @@
 use anyhow::Result;
+use rand::Rng;
 use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
 use structs::{CompetitorInfo, SharedSenders, State, TestsRoot};
 use tokio::{
@@ -11,6 +12,8 @@ use unix_utils::{
     response::{CompetitionStatusResp, Room, UnixResponse, UnixResponseData},
     TestPacketData,
 };
+
+use crate::structs::TestStep;
 
 mod structs;
 
@@ -65,7 +68,8 @@ async fn handle_stream(
                         send_status_resp(stream, &state.devices).await?;
                         send_resp(stream, UnixResponseData::Empty, packet.tag, false).await?;
 
-                        new_test_sender(&esp_id, state.senders.clone()).await?;
+                        let tests = state.tests.read().await.clone();
+                        new_test_sender(&esp_id, state.senders.clone(), tests).await?;
                     }
                     UnixRequestData::PersonInfo { ref card_id } => {
                         let card_id: u64 = card_id.parse()?;
@@ -119,13 +123,18 @@ async fn handle_stream(
     }
 }
 
-async fn new_test_sender(esp_id: &u32, senders: SharedSenders) -> Result<()> {
-    tokio::task::spawn(test_sender(*esp_id, senders));
+async fn new_test_sender(esp_id: &u32, senders: SharedSenders, tests: TestsRoot) -> Result<()> {
+    let esp_id = *esp_id;
+
+    tokio::task::spawn(async move {
+        let res = test_sender(esp_id, senders, tests).await;
+        println!("{res:?}");
+    });
 
     Ok(())
 }
 
-async fn test_sender(esp_id: u32, senders: SharedSenders) -> Result<()> {
+async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> Result<()> {
     let unix_tx = UNIX_SENDER.get().expect("UNIX_SENDER not set!");
     let mut rx = spawn_new_sender(&senders, esp_id).await?;
 
@@ -147,121 +156,123 @@ async fn test_sender(esp_id: u32, senders: SharedSenders) -> Result<()> {
         }),
     })?;
 
-    unix_tx.send(UnixResponse {
-        error: None,
-        tag: None,
-        data: Some(UnixResponseData::TestPacket {
-            esp_id,
-            data: TestPacketData::Snapshot,
-        }),
-    })?;
+    for test in tests.tests {
+        println!("Running test: {}", test.name);
+        let random_time: u64 = rand::thread_rng().gen_range(501..123042);
 
-    let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
-    println!("recv {recv:?}");
+        // TODO: separate function to easily tell where it errored!
+        for step in test.steps {
+            println!("Running step: {step:?}");
 
-    /*
-    loop {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        unix_tx.send(UnixResponse {
-            error: None,
-            tag: None,
-            data: Some(UnixResponseData::TestPacket {
-                esp_id,
-                data: TestPacketData::ScanCard(3004425529),
-            }),
-        })?;
+            match step {
+                TestStep::Sleep(ms) => {
+                    tokio::time::sleep(Duration::from_millis(ms)).await;
+                    continue; // to skip sleep_between after
+                }
+                TestStep::ResetState => {
+                    unix_tx.send(UnixResponse {
+                        error: None,
+                        tag: None,
+                        data: Some(UnixResponseData::TestPacket {
+                            esp_id,
+                            data: TestPacketData::ResetState,
+                        }),
+                    })?;
+                }
+                TestStep::SolveTime(time) => {
+                    unix_tx.send(UnixResponse {
+                        error: None,
+                        tag: None,
+                        data: Some(UnixResponseData::TestPacket {
+                            esp_id,
+                            data: TestPacketData::SolveTime(time),
+                        }),
+                    })?;
+                }
+                TestStep::SolveTimeRng => {
+                    unix_tx.send(UnixResponse {
+                        error: None,
+                        tag: None,
+                        data: Some(UnixResponseData::TestPacket {
+                            esp_id,
+                            data: TestPacketData::SolveTime(random_time),
+                        }),
+                    })?;
+                }
+                TestStep::Snapshot => {
+                    unix_tx.send(UnixResponse {
+                        error: None,
+                        tag: None,
+                        data: Some(UnixResponseData::TestPacket {
+                            esp_id,
+                            data: TestPacketData::Snapshot,
+                        }),
+                    })?;
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        unix_tx.send(UnixResponse {
-            error: None,
-            tag: None,
-            data: Some(UnixResponseData::TestPacket {
-                esp_id,
-                data: TestPacketData::SolveTime(rand::thread_rng().gen_range(300..69420)),
-            }),
-        })?;
+                    let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await?;
+                    println!("Snapshot data: {recv:?}");
+                }
+                TestStep::ScanCard(card_id) => {
+                    unix_tx.send(UnixResponse {
+                        error: None,
+                        tag: None,
+                        data: Some(UnixResponseData::TestPacket {
+                            esp_id,
+                            data: TestPacketData::ScanCard(card_id),
+                        }),
+                    })?;
+                }
+                TestStep::Button { ref name, time } => {
+                    let pins = tests.buttons.get(name);
+                    if let Some(pins) = pins {
+                        unix_tx.send(UnixResponse {
+                            error: None,
+                            tag: None,
+                            data: Some(UnixResponseData::TestPacket {
+                                esp_id,
+                                data: TestPacketData::ButtonPress {
+                                    pins: pins.to_owned(),
+                                    press_time: time,
+                                },
+                            }),
+                        })?;
+                    } else {
+                        println!("Wrong button name!");
+                    }
+                }
+                TestStep::VerifySolveTime {
+                    time,
+                    penalty: penalty_to_check,
+                } => {
+                    let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                        .await?
+                        .ok_or_else(|| anyhow::anyhow!("Shouldnt be none"))?;
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        unix_tx.send(UnixResponse {
-            error: None,
-            tag: None,
-            data: Some(UnixResponseData::TestPacket {
-                esp_id,
-                data: TestPacketData::ButtonPress {
-                    pins: vec![32],
-                    press_time: 30,
-                },
-            }),
-        })?;
+                    if let UnixRequestData::EnterAttempt { value, penalty, .. } = recv {
+                        let time_to_check = time.unwrap_or(random_time) / 10;
+                        if value != time_to_check {
+                            anyhow::bail!(
+                                "Wrong time value! Real: {value} Expected: {time_to_check}"
+                            )
+                        }
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        unix_tx.send(UnixResponse {
-            error: None,
-            tag: None,
-            data: Some(UnixResponseData::TestPacket {
-                esp_id,
-                data: TestPacketData::ButtonPress {
-                    pins: vec![32],
-                    press_time: 30,
-                },
-            }),
-        })?;
-
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        unix_tx.send(UnixResponse {
-            error: None,
-            tag: None,
-            data: Some(UnixResponseData::TestPacket {
-                esp_id,
-                data: TestPacketData::ButtonPress {
-                    pins: vec![33],
-                    press_time: 30,
-                },
-            }),
-        })?;
-
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        unix_tx.send(UnixResponse {
-            error: None,
-            tag: None,
-            data: Some(UnixResponseData::TestPacket {
-                esp_id,
-                data: TestPacketData::ScanCard(69420),
-            }),
-        })?;
-
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        unix_tx.send(UnixResponse {
-            error: None,
-            tag: None,
-            data: Some(UnixResponseData::TestPacket {
-                esp_id,
-                data: TestPacketData::ScanCard(3004425529),
-            }),
-        })?;
-
-        let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
-        match recv {
-            Ok(recv) => {
-                println!("recv: {recv:?}");
+                        if penalty != penalty_to_check {
+                            anyhow::bail!(
+                                "Wrong penalty value! Real: {penalty} Expected: {penalty_to_check}"
+                            )
+                        }
+                    } else {
+                        anyhow::bail!("Wrong packet, cant verify solve time!")
+                    }
+                }
+                _ => {
+                    println!("Step not coded... {step:?}");
+                }
             }
-            Err(_) => {
-                // timeout
 
-                unix_tx.send(UnixResponse {
-                    error: None,
-                    tag: None,
-                    data: Some(UnixResponseData::TestPacket {
-                        esp_id,
-                        data: TestPacketData::ResetState,
-                    }),
-                })?;
-
-                println!("!!!ERROR_TIMEOUT!!!");
-            }
+            tokio::time::sleep(Duration::from_millis(test.sleep_between)).await;
         }
     }
-    */
 
     Ok(())
 }

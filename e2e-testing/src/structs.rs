@@ -19,7 +19,7 @@ pub struct CompetitorInfo {
     pub can_compete: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TestsRoot {
     pub dump_state_after_test: bool,
@@ -28,25 +28,35 @@ pub struct TestsRoot {
     pub tests: Vec<TestData>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+const DEFAULT_SLEEP_BETWEEN: u64 = 500; //500ms
+fn default_sleep_between() -> u64 {
+    DEFAULT_SLEEP_BETWEEN
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TestData {
     pub name: String,
+
+    #[serde(default = "default_sleep_between")]
+    pub sleep_between: u64,
+
     pub steps: Vec<TestStep>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type", content = "data")]
 #[serde(rename_all_fields = "camelCase")]
 pub enum TestStep {
-    Sleep(u32),
+    Sleep(u64),
     ScanCard(u64),
     Snapshot,
     ResetState,
     SolveTime(u64),
+    SolveTimeRng,
     Button {
         name: String,
-        time: u32,
+        time: u64,
     },
     DelegateResolve {
         should_scan_cards: bool,
@@ -56,11 +66,12 @@ pub enum TestStep {
 
     // verifiers
     VerifySolveTime {
-        time: u64,
+        time: Option<u64>,
         penalty: i64,
     },
     VerifyDelegateSent {
         time: Option<u64>,
         penalty: Option<i64>,
     },
+    // TODO: VerifySnapshotState (with options like in delegate)
 }

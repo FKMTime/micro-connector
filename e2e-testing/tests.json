@@ -16,17 +16,74 @@
   },
   "buttons": {
     "penalty": [ 32 ],
-    "inspect": [ 26 ],
-    "delegate": [ 33 ],
-    "submit": [ 27 ]
+    "inspect": [ 27 ],
+    "delegate": [ 26 ],
+    "submit": [ 33 ]
   },
   "tests": [
     {
-      "name": "Test solve",
+      "name": "Test random solve",
+      "sleepBetween": 500,
       "steps": [
         {
           "type": "ScanCard",
           "data": 3004425529
+        },
+        {
+          "type": "Sleep",
+          "data": 100
+        },
+        {
+          "type": "SolveTimeRng"
+        },
+        {
+          "type": "Button",
+          "data": {
+            "name": "penalty",
+            "time": 50
+          }
+        },
+        {
+          "type": "Button",
+          "data": {
+            "name": "penalty",
+            "time": 50
+          }
+        },
+        {
+          "type": "Button",
+          "data": {
+            "name": "submit",
+            "time": 50
+          }
+        },
+        {
+          "type": "ScanCard",
+          "data": 69420
+        },
+        {
+          "type": "ScanCard",
+          "data": 3004425529
+        },
+        {
+          "type": "VerifySolveTime",
+          "data": {
+            "penalty": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "Test solve",
+      "sleepBetween": 500,
+      "steps": [
+        {
+          "type": "ScanCard",
+          "data": 3004425529
+        },
+        {
+          "type": "Sleep",
+          "data": 100
         },
         {
           "type": "SolveTime",
