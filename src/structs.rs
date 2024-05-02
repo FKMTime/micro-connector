@@ -82,6 +82,10 @@ pub enum TimerPacket {
     // packet for end to end testing
     TestPacket(TestPacketData),
     Snapshot(SnapshotData),
+    TestAck {
+        esp_id: u32,
+        typ: String,
+    },
 }
 
 #[derive(Debug, Clone)]

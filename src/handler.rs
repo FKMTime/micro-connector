@@ -258,6 +258,9 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerPacket) -> Res
         TimerPacket::Snapshot(data) => {
             _ = crate::socket::api::send_snapshot_data(data).await;
         }
+        TimerPacket::TestAck { esp_id, typ } => {
+            _ = crate::socket::api::send_test_ack(esp_id, typ).await;
+        }
         _ => {
             trace!("Not implemented timer response received: {:?}", response);
         }

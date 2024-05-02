@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::SnapshotData;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct UnixRequest {
@@ -43,4 +43,10 @@ pub enum UnixRequestData {
         r#type: String,
     },
     Snapshot(SnapshotData),
+    TestAck {
+        esp_id: u32,
+
+        #[serde(rename = "type")]
+        r#type: String,
+    },
 }

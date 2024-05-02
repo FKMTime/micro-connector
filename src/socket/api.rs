@@ -68,6 +68,11 @@ pub async fn send_snapshot_data(data: SnapshotData) -> Result<(), UnixError> {
     res
 }
 
+pub async fn send_test_ack(esp_id: u32, r#type: String) -> Result<(), UnixError> {
+    let data = UnixRequestData::TestAck { esp_id, r#type };
+    crate::UNIX_SOCKET.send_async_request(data).await
+}
+
 pub async fn send_solve_entry(
     time: u64,
     penalty: i64,

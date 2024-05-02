@@ -107,6 +107,10 @@ async fn handle_stream(
                         print_log = false;
                         send_resp(stream, UnixResponseData::Empty, packet.tag, false).await?;
                     }
+                    UnixRequestData::TestAck { .. } => {
+                        //send_senders_data(&state.senders, &esp_id, packet.data.clone()).await?;
+                        //send_resp(stream, UnixResponseData::Empty, packet.tag, false).await?;
+                    }
                     _ => {
                         send_resp(stream, UnixResponseData::Empty, packet.tag, false).await?;
                     }
