@@ -37,4 +37,5 @@ pub struct SnapshotData {
     pub competitor_display: String,
     pub time_confirmed: bool,
     pub error_msg: String,
+    pub lcd_buffer: String,
 }
