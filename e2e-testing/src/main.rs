@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
-use structs::{CompetitorInfo, SharedSenders, State, TestData, TestStep, TestsRoot};
+use structs::{CompetitorInfo, SharedSenders, State, TestsRoot};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
@@ -24,43 +24,14 @@ async fn main() -> Result<()> {
     _ = tokio::fs::create_dir_all(socket_dir).await;
     _ = tokio::fs::remove_file(&socket_path).await;
 
+    let tests_root = tokio::fs::read("tests.json").await?;
+    let tests_root: TestsRoot = serde_json::from_slice(&tests_root)?;
+
     let mut state = State {
         devices: vec![],
-        cards: HashMap::new(),
         senders: Arc::new(RwLock::new(HashMap::new())),
+        tests: Arc::new(RwLock::new(tests_root)),
     };
-
-    state.cards.insert(
-        3004425529,
-        CompetitorInfo {
-            name: "Filip Sciurka".to_string(),
-            registrant_id: state.cards.len() as i64,
-            wca_id: "FILSCI01".to_string(),
-            can_compete: true,
-        },
-    );
-
-    state.cards.insert(
-        69420,
-        CompetitorInfo {
-            name: "Filip Dziurka".to_string(),
-            registrant_id: state.cards.len() as i64,
-            wca_id: "FILDZI01".to_string(),
-            can_compete: true,
-        },
-    );
-
-    let tests_root: TestsRoot = TestsRoot {
-        dump_state_after_test: true,
-        cards: state.cards.clone(),
-        buttons: HashMap::new(),
-        tests: vec![TestData {
-            name: "test sleep".to_string(),
-            steps: vec![TestStep::Sleep(300)],
-        }],
-    };
-
-    println!("{}", serde_json::to_string_pretty(&tests_root)?);
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     UNIX_SENDER.set(tx)?;
@@ -98,7 +69,9 @@ async fn handle_stream(
                     }
                     UnixRequestData::PersonInfo { ref card_id } => {
                         let card_id: u64 = card_id.parse()?;
-                        let competitor = state.cards.get(&card_id);
+                        let tests_root = state.tests.read().await;
+                        let competitor = tests_root.cards.get(&card_id);
+
                         let resp = match competitor {
                             Some(competitor) => UnixResponseData::PersonInfoResp {
                                 id: card_id.to_string(),
