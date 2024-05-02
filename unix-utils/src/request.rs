@@ -14,15 +14,15 @@ pub struct UnixRequest {
 #[serde(rename_all_fields = "camelCase")]
 pub enum UnixRequestData {
     PersonInfo {
-        card_id: String,
+        card_id: u64,
     },
     WifiSettings,
     CreateAttendance {
-        card_id: u128,
+        card_id: u64,
         esp_id: u32,
     },
     EnterAttempt {
-        value: u128,
+        value: u64,
         penalty: i64,
         solved_at: String,
         esp_id: u32,
@@ -30,7 +30,7 @@ pub enum UnixRequestData {
         competitor_id: String,
         is_delegate: bool,
         session_id: String,
-        inspection_time: u128,
+        inspection_time: i64,
     },
     UpdateBatteryPercentage {
         esp_id: u32,

@@ -12,11 +12,9 @@ pub struct CompetitorInfo {
     pub can_compete: bool,
 }
 
-pub async fn get_competitor_info(card_id: u128) -> Result<CompetitorInfo, UnixError> {
+pub async fn get_competitor_info(card_id: u64) -> Result<CompetitorInfo, UnixError> {
     let res = crate::UNIX_SOCKET
-        .send_tagged_request(UnixRequestData::PersonInfo {
-            card_id: card_id.to_string(),
-        })
+        .send_tagged_request(UnixRequestData::PersonInfo { card_id })
         .await?;
 
     if let UnixResponseData::PersonInfoResp {
@@ -47,7 +45,7 @@ pub async fn get_competitor_info(card_id: u128) -> Result<CompetitorInfo, UnixEr
 }
 
 // For now, dont parse response (but its there)
-pub async fn mark_attendance(esp_id: u32, card_id: u128) -> Result<(), UnixError> {
+pub async fn mark_attendance(esp_id: u32, card_id: u64) -> Result<(), UnixError> {
     let res = crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::CreateAttendance { card_id, esp_id })
         .await
@@ -66,15 +64,15 @@ pub async fn send_snapshot_data(data: SnapshotData) -> Result<(), UnixError> {
 }
 
 pub async fn send_solve_entry(
-    time: u128,
+    time: u64,
     penalty: i64,
-    solved_at: u128,
+    solved_at: u64,
     esp_id: u32,
-    judge_id: u128,
-    competitor_id: u128,
+    judge_id: u64,
+    competitor_id: u64,
     is_delegate: bool,
     session_id: &str,
-    inspection_time: u128,
+    inspection_time: i64,
 ) -> Result<(), UnixError> {
     let time = time / 10; // Convert to centiseconds
     let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)

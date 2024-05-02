@@ -4,7 +4,7 @@ use unix_utils::{SnapshotData, TestPacketData};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogData {
-    pub millis: u128,
+    pub millis: u64,
     pub msg: String,
 }
 
@@ -19,25 +19,25 @@ pub enum TimerPacket {
         firmware: String,
     },
     Solve {
-        solve_time: u128,
+        solve_time: u64,
         penalty: i64,
-        competitor_id: u128,
-        judge_id: u128,
+        competitor_id: u64,
+        judge_id: u64,
         esp_id: u32,
-        timestamp: u128,
+        timestamp: u64,
         session_id: String, // UUID
         delegate: bool,
-        inspection_time: u128,
+        inspection_time: i64,
     },
     SolveConfirm {
         esp_id: u32,
-        competitor_id: u128,
+        competitor_id: u64,
         session_id: String,
     },
     DelegateResponse {
         esp_id: u32,
         should_scan_cards: bool,
-        solve_time: u128,
+        solve_time: u64,
         penalty: i64,
     },
     ApiError {
@@ -46,12 +46,12 @@ pub enum TimerPacket {
         should_reset_time: bool,
     },
     CardInfoRequest {
-        card_id: u128,
+        card_id: u64,
         esp_id: u32,
         attendance_device: Option<bool>,
     },
     CardInfoResponse {
-        card_id: u128,
+        card_id: u64,
         esp_id: u32,
         display: String,
         country_iso2: String,
