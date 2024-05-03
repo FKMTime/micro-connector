@@ -2,6 +2,15 @@
 name = "backend"
 version = "0.1.0"
 edition = "2021"
+default-run = "backend"
+
+[[bin]]
+name = "backend"
+path = "src/main.rs"
+
+[[bin]]
+name = "e2e"
+path = "src/e2e/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,7 +23,7 @@ dotenvy = "0.15.7"
 local-ip-address = "0.6.1"
 mdns-sd = "0.11.0"
 reqwest = { version = "0.12.4", features = ["json", "rustls-tls"], default-features = false }
-serde = { version = "1.0.198", features = ["derive"] }
+serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0.116"
 tokio = { version = "1.37.0", features = ["full"] }
 tower-http = { version = "0.5.2", features = ["trace"] }
