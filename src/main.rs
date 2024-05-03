@@ -1,5 +1,4 @@
 use anyhow::Result;
-use tracing::info;
 
 mod bluetooth;
 mod github;
@@ -36,10 +35,10 @@ async fn main() -> Result<()> {
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     tokio::select! {
         _ = sigterm.recv() => {
-            info!("Received SIGTERM, stopping server!");
+            tracing::info!("Received SIGTERM, stopping server!");
         }
         _ = tokio::signal::ctrl_c() => {
-            info!("Received SIGINT, stopping server!");
+            tracing::info!("Received SIGINT, stopping server!");
         }
     }
 

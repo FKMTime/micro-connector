@@ -1,3 +1,4 @@
+use crate::structs::TestStep;
 use anyhow::Result;
 use rand::Rng;
 use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
@@ -16,8 +17,6 @@ use unix_utils::{
     TestPacketData,
 };
 
-use crate::structs::TestStep;
-
 mod structs;
 
 pub static UNIX_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<UnixResponse>> =
@@ -25,12 +24,17 @@ pub static UNIX_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<UnixResponse
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    _ = dotenvy::dotenv();
+    tracing_subscriber::fmt::init();
+
     let socket_path = std::env::var("SOCKET_PATH").unwrap_or("/tmp/sock/socket.sock".to_string());
     let socket_dir = Path::new(&socket_path).parent().unwrap();
     _ = tokio::fs::create_dir_all(socket_dir).await;
     _ = tokio::fs::remove_file(&socket_path).await;
 
-    let tests_root = tokio::fs::read("tests.json").await?;
+    let tests_root = tokio::fs::read("tests.json")
+        .await
+        .map_err(|_| anyhow::anyhow!("tests.json doesnt exists!"))?;
     let tests_root: TestsRoot = serde_json::from_slice(&tests_root)?;
 
     let mut state = State {
@@ -42,11 +46,14 @@ async fn main() -> Result<()> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     UNIX_SENDER.set(tx)?;
 
-    let listener = UnixListener::bind(socket_path)?;
+    let listener = UnixListener::bind(&socket_path)?;
+    tracing::info!("Unix listener started on path {socket_path}!");
     loop {
         let (mut stream, _) = listener.accept().await?;
         let res = handle_stream(&mut stream, &mut state, &mut rx).await;
-        println!("res: {res:?}");
+        if let Err(e) = res {
+            tracing::error!("Handle stream error: {e:?}");
+        }
     }
 }
 
@@ -64,7 +71,6 @@ async fn handle_stream(
                 let bytes = res?;
                 let packet: UnixRequest = serde_json::from_slice(&bytes[..])?;
 
-                let mut print_log = true;
                 match packet.data {
                     UnixRequestData::RequestToConnectDevice { esp_id, .. } => {
                         state.devices.push(esp_id);
@@ -107,7 +113,6 @@ async fn handle_stream(
                         send_resp(stream, UnixResponseData::Empty, packet.tag, false).await?;
                     }
                     UnixRequestData::UpdateBatteryPercentage { .. } => {
-                        print_log = false;
                         send_resp(stream, UnixResponseData::Empty, packet.tag, false).await?;
                     }
                     UnixRequestData::TestAck { esp_id } => {
@@ -119,9 +124,7 @@ async fn handle_stream(
                     }
                 }
 
-                if print_log {
-                    println!("{packet:?}");
-                }
+                tracing::trace!("{packet:?}");
             }
             Some(recv) = rx.recv() => {
                 send_raw_resp(stream, recv).await?;
@@ -134,8 +137,12 @@ async fn new_test_sender(esp_id: &u32, senders: SharedSenders, tests: TestsRoot)
     let esp_id = *esp_id;
 
     tokio::task::spawn(async move {
+        tracing::info!("Starting new test sender for esp with id: {esp_id}");
+
         let res = test_sender(esp_id, senders, tests).await;
-        println!("{res:?}");
+        if let Err(e) = res {
+            tracing::error!("Test sender error: {e:?}");
+        }
     });
 
     Ok(())
@@ -160,7 +167,7 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
         prev_idx = Some(next_idx);
         let res = run_test(&unix_tx, &mut rx, esp_id, &tests, next_idx).await;
         if let Err(e) = res {
-            println!("Test error!!! {e:?}");
+            tracing::error!("Run test error: {e:?}");
             break Ok(());
         }
     }
@@ -175,7 +182,7 @@ async fn run_test(
 ) -> Result<()> {
     let test = &tests.tests[test_index];
 
-    println!("Running test: {}", test.name);
+    tracing::info!("Running test: {} (esp: {esp_id})", test.name);
     let random_time: u64 = rand::thread_rng().gen_range(501..123042);
 
     for step_idx in 0..test.steps.len() {
@@ -191,7 +198,7 @@ async fn run_test(
         .await;
 
         if let Err(e) = step {
-            println!("Step error!!! {e:?}");
+            tracing::error!("Step error: {e:?}");
             anyhow::bail!("Step error");
         }
 
@@ -202,7 +209,7 @@ async fn run_test(
         send_test_packet(&unix_tx, rx, esp_id, TestPacketData::Snapshot).await?;
 
         let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await?;
-        println!("Snapshot data: {recv:?}");
+        tracing::debug!("Snapshot data: {recv:?}");
     }
 
     Ok(())
@@ -220,7 +227,7 @@ async fn run_step(
     let test = &tests.tests[test_index];
     let step = &test.steps[step_index];
 
-    println!("Running step: {step:?}");
+    tracing::info!(" > Running step: {step:?} (esp_id: {esp_id})");
 
     match step {
         TestStep::Sleep(ms) => {
@@ -240,7 +247,7 @@ async fn run_step(
             send_test_packet(&unix_tx, rx, esp_id, TestPacketData::Snapshot).await?;
 
             let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await?;
-            println!("Snapshot data: {recv:?}");
+            tracing::debug!("Snapshot data: {recv:?}");
         }
         TestStep::ScanCard(card_id) => {
             send_test_packet(&unix_tx, rx, esp_id, TestPacketData::ScanCard(*card_id)).await?;
@@ -259,7 +266,7 @@ async fn run_step(
                 )
                 .await?;
             } else {
-                println!("Wrong button name!");
+                tracing::error!("Wrong button name");
             }
         }
         TestStep::VerifySolveTime {
@@ -330,7 +337,7 @@ async fn run_step(
 
         #[allow(unreachable_patterns)]
         _ => {
-            println!("Step not coded... {step:?}");
+            tracing::error!("Step not matched! {step:?}");
         }
     }
 
