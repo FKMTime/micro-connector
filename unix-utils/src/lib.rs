@@ -38,4 +38,5 @@ pub struct SnapshotData {
     pub time_confirmed: bool,
     pub error_msg: String,
     pub lcd_buffer: String,
+    pub free_heap_size: u32,
 }
