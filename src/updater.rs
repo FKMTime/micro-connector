@@ -226,6 +226,8 @@ impl Version {
 
                 if v2 > v1 {
                     return true;
+                } else if v2 < v1 {
+                    return false;
                 }
             } else {
                 break;
