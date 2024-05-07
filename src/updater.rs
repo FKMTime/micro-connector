@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(
             crate::updater::Version::from_str("DV1714320292")
                 .is_newer(&crate::updater::Version::from_str("DV1714320295")),
-            true
+            false
         );
 
         assert_eq!(
@@ -331,6 +331,18 @@ mod tests {
             crate::updater::Version::from_str("v2.0.0")
                 .is_newer(&crate::updater::Version::from_str("v2.0.0")),
             false
+        );
+
+        assert_eq!(
+            crate::updater::Version::from_str("v2.2.0")
+                .is_newer(&crate::updater::Version::from_str("v2.1.2")),
+            false
+        );
+
+        assert_eq!(
+            crate::updater::Version::from_str("v2.1.2")
+                .is_newer(&crate::updater::Version::from_str("v2.2.0")),
+            true
         );
     }
 }

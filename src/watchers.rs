@@ -16,11 +16,12 @@ pub async fn spawn_watchers(state: SharedAppState) -> Result<()> {
     let mut github_releases_interval =
         tokio::time::interval(Duration::from_millis(GITHUB_UPDATE_INTERVAL));
 
+    let mut last_build_modified: u128 = 0;
     tokio::task::spawn(async move {
         loop {
             tokio::select! {
                 _ = build_interval.tick() => {
-                    let res = build_watcher(&state, &firmware_dir).await;
+                    let res = build_watcher(&state, &firmware_dir, &mut last_build_modified).await;
                     if let Err(e) = res {
                         error!("Error in build watcher: {:?}", e);
                     }
@@ -38,12 +39,15 @@ pub async fn spawn_watchers(state: SharedAppState) -> Result<()> {
     Ok(())
 }
 
-async fn build_watcher(state: &SharedAppState, firmware_dir: &PathBuf) -> Result<()> {
-    let mut latest_modified: u128 = 0;
-
+async fn build_watcher(
+    state: &SharedAppState,
+    firmware_dir: &PathBuf,
+    last_modified: &mut u128,
+) -> Result<()> {
     let mut modified_state = false;
     for entry in firmware_dir.read_dir()? {
         let entry = entry?;
+
         if entry.file_type()?.is_dir() {
             continue;
         }
@@ -54,14 +58,14 @@ async fn build_watcher(state: &SharedAppState, firmware_dir: &PathBuf) -> Result
             .duration_since(std::time::UNIX_EPOCH)?
             .as_millis();
 
-        if modified > latest_modified {
-            latest_modified = modified;
+        if modified > *last_modified {
+            *last_modified = modified;
             modified_state = true;
         }
     }
 
     if modified_state {
-        _ = state.build_broadcast();
+        _ = state.build_broadcast().await;
     }
 
     Ok(())
