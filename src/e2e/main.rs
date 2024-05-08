@@ -265,6 +265,8 @@ async fn run_step(
                     },
                 )
                 .await?;
+
+                tokio::time::sleep(Duration::from_millis(*time)).await;
             } else {
                 tracing::error!("Wrong button name");
             }

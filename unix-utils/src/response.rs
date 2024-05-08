@@ -75,6 +75,6 @@ pub struct WifiSettings {
 #[serde(rename_all = "camelCase")]
 pub struct IncidentAttempt {
     pub session_id: String,
-    pub penalty: i64,
-    pub value: u64,
+    pub penalty: Option<i64>,
+    pub value: Option<u64>,
 }

@@ -22,6 +22,12 @@ async fn main() -> Result<()> {
         .parse()?;
     mdns::register_mdns(&port)?;
 
+    let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
+    let firmware_dir = std::path::PathBuf::from(firmware_dir);
+    if !firmware_dir.exists() {
+        std::fs::create_dir_all(&firmware_dir)?;
+    }
+
     let dev_mode = std::env::var("DEV").is_ok();
     let state = structs::SharedAppState::new(dev_mode).await;
 

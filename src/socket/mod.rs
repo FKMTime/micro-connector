@@ -261,7 +261,7 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
             let packet = TimerPacket::DelegateResponse {
                 esp_id,
                 should_scan_cards,
-                solve_time: attempt.value * 10, // from cs to ms
+                solve_time: attempt.value.map(|x| x * 10), // from cs to ms
                 penalty: attempt.penalty,
             };
 

@@ -37,8 +37,12 @@ pub enum TimerPacket {
     DelegateResponse {
         esp_id: u32,
         should_scan_cards: bool,
-        solve_time: u64,
-        penalty: i64,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
+        solve_time: Option<u64>,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
+        penalty: Option<i64>,
     },
     ApiError {
         esp_id: u32,
@@ -48,6 +52,8 @@ pub enum TimerPacket {
     CardInfoRequest {
         card_id: u64,
         esp_id: u32,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
         attendance_device: Option<bool>,
     },
     CardInfoResponse {
@@ -62,6 +68,8 @@ pub enum TimerPacket {
     },
     DeviceSettings {
         esp_id: u32,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
         use_inspection: Option<bool>,
         added: bool,
     },

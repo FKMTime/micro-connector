@@ -60,8 +60,8 @@ pub enum TestStep {
     },
     DelegateResolve {
         should_scan_cards: bool,
-        penalty: i64,
-        value: u64,
+        penalty: Option<i64>,
+        value: Option<u64>,
     },
 
     // verifiers
