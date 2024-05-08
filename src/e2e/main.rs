@@ -156,6 +156,7 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
     send_test_packet(&unix_tx, &mut rx, esp_id, TestPacketData::ResetState).await?;
 
     let mut prev_idx: Option<usize> = None;
+    let mut last_time = 0;
     loop {
         let next_idx: usize = rand::thread_rng().gen_range(0..tests.tests.len());
         if let Some(prev_idx) = prev_idx {
@@ -165,7 +166,7 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
         }
 
         prev_idx = Some(next_idx);
-        let res = run_test(&unix_tx, &mut rx, esp_id, &tests, next_idx).await;
+        let res = run_test(&unix_tx, &mut rx, esp_id, &tests, next_idx, &mut last_time).await;
         if let Err(e) = res {
             tracing::error!("Run test error: {e:?}");
             break Ok(());
@@ -179,11 +180,15 @@ async fn run_test(
     esp_id: u32,
     tests: &TestsRoot,
     test_index: usize,
+    last_time: &mut u64,
 ) -> Result<()> {
     let test = &tests.tests[test_index];
 
     tracing::info!("Running test: {} (esp: {esp_id})", test.name);
-    let random_time: u64 = rand::thread_rng().gen_range(501..123042);
+    let mut random_time: u64 = rand::thread_rng().gen_range(501..123042);
+    if *last_time == random_time {
+        random_time += 1;
+    }
 
     for step_idx in 0..test.steps.len() {
         let step = run_step(
@@ -194,6 +199,7 @@ async fn run_test(
             test_index,
             step_idx,
             random_time,
+            last_time,
         )
         .await;
 
@@ -223,6 +229,7 @@ async fn run_step(
     test_index: usize,
     step_index: usize,
     random_time: u64,
+    last_time: &mut u64,
 ) -> Result<()> {
     let test = &tests.tests[test_index];
     let step = &test.steps[step_index];
@@ -238,9 +245,11 @@ async fn run_step(
             send_test_packet(&unix_tx, rx, esp_id, TestPacketData::ResetState).await?;
         }
         TestStep::SolveTime(time) => {
+            *last_time = *time;
             send_test_packet(&unix_tx, rx, esp_id, TestPacketData::SolveTime(*time)).await?;
         }
         TestStep::SolveTimeRng => {
+            *last_time = random_time;
             send_test_packet(&unix_tx, rx, esp_id, TestPacketData::SolveTime(random_time)).await?;
         }
         TestStep::Snapshot => {
