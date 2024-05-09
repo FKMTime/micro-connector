@@ -171,6 +171,61 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "Test solve before scan",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "SolveTimeRng"
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 50
+                    }
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 50
+                    }
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 50
+                    }
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 50
+                    }
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "VerifySolveTime",
+                    "data": {
+                        "penalty": 6
+                    }
+                }
+            ]
         }
     ]
 }
