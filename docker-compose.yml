@@ -22,6 +22,7 @@ services:
     depends_on:
       - e2e
   e2e:
+    image: filipton/fkm-e2e:latest
     container_name: e2e
     build:
       dockerfile: Dockerfile
