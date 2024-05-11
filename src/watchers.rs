@@ -12,7 +12,7 @@ pub async fn spawn_watchers(state: SharedAppState) -> Result<()> {
     let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
-    let mut build_interval = tokio::time::interval(Duration::from_secs(1));
+    let mut dev_build_interval = tokio::time::interval(Duration::from_secs(1));
     let mut github_releases_interval =
         tokio::time::interval(Duration::from_millis(GITHUB_UPDATE_INTERVAL));
 
@@ -20,14 +20,14 @@ pub async fn spawn_watchers(state: SharedAppState) -> Result<()> {
     tokio::task::spawn(async move {
         loop {
             tokio::select! {
-                _ = build_interval.tick() => {
-                    let res = build_watcher(&state, &firmware_dir, &mut last_build_modified).await;
+                _ = dev_build_interval.tick() => {
+                    let res = dev_build_watcher(&state, &firmware_dir, &mut last_build_modified).await;
                     if let Err(e) = res {
                         error!("Error in build watcher: {:?}", e);
                     }
                 }
                 _ = github_releases_interval.tick() => {
-                    let res = github_releases_watcher(&firmware_dir).await;
+                    let res = github_releases_watcher(&state, &firmware_dir).await;
                     if let Err(e) = res {
                         error!("Error in github releases watcher: {:?}", e);
                     }
@@ -39,11 +39,15 @@ pub async fn spawn_watchers(state: SharedAppState) -> Result<()> {
     Ok(())
 }
 
-async fn build_watcher(
+async fn dev_build_watcher(
     state: &SharedAppState,
     firmware_dir: &PathBuf,
     last_modified: &mut u128,
 ) -> Result<()> {
+    if !state.dev_mode {
+        return Ok(());
+    }
+
     let mut modified_state = false;
     for entry in firmware_dir.read_dir()? {
         let entry = entry?;
@@ -71,9 +75,8 @@ async fn build_watcher(
     Ok(())
 }
 
-async fn github_releases_watcher(firmware_dir: &PathBuf) -> Result<()> {
+async fn github_releases_watcher(state: &SharedAppState, firmware_dir: &PathBuf) -> Result<()> {
     let client = reqwest::Client::builder().user_agent("Fkm/2.0").build()?;
-
     let files = crate::github::get_releases(&client).await?;
 
     for file in files {
@@ -86,6 +89,7 @@ async fn github_releases_watcher(firmware_dir: &PathBuf) -> Result<()> {
                 move_file(&tmp_path, &release_path).await?;
 
                 tracing::info!("Downloaded new release: {}", file.name);
+                _ = state.build_broadcast().await;
             }
         }
     }
