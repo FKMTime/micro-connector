@@ -1,3 +1,5 @@
+use std::os::unix::fs::PermissionsExt;
+
 use anyhow::Result;
 
 mod bluetooth;
@@ -25,7 +27,9 @@ async fn main() -> Result<()> {
     let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
     if !firmware_dir.exists() {
-        std::fs::create_dir_all(&firmware_dir)?;
+        tokio::fs::create_dir_all(&firmware_dir).await?;
+        let mut perms = tokio::fs::metadata(&firmware_dir).await?.permissions();
+        perms.set_mode(0o777);
     }
 
     let dev_mode = std::env::var("DEV").is_ok();
