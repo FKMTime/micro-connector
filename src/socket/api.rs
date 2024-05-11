@@ -112,9 +112,12 @@ pub async fn send_solve_entry(
     res
 }
 
-pub async fn send_battery_status(esp_id: u32, battery: f64) -> Result<(), UnixError> {
-    let battery: u8 = battery.round() as u8;
+pub async fn send_battery_status(esp_id: u32, battery: Option<f64>) -> Result<(), UnixError> {
+    if battery.is_none() {
+        return Ok(());
+    }
 
+    let battery: u8 = battery.unwrap().round() as u8;
     let res = crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::UpdateBatteryPercentage {
             esp_id,

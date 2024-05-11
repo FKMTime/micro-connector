@@ -79,8 +79,8 @@ pub enum TimerPacket {
     },
     Battery {
         esp_id: u32,
-        level: f64,
-        voltage: f64,
+        level: Option<f64>,
+        voltage: Option<f64>,
     },
     Add {
         esp_id: u32,
