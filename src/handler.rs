@@ -117,7 +117,7 @@ async fn send_device_status(
 async fn on_ws_msg(
     socket: &mut WebSocket,
     msg: Message,
-    _esp_connect_info: &EspConnectInfo,
+    esp_connect_info: &EspConnectInfo,
     hb_received: &mut bool,
 ) -> Result<bool> {
     match msg {
@@ -129,6 +129,8 @@ async fn on_ws_msg(
             *hb_received = true;
         }
         Message::Text(payload) => {
+            tracing::trace!("WS payload recv [{}]: {payload}", esp_connect_info.id);
+
             let response: TimerPacket = serde_json::from_str(&payload)?;
             let res = on_timer_response(socket, response).await;
             if let Err(e) = res {
