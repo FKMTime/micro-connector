@@ -86,6 +86,9 @@ pub enum TimerPacket {
         esp_id: u32,
         firmware: String,
     },
+    EpochTime {
+        current_epoch: u64,
+    },
 
     // packet for end to end testing
     TestPacket(TestPacketData),

@@ -22,6 +22,7 @@ pub async fn handle_client(
         }
     }
 
+    send_epoch_time(&mut socket).await?;
     send_device_status(&mut socket, esp_connect_info, &state).await?;
     let mut bc = state.get_bc().await;
 
@@ -111,6 +112,18 @@ async fn send_device_status(
 
     let response = serde_json::to_string(&frame)?;
     socket.send(Message::Text(response)).await?;
+    Ok(())
+}
+
+async fn send_epoch_time(socket: &mut WebSocket) -> Result<()> {
+    let packet = TimerPacket::EpochTime {
+        current_epoch: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_millis() as u64,
+    };
+
+    let resp = serde_json::to_string(&packet)?;
+    socket.send(Message::Text(resp)).await?;
     Ok(())
 }
 
