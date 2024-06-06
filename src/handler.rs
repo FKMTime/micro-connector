@@ -119,7 +119,7 @@ async fn send_epoch_time(socket: &mut WebSocket) -> Result<()> {
     let packet = TimerPacket::EpochTime {
         current_epoch: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
-            .as_millis() as u64,
+            .as_secs(),
     };
 
     let resp = serde_json::to_string(&packet)?;
