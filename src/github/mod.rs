@@ -3,8 +3,8 @@ use anyhow::Result;
 mod structs;
 
 const GITHUB_API_URL: &str = "https://api.github.com";
-const GH_OWNER: &str = "filipton";
-const GH_REPO: &str = "fkm-timer";
+const GH_OWNER: &str = "FKMTime";
+const GH_REPO: &str = "firmware";
 
 pub async fn get_releases(
     client: &reqwest::Client,
