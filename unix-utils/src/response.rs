@@ -60,6 +60,7 @@ pub struct CompetitionStatusResp {
 pub struct Room {
     pub id: String,
     pub name: String,
+    pub secondary_text: String,
     pub use_inspection: bool,
     pub devices: Vec<u32>,
 }

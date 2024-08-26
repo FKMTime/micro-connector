@@ -227,6 +227,7 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
                         device,
                         crate::structs::CompetitionDeviceSettings {
                             use_inspection: Some(room.use_inspection),
+                            secondary_text: Some(room.secondary_text.clone()),
                         },
                     );
 
@@ -242,6 +243,7 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
                         device,
                         crate::structs::CompetitionDeviceSettings {
                             use_inspection: None,
+                            secondary_text: None,
                         },
                     );
 

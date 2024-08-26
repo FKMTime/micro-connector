@@ -71,6 +71,10 @@ pub enum TimerPacket {
 
         #[serde(skip_serializing_if = "Option::is_none")]
         use_inspection: Option<bool>,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
+        secondary_text: Option<String>,
+
         added: bool,
     },
     Logs {
@@ -121,6 +125,7 @@ pub struct AppState {
 #[derive(Debug, Clone)]
 pub struct CompetitionDeviceSettings {
     pub use_inspection: Option<bool>,
+    pub secondary_text: Option<String>,
 }
 
 impl SharedAppState {

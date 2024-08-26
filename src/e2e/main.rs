@@ -416,6 +416,7 @@ async fn send_status_resp(stream: &mut UnixStream, device_store: &Vec<u32>) -> R
                 id: "dsa".to_string(),
                 name: "room 1".to_string(),
                 devices: device_store.to_vec(),
+                secondary_text: "E2E".to_string(),
                 use_inspection: true,
             }],
         })),

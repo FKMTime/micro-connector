@@ -100,12 +100,14 @@ async fn send_device_status(
         TimerPacket::DeviceSettings {
             esp_id: esp_connect_info.id,
             use_inspection: settings.use_inspection,
+            secondary_text: settings.secondary_text.clone(),
             added: true,
         }
     } else {
         TimerPacket::DeviceSettings {
             esp_id: esp_connect_info.id,
             use_inspection: None,
+            secondary_text: None,
             added: false,
         }
     };
