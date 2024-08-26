@@ -15,21 +15,21 @@ path = "src/e2e/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.82"
+anyhow = "1.0.86"
 axum = { version = "0.7.5", features = ["ws", "query"] }
 btleplug = "0.11.5"
 chrono = "0.4.38"
 dotenvy = "0.15.7"
 local-ip-address = "0.6.1"
-mdns-sd = "0.11.0"
-reqwest = { version = "0.12.4", features = ["json", "rustls-tls"], default-features = false }
-serde = { version = "1.0.200", features = ["derive"] }
-serde_json = "1.0.116"
-tokio = { version = "1.37.0", features = ["full"] }
+mdns-sd = "0.11.3"
+reqwest = { version = "0.12.7", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1.0.209", features = ["derive"] }
+serde_json = "1.0.127"
+tokio = { version = "1.39.3", features = ["full"] }
 tower-http = { version = "0.5.2", features = ["trace"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["json", "env-filter"] }
-uuid = "1.8.0"
+uuid = "1.10.0"
 dbus = { version = "0.9.7", features = ["vendored"] }
 rand = "0.8.5"
 unix-utils = { path = "./unix-utils" }
