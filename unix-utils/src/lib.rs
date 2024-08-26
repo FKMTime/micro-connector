@@ -29,6 +29,7 @@ pub struct SnapshotData {
     pub solve_time: i64,
     pub last_solve_time: i64,
     pub penalty: i64,
+    pub secondary_text: String,
     pub use_inspection: bool,
     pub inspection_started: u64,
     pub inspection_ended: u64,
