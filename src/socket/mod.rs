@@ -231,7 +231,11 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
                         },
                     );
 
-                    if old.is_none() || old.unwrap().use_inspection != Some(room.use_inspection) {
+                    if let Some(old) = old {
+                        // if use_inspection or secondary_text changed
+                        changed = old.use_inspection != Some(room.use_inspection)
+                            || old.secondary_text != Some(room.secondary_text.clone());
+                    } else if old.is_none() {
                         changed = true;
                     }
                 }
