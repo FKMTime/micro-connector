@@ -4,6 +4,8 @@ use crate::{
 };
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
+use chrono::Utc;
+use tokio::{fs::File, io::AsyncWriteExt};
 use tracing::{error, info, trace};
 
 pub async fn handle_client(
@@ -25,6 +27,14 @@ pub async fn handle_client(
     send_epoch_time(&mut socket).await?;
     send_device_status(&mut socket, esp_connect_info, &state).await?;
     let mut bc = state.get_bc().await;
+
+    let mut logs_path = state.device_logs_path.join(esp_connect_info.id.to_string());
+    logs_path.set_extension("log");
+    let mut logs_file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(logs_path)
+        .await?;
 
     let interval_time = std::time::Duration::from_secs(5);
     let mut hb_interval = tokio::time::interval(interval_time);
@@ -73,7 +83,7 @@ pub async fn handle_client(
             }
             msg = socket.recv() => {
                 let msg = msg.ok_or_else(|| anyhow::anyhow!("Frame option is null"))??;
-                let res = on_ws_msg(&mut socket, msg, esp_connect_info, &mut hb_received).await;
+                let res = on_ws_msg(&mut socket, msg, esp_connect_info, &mut hb_received, &mut logs_file).await;
 
                 match res {
                     Ok(true) => break,
@@ -134,6 +144,7 @@ async fn on_ws_msg(
     msg: Message,
     esp_connect_info: &EspConnectInfo,
     hb_received: &mut bool,
+    logs_file: &mut File,
 ) -> Result<bool> {
     match msg {
         Message::Close(_) => {
@@ -147,7 +158,7 @@ async fn on_ws_msg(
             tracing::trace!("WS payload recv [{}]: {payload}", esp_connect_info.id);
 
             let response: TimerPacket = serde_json::from_str(&payload)?;
-            let res = on_timer_response(socket, response).await;
+            let res = on_timer_response(socket, response, logs_file).await;
             if let Err(e) = res {
                 error!("on_timer_response error: {e:?}");
             }
@@ -161,7 +172,11 @@ async fn on_ws_msg(
     Ok(false)
 }
 
-async fn on_timer_response(socket: &mut WebSocket, response: TimerPacket) -> Result<()> {
+async fn on_timer_response(
+    socket: &mut WebSocket,
+    response: TimerPacket,
+    logs_file: &mut File,
+) -> Result<()> {
     match response {
         TimerPacket::CardInfoRequest {
             card_id,
@@ -248,18 +263,21 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerPacket) -> Res
             let response = serde_json::to_string(&resp)?;
             socket.send(Message::Text(response)).await?;
         }
-        TimerPacket::Logs { esp_id, logs } => {
+        TimerPacket::Logs { logs, .. } => {
+            let now = Utc::now().to_string();
+
             let mut msg_buf = String::new();
             for log in logs.iter().rev() {
                 for line in log.msg.lines() {
                     if line.is_empty() {
                         continue;
                     }
-                    msg_buf.push_str(&format!("LOGS {} | {}\n", esp_id, line));
+
+                    msg_buf.push_str(&format!("[{now}]({}) {line}\n", log.millis));
                 }
             }
 
-            info!("{}", msg_buf.trim());
+            _ = logs_file.write_all(msg_buf.as_bytes()).await;
         }
         TimerPacket::Battery {
             esp_id,

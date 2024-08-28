@@ -1,4 +1,4 @@
-use std::os::unix::fs::PermissionsExt;
+use std::{os::unix::fs::PermissionsExt, path::PathBuf};
 
 use anyhow::Result;
 
@@ -33,7 +33,8 @@ async fn main() -> Result<()> {
     }
 
     let dev_mode = std::env::var("DEV").is_ok();
-    let state = structs::SharedAppState::new(dev_mode).await;
+    let device_logs_path = std::env::var("DEVICE_LOGS").unwrap_or("/tmp/fkm-logs".to_string());
+    let state = structs::SharedAppState::new(dev_mode, PathBuf::from(device_logs_path)).await;
 
     let socket_path = env_or_default("SOCKET_PATH", "/tmp/socket.sock");
     UNIX_SOCKET.init(&socket_path, state.clone()).await?;

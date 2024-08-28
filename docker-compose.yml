@@ -10,12 +10,14 @@ services:
       - /run/dbus:/run/dbus:ro
       - /tmp/fkm-build:/app/firmware
       - /tmp/sock:/app/sock
+      - /tmp/fkm-logs:/logs
     environment:
       - PORT=8080
       - FIRMWARE_DIR=/app/firmware
       - API_URL=http://localhost:5001
       - API_TOKEN=paste_your_token_here
       - RUST_LOG=none,backend=debug
+      - DEVICE_LOGS=/logs
       - SOCKET_PATH=/app/sock/socket.sock
       - DEV=1 #comment if you dont want to use dev build
     restart: unless-stopped
