@@ -84,7 +84,6 @@ pub async fn send_solve_entry(
     session_id: &str,
     inspection_time: i64,
 ) -> Result<(), UnixError> {
-    let time = time / 10; // Convert to centiseconds
     let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)
         .ok_or_else(|| UnixError {
             message: format!("Error parsing timestamp"),
@@ -93,7 +92,8 @@ pub async fn send_solve_entry(
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
     let data = UnixRequestData::EnterAttempt {
-        value: time,
+        value: time / 10,
+        value_ms: time,
         penalty,
         solved_at,
         esp_id,

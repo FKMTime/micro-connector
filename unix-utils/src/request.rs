@@ -23,6 +23,7 @@ pub enum UnixRequestData {
     },
     EnterAttempt {
         value: u64,
+        value_ms: u64,
         penalty: i64,
         solved_at: String,
         esp_id: u32,
