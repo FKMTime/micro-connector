@@ -20,6 +20,7 @@ pub fn register_mdns(port: &u16) -> Result<()> {
         let ip = ip.to_string();
         let host_name = "stackmat.local.";
         let properties = [("ws", format!("ws://{ip}:{port}"))];
+        //let properties = [("ws", format!("wss://echo.filipton.space/test"))];
 
         let my_service = ServiceInfo::new(
             service_type,

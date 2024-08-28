@@ -194,12 +194,17 @@ async fn on_timer_response(
 
             let response = match crate::socket::api::get_competitor_info(card_id).await {
                 Ok(info) => {
+                    let registrant_display = match info.registrant_id {
+                        Some(x) => format!(" ({x})"),
+                        None => String::new(),
+                    };
+
                     trace!("Card info: {} {} {:?}", card_id, esp_id, info);
                     let response = TimerPacket::CardInfoResponse {
                         card_id,
                         esp_id,
                         country_iso2: info.country_iso2.unwrap_or_default(),
-                        display: format!("{} ({})", info.name, info.registrant_id.unwrap_or(-1)),
+                        display: format!("{}{}", info.name, registrant_display),
                         can_compete: info.can_compete,
                     };
 
