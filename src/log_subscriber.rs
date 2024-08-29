@@ -26,13 +26,14 @@ impl<'a> StringVisitor<'a> {
 
 impl<'a> Visit for StringVisitor<'a> {
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
-        //let val = format!("{value:?}").trim_matches('"').to_string();
-        let val = format!("{value:?}");
-        self.fields.insert(field.name().to_string(), val);
+        let val = format!("{value:?}").trim_matches('"').to_string();
+        //let val = format!("{value:?}");
+        let name = field.name();
+        self.fields.insert(name.to_string(), val);
 
-        if field.name() == "message" {
+        if name == "message" {
             write!(self.string, "{value:?} ").unwrap();
-        } else if field.name() != "device" {
+        } else if name != "file" {
             write!(self.string, "{} = {:?}; ", field.name(), value).unwrap();
         }
     }
@@ -43,7 +44,7 @@ struct LogFilter {
     level: Option<Level>,
 }
 
-type SharedFilesHashMap = Arc<RwLock<HashMap<i128, File>>>;
+type SharedFilesHashMap = Arc<RwLock<HashMap<String, File>>>;
 pub struct MinimalTracer {
     enabled: bool,
     filters: Vec<LogFilter>,
@@ -178,34 +179,32 @@ impl Subscriber for MinimalTracer {
         let mut text = String::new();
         let mut visitor = StringVisitor::new(&mut text);
         event.record(&mut visitor);
-        let device_id = visitor.fields.get("device");
 
         let time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
         let color = level_to_color(&level);
 
-        if let Some(device_id) = device_id {
-            if let Ok(device_id) = device_id.parse::<i128>() {
-                let tmp = format!("{time} {level: >5} {target}: {text}\n");
+        let file_field = visitor.fields.get("file");
+        if let Some(file_field) = file_field {
+            let tmp = format!("{time} {level: >5} {target}: {text}\n");
 
-                let files = self.files.read().expect("cannot lock");
-                if let Some(mut file) = files.get(&device_id) {
-                    file.write_all(tmp.as_bytes())
-                        .expect("cannot write to file");
-                } else {
-                    drop(files);
+            let files = self.files.read().expect("cannot lock");
+            if let Some(mut file) = files.get(file_field) {
+                file.write_all(tmp.as_bytes())
+                    .expect("cannot write to file");
+            } else {
+                drop(files);
 
-                    let file_path = self.logs_base.join(format!("device_{device_id}.log"));
-                    let mut files = self.files.write().expect("cannot lock");
-                    let mut file = std::fs::OpenOptions::new()
-                        .append(true)
-                        .create(true)
-                        .open(file_path)
-                        .expect("cannot open file");
+                let file_path = self.logs_base.join(format!("{file_field}.log"));
+                let mut files = self.files.write().expect("cannot lock");
+                let mut file = std::fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(file_path)
+                    .expect("cannot open file");
 
-                    file.write_all(tmp.as_bytes())
-                        .expect("cannot write to file");
-                    files.insert(device_id, file);
-                }
+                file.write_all(tmp.as_bytes())
+                    .expect("cannot write to file");
+                files.insert(file_field.to_string(), file);
             }
         } else {
             println!("{time} {color}{level: >5}\x1b[0m {target}: {text}");

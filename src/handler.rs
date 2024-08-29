@@ -260,7 +260,7 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerPacket) -> Res
                         continue;
                     }
 
-                    tracing::info!(device = esp_id, "[{}] {line}", log.millis);
+                    tracing::info!(file = format!("device_{esp_id}"), "[{}] {line}", log.millis);
                 }
             }
         }
