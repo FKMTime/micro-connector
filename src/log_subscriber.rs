@@ -3,6 +3,7 @@ use std::env;
 use std::fmt::Write;
 use std::fs::File;
 use std::io::Write as _;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::{fmt, sync::atomic::AtomicUsize, write};
 use tracing::{
@@ -31,7 +32,7 @@ impl<'a> Visit for StringVisitor<'a> {
 
         if field.name() == "message" {
             write!(self.string, "{value:?} ").unwrap();
-        } else if field.name() != "target" {
+        } else if field.name() != "device" {
             write!(self.string, "{} = {:?}; ", field.name(), value).unwrap();
         }
     }
@@ -47,6 +48,7 @@ pub struct MinimalTracer {
     enabled: bool,
     filters: Vec<LogFilter>,
 
+    logs_base: PathBuf,
     files: SharedFilesHashMap,
 }
 
@@ -82,7 +84,7 @@ fn level_to_color(level: &Level) -> &'static str {
 }
 
 impl MinimalTracer {
-    pub fn register() -> Result<(), tracing::subscriber::SetGlobalDefaultError> {
+    pub fn register(base_dir: PathBuf) -> Result<(), tracing::subscriber::SetGlobalDefaultError> {
         let mut enabled = true;
         let mut filters: Vec<LogFilter> = Vec::with_capacity(10);
         if let Ok(env_value) = env::var("RUST_LOG") {
@@ -117,6 +119,7 @@ impl MinimalTracer {
         tracing::subscriber::set_global_default(MinimalTracer {
             enabled,
             filters,
+            logs_base: base_dir,
             files: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -173,32 +176,33 @@ impl Subscriber for MinimalTracer {
         let mut text = String::new();
         let mut visitor = StringVisitor::new(&mut text);
         event.record(&mut visitor);
-        let target_id = visitor.fields.get("target");
+        let device_id = visitor.fields.get("device");
 
         let time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
         let color = level_to_color(&level);
 
-        if let Some(target_id) = target_id {
-            if let Ok(target_id) = target_id.parse::<i128>() {
+        if let Some(device_id) = device_id {
+            if let Ok(device_id) = device_id.parse::<i128>() {
                 let tmp = format!("{time} {level: >5} {target}: {text}\n");
 
                 let files = self.files.read().expect("cannot lock");
-                if let Some(mut file) = files.get(&target_id) {
+                if let Some(mut file) = files.get(&device_id) {
                     file.write_all(tmp.as_bytes())
                         .expect("cannot write to file");
                 } else {
                     drop(files);
 
+                    let file_path = self.logs_base.join(format!("device_{device_id}.log"));
                     let mut files = self.files.write().expect("cannot lock");
                     let mut file = std::fs::OpenOptions::new()
                         .append(true)
                         .create(true)
-                        .open(format!("{target_id}.log"))
+                        .open(file_path)
                         .expect("cannot open file");
 
                     file.write_all(tmp.as_bytes())
                         .expect("cannot write to file");
-                    files.insert(target_id, file);
+                    files.insert(device_id, file);
                 }
             }
         } else {

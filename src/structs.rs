@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 use unix_utils::{SnapshotData, TestPacketData};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -113,7 +113,6 @@ pub enum BroadcastPacket {
 pub struct SharedAppState {
     pub inner: std::sync::Arc<tokio::sync::RwLock<AppState>>,
     pub dev_mode: bool,
-    pub device_logs_path: PathBuf,
     bc: tokio::sync::broadcast::Sender<BroadcastPacket>,
 }
 
@@ -130,7 +129,7 @@ pub struct CompetitionDeviceSettings {
 }
 
 impl SharedAppState {
-    pub async fn new(dev_mode: bool, device_logs_path: PathBuf) -> Self {
+    pub async fn new(dev_mode: bool) -> Self {
         let (bc, _) = tokio::sync::broadcast::channel(1024);
 
         Self {
@@ -139,7 +138,6 @@ impl SharedAppState {
                 should_update: false,
                 devices_settings: HashMap::new(),
             })),
-            device_logs_path,
             bc,
         }
     }

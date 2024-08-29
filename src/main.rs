@@ -18,22 +18,9 @@ pub static UNIX_SOCKET: socket::Socket = socket::Socket::const_new();
 #[tokio::main]
 async fn main() -> Result<()> {
     _ = dotenvy::dotenv();
-    //tracing_subscriber::fmt::init();
-    log_subscriber::MinimalTracer::register()?;
 
-    let device_id = 5436;
-    tracing::info!(target = device_id, "123");
-    tracing::info!(target = device_id, "1234");
-    tracing::info!(target = device_id, "1235");
-    tracing::info!(target = device_id, "1236");
-    tracing::info!(target = device_id, "1237");
-    tracing::info!(target = device_id, "1238");
-    tracing::info!(target = device_id, "1239");
-    tracing::info!(target = device_id, "12310");
-    tracing::info!(target = device_id, "12311");
-    tracing::info!(target = device_id, "12312");
-    tracing::info!(target = device_id, "12313");
-    tracing::info!(target = device_id, "12314");
+    let logs_path = std::env::var("DEVICE_LOGS").unwrap_or("/tmp/fkm-logs".to_string());
+    log_subscriber::MinimalTracer::register(PathBuf::from(logs_path))?;
 
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
@@ -49,8 +36,7 @@ async fn main() -> Result<()> {
     }
 
     let dev_mode = std::env::var("DEV").is_ok();
-    let device_logs_path = std::env::var("DEVICE_LOGS").unwrap_or("/tmp/fkm-logs".to_string());
-    let state = structs::SharedAppState::new(dev_mode, PathBuf::from(device_logs_path)).await;
+    let state = structs::SharedAppState::new(dev_mode).await;
 
     let socket_path = env_or_default("SOCKET_PATH", "/tmp/socket.sock");
     UNIX_SOCKET.init(&socket_path, state.clone()).await?;
