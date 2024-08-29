@@ -6,6 +6,7 @@ mod bluetooth;
 mod github;
 mod handler;
 mod http;
+mod log_subscriber;
 mod mdns;
 mod socket;
 mod structs;
@@ -17,7 +18,11 @@ pub static UNIX_SOCKET: socket::Socket = socket::Socket::const_new();
 #[tokio::main]
 async fn main() -> Result<()> {
     _ = dotenvy::dotenv();
-    tracing_subscriber::fmt::init();
+    //tracing_subscriber::fmt::init();
+    log_subscriber::MinimalTracer::register()?;
+
+    let device_id = 5436;
+    tracing::info!(target = device_id, "123");
 
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
