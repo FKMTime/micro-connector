@@ -253,14 +253,14 @@ async fn on_timer_response(socket: &mut WebSocket, response: TimerPacket) -> Res
             let response = serde_json::to_string(&resp)?;
             socket.send(Message::Text(response)).await?;
         }
-        TimerPacket::Logs { logs, .. } => {
+        TimerPacket::Logs { logs, esp_id } => {
             for log in logs.iter().rev() {
                 for line in log.msg.lines() {
                     if line.is_empty() {
                         continue;
                     }
 
-                    tracing::info!("[{}] {line}", log.millis);
+                    tracing::info!(device = esp_id, "[{}] {line}", log.millis);
                 }
             }
         }
