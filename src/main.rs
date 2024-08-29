@@ -23,6 +23,17 @@ async fn main() -> Result<()> {
 
     let device_id = 5436;
     tracing::info!(target = device_id, "123");
+    tracing::info!(target = device_id, "1234");
+    tracing::info!(target = device_id, "1235");
+    tracing::info!(target = device_id, "1236");
+    tracing::info!(target = device_id, "1237");
+    tracing::info!(target = device_id, "1238");
+    tracing::info!(target = device_id, "1239");
+    tracing::info!(target = device_id, "12310");
+    tracing::info!(target = device_id, "12311");
+    tracing::info!(target = device_id, "12312");
+    tracing::info!(target = device_id, "12313");
+    tracing::info!(target = device_id, "12314");
 
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())

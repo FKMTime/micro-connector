@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::env;
 use std::fmt::Write;
+use std::fs::File;
+use std::io::Write as _;
+use std::sync::{Arc, RwLock};
 use std::{fmt, sync::atomic::AtomicUsize, write};
 use tracing::{
     field::{Field, Visit},
@@ -22,7 +25,8 @@ impl<'a> StringVisitor<'a> {
 
 impl<'a> Visit for StringVisitor<'a> {
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
-        let val = format!("{value:?}").trim_matches('"').to_string();
+        //let val = format!("{value:?}").trim_matches('"').to_string();
+        let val = format!("{value:?}");
         self.fields.insert(field.name().to_string(), val);
 
         if field.name() == "message" {
@@ -38,9 +42,12 @@ struct LogFilter {
     level: Option<Level>,
 }
 
+type SharedFilesHashMap = Arc<RwLock<HashMap<i128, File>>>;
 pub struct MinimalTracer {
     enabled: bool,
     filters: Vec<LogFilter>,
+
+    files: SharedFilesHashMap,
 }
 
 fn string_to_level(string: &str) -> Option<Level> {
@@ -107,12 +114,15 @@ impl MinimalTracer {
             }];
         }
 
-        tracing::subscriber::set_global_default(MinimalTracer { enabled, filters })
+        tracing::subscriber::set_global_default(MinimalTracer {
+            enabled,
+            filters,
+            files: Arc::new(RwLock::new(HashMap::new())),
+        })
     }
 }
 
 static AUTO_ID: AtomicUsize = AtomicUsize::new(1);
-
 impl Subscriber for MinimalTracer {
     fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
         if self.enabled {
@@ -168,11 +178,31 @@ impl Subscriber for MinimalTracer {
         let time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
         let color = level_to_color(&level);
 
-        let to_print = format!("{time} {color}{level: >5}\x1b[0m {target}: {text}");
         if let Some(target_id) = target_id {
-            println!("print to device logs: {target_id}");
+            if let Ok(target_id) = target_id.parse::<i128>() {
+                let tmp = format!("{time} {level: >5} {target}: {text}\n");
+
+                let files = self.files.read().expect("cannot lock");
+                if let Some(mut file) = files.get(&target_id) {
+                    file.write_all(tmp.as_bytes())
+                        .expect("cannot write to file");
+                } else {
+                    drop(files);
+
+                    let mut files = self.files.write().expect("cannot lock");
+                    let mut file = std::fs::OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open(format!("{target_id}.log"))
+                        .expect("cannot open file");
+
+                    file.write_all(tmp.as_bytes())
+                        .expect("cannot write to file");
+                    files.insert(target_id, file);
+                }
+            }
         } else {
-            println!("{to_print}");
+            println!("{time} {color}{level: >5}\x1b[0m {target}: {text}");
         }
     }
 
