@@ -85,6 +85,8 @@ fn level_to_color(level: &Level) -> &'static str {
 
 impl MinimalTracer {
     pub fn register(base_dir: PathBuf) -> Result<(), tracing::subscriber::SetGlobalDefaultError> {
+        _ = std::fs::create_dir_all(&base_dir);
+
         let mut enabled = true;
         let mut filters: Vec<LogFilter> = Vec::with_capacity(10);
         if let Ok(env_value) = env::var("RUST_LOG") {
