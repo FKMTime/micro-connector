@@ -68,13 +68,8 @@ pub enum TimerPacket {
     },
     DeviceSettings {
         esp_id: u32,
-
-        #[serde(skip_serializing_if = "Option::is_none")]
-        use_inspection: Option<bool>,
-
-        #[serde(skip_serializing_if = "Option::is_none")]
-        secondary_text: Option<String>,
-
+        use_inspection: bool,
+        secondary_text: String,
         added: bool,
     },
     Logs {
@@ -122,10 +117,10 @@ pub struct AppState {
     pub devices_settings: HashMap<u32, CompetitionDeviceSettings>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CompetitionDeviceSettings {
-    pub use_inspection: Option<bool>,
-    pub secondary_text: Option<String>,
+    pub use_inspection: bool,
+    pub secondary_text: String,
 }
 
 impl SharedAppState {

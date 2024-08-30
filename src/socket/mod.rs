@@ -202,46 +202,28 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
             inner_state.should_update = status.should_update;
             let mut changed = false;
 
-            // delete devices that are not in the new status
-            let devices_clone = inner_state.devices_settings.clone();
-            for (k, _) in devices_clone {
-                if !status.devices.contains(&k) {
-                    inner_state.devices_settings.remove(&k);
-                    changed = true;
-                }
-            }
-
+            let mut devices = Vec::new();
             for room in status.rooms {
-                for device in room.devices {
-                    let old = inner_state.devices_settings.insert(
-                        device,
-                        crate::structs::CompetitionDeviceSettings {
-                            use_inspection: Some(room.use_inspection),
-                            secondary_text: Some(room.secondary_text.clone()),
-                        },
-                    );
+                let room_settings = crate::structs::CompetitionDeviceSettings {
+                    use_inspection: room.use_inspection,
+                    secondary_text: room.secondary_text.clone(),
+                };
 
-                    if let Some(old) = old {
-                        // if use_inspection or secondary_text changed
-                        changed = old.use_inspection != Some(room.use_inspection)
-                            || old.secondary_text != Some(room.secondary_text.clone());
-                    } else if old.is_none() {
+                for device in room.devices {
+                    devices.push(device);
+                    let old = inner_state
+                        .devices_settings
+                        .insert(device, room_settings.clone());
+
+                    if old.as_ref() != Some(&room_settings) {
                         changed = true;
                     }
                 }
             }
 
-            for device in status.devices {
-                if !inner_state.devices_settings.contains_key(&device) {
-                    inner_state.devices_settings.insert(
-                        device,
-                        crate::structs::CompetitionDeviceSettings {
-                            use_inspection: None,
-                            secondary_text: None,
-                        },
-                    );
-
-                    changed = true;
+            for (k, _) in inner_state.devices_settings.clone() {
+                if !devices.contains(&k) {
+                    inner_state.devices_settings.remove(&k);
                 }
             }
 

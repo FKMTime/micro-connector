@@ -411,7 +411,6 @@ async fn send_status_resp(stream: &mut UnixStream, device_store: &Vec<u32>) -> R
         error: None,
         data: Some(UnixResponseData::ServerStatus(CompetitionStatusResp {
             should_update: true,
-            devices: device_store.to_vec(),
             rooms: vec![Room {
                 id: "dsa".to_string(),
                 name: "room 1".to_string(),

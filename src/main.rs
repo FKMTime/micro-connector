@@ -35,6 +35,7 @@ async fn main() -> Result<()> {
         perms.set_mode(0o777);
     }
 
+    tracing::info!(target: "device", "dsadsadsa {}", 69);
     let dev_mode = std::env::var("DEV").is_ok();
     let state = structs::SharedAppState::new(dev_mode).await;
 

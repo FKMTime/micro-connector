@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::TestPacketData;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UnixResponse {
@@ -51,7 +51,6 @@ pub enum UnixResponseData {
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionStatusResp {
     pub should_update: bool,
-    pub devices: Vec<u32>,
     pub rooms: Vec<Room>,
 }
 
