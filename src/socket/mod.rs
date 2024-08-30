@@ -224,6 +224,7 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
             for (k, _) in inner_state.devices_settings.clone() {
                 if !devices.contains(&k) {
                     inner_state.devices_settings.remove(&k);
+                    changed = true;
                 }
             }
 
