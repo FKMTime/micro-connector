@@ -6,6 +6,12 @@ const FKM_UUID: uuid::Uuid = uuid::Uuid::from_u128(0x3ee59312_20bc_4c38_9e23_e78
 const SET_WIFI_UUID: uuid::Uuid = uuid::Uuid::from_u128(0xe2ed1fc5_0d2e_4c2d_a0a7_31e38431cc0c);
 
 pub async fn start_bluetooth_task() -> Result<()> {
+    let manager = Manager::new().await?;
+    if manager.adapters().await.is_err() {
+        tracing::error!("No bluetooth adapter found!");
+        return Ok(());
+    }
+
     tokio::task::spawn(async move {
         loop {
             if let Err(e) = bluetooth_task().await {
@@ -21,11 +27,7 @@ pub async fn start_bluetooth_task() -> Result<()> {
 
 async fn bluetooth_task() -> Result<()> {
     let manager = Manager::new().await?;
-
-    // silently fail bluetooth task if no bluetooth adapter found / bluez service not found
-    if manager.adapters().await.is_err() {
-        return Ok(());
-    }
+    manager.adapters().await?;
 
     let adapter = manager
         .adapters()
