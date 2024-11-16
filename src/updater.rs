@@ -89,12 +89,14 @@ pub async fn update_client(
         latest_firmware.version
     );
 
+    let crc = crc32fast::hash(&latest_firmware.data);
     let start_update_resp = TimerPacket {
         tag: None,
         data: TimerPacketInner::StartUpdate {
             version: latest_firmware.version.inner_version(),
             build_time: latest_firmware.build_time,
-            size: latest_firmware.data.len() as i64,
+            size: latest_firmware.data.len() as u32,
+            crc,
             firmware: latest_firmware.firmware,
         },
     };

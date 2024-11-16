@@ -33,3 +33,4 @@ uuid = "1.10.0"
 dbus = { version = "0.9.7", features = ["vendored"] }
 rand = "0.8.5"
 unix-utils = { path = "./unix-utils" }
+crc32fast = "1.4.2"
