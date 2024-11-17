@@ -1,13 +1,13 @@
 use crate::{
     http::EspConnectInfo,
-    structs::{SharedAppState, TimerPacket},
+    structs::{SharedAppState, TimerPacket, TimerPacketInner},
 };
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
 use std::path::PathBuf;
 use tracing::{debug, error, info};
 
-const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
+const UPDATE_CHUNK_SIZE: usize = 1024 * 2;
 
 #[derive(Debug)]
 pub struct Firmware {
@@ -89,12 +89,16 @@ pub async fn update_client(
         latest_firmware.version
     );
 
-    let start_update_resp = TimerPacket::StartUpdate {
-        esp_id: esp_connect_info.id,
-        version: latest_firmware.version.inner_version(),
-        build_time: latest_firmware.build_time,
-        size: latest_firmware.data.len() as i64,
-        firmware: latest_firmware.firmware,
+    let crc = crc32fast::hash(&latest_firmware.data);
+    let start_update_resp = TimerPacket {
+        tag: None,
+        data: TimerPacketInner::StartUpdate {
+            version: latest_firmware.version.inner_version(),
+            build_time: latest_firmware.build_time,
+            size: latest_firmware.data.len() as u32,
+            crc,
+            firmware: latest_firmware.firmware,
+        },
     };
 
     socket

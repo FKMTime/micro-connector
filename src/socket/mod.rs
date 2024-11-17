@@ -1,4 +1,4 @@
-use crate::structs::{SharedAppState, TimerPacket};
+use crate::structs::{SharedAppState, TimerPacket, TimerPacketInner};
 use anyhow::Result;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
@@ -237,11 +237,13 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
             should_scan_cards,
             attempt,
         } => {
-            let packet = TimerPacket::DelegateResponse {
-                esp_id,
-                should_scan_cards,
-                solve_time: attempt.value.map(|x| x * 10), // from cs to ms
-                penalty: attempt.penalty,
+            let packet = TimerPacket {
+                tag: None,
+                data: TimerPacketInner::DelegateResponse {
+                    should_scan_cards,
+                    solve_time: attempt.value.map(|x| x * 10), // from cs to ms
+                    penalty: attempt.penalty,
+                },
             };
 
             let inner = crate::UNIX_SOCKET.get_inner().await?;
@@ -256,7 +258,13 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
             let state = &inner.state;
 
             state
-                .send_timer_packet(esp_id, TimerPacket::TestPacket(data))
+                .send_timer_packet(
+                    esp_id,
+                    TimerPacket {
+                        tag: None,
+                        data: TimerPacketInner::TestPacket(data),
+                    },
+                )
                 .await?;
         }
         _ => {}

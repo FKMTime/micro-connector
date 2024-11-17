@@ -14,6 +14,7 @@ pub struct UnixResponse {
 #[serde(tag = "type", content = "data")]
 #[serde(rename_all_fields = "camelCase")]
 pub enum UnixResponseData {
+    WifiSettingsResp2(String),
     WifiSettingsResp {
         wifi_ssid: String,
         wifi_password: String,
