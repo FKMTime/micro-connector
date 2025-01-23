@@ -102,7 +102,7 @@ pub async fn update_client(
     };
 
     socket
-        .send(Message::Text(serde_json::to_string(&start_update_resp)?))
+        .send(Message::Text(serde_json::to_string(&start_update_resp)?.into()))
         .await?;
 
     // wait for esp to respond
@@ -116,7 +116,7 @@ pub async fn update_client(
     let mut firmware_chunks = latest_firmware.data.chunks(UPDATE_CHUNK_SIZE);
 
     while let Some(chunk) = firmware_chunks.next() {
-        let msg = Message::Binary(chunk.to_vec());
+        let msg = Message::Binary(chunk.to_vec().into());
         socket.send(msg).await?;
 
         if firmware_chunks.len() % 10 == 0 {

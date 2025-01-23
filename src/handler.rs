@@ -38,7 +38,7 @@ pub async fn handle_client(
                     break;
                 }
 
-                let msg = Message::Ping(vec![]);
+                let msg = Message::Ping(vec![].into());
                 socket.send(msg).await?;
                 hb_received = false;
             }
@@ -63,7 +63,7 @@ pub async fn handle_client(
                     crate::structs::BroadcastPacket::Resp((esp_id, packet)) => {
                         if esp_connect_info.id == esp_id {
                             let resp = serde_json::to_string(&packet)?;
-                            socket.send(Message::Text(resp)).await?;
+                            socket.send(Message::Text(resp.into())).await?;
                         }
                     },
                     crate::structs::BroadcastPacket::UpdateDeviceSettings => {
@@ -117,7 +117,7 @@ async fn send_device_status(
     };
 
     let response = serde_json::to_string(&frame)?;
-    socket.send(Message::Text(response)).await?;
+    socket.send(Message::Text(response.into())).await?;
     Ok(())
 }
 
@@ -132,7 +132,7 @@ async fn send_epoch_time(socket: &mut WebSocket) -> Result<()> {
     };
 
     let resp = serde_json::to_string(&packet)?;
-    socket.send(Message::Text(resp)).await?;
+    socket.send(Message::Text(resp.into())).await?;
     Ok(())
 }
 
@@ -187,7 +187,7 @@ async fn on_timer_response(
                     tag: response.tag,
                     data: TimerPacketInner::AttendanceMarked,
                 })?;
-                socket.send(Message::Text(resp)).await?;
+                socket.send(Message::Text(resp.into())).await?;
 
                 return Ok(());
             }
@@ -222,7 +222,7 @@ async fn on_timer_response(
             };
 
             let response = serde_json::to_string(&response)?;
-            socket.send(Message::Text(response)).await?;
+            socket.send(Message::Text(response.into())).await?;
         }
         TimerPacketInner::Solve {
             solve_time,
@@ -273,7 +273,7 @@ async fn on_timer_response(
             };
 
             let response = serde_json::to_string(&resp)?;
-            socket.send(Message::Text(response)).await?;
+            socket.send(Message::Text(response.into())).await?;
         }
         TimerPacketInner::Logs { logs } => {
             for log in logs.iter().rev() {
