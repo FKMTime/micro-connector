@@ -7,7 +7,7 @@ use axum::extract::ws::{Message, WebSocket};
 use std::path::PathBuf;
 use tracing::{debug, error, info};
 
-const UPDATE_CHUNK_SIZE: usize = 1024 * 2;
+const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 
 #[derive(Debug)]
 pub struct Firmware {
