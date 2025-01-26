@@ -277,12 +277,12 @@ async fn on_timer_response(
         }
         TimerPacketInner::Logs { logs } => {
             for log in logs.iter().rev() {
-                for line in log.msg.lines() {
+                for line in log.lines() {
                     if line.is_empty() {
                         continue;
                     }
 
-                    tracing::info!(file = format!("device_{esp_id}"), "[{}] {line}", log.millis);
+                    tracing::info!(file = format!("device_{esp_id}"), "{line}");
                 }
             }
         }

@@ -10,12 +10,6 @@ pub struct TimerPacket {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LogData {
-    pub millis: u64,
-    pub msg: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum TimerPacketInner {
     StartUpdate {
@@ -71,7 +65,7 @@ pub enum TimerPacketInner {
         added: bool,
     },
     Logs {
-        logs: Vec<LogData>,
+        logs: Vec<String>,
     },
     Battery {
         level: Option<f64>,
