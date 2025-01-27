@@ -24,13 +24,13 @@ local-ip-address = "0.6.3"
 mdns-sd = "0.13.1"
 reqwest = { version = "0.12.12", features = ["json", "rustls-tls"], default-features = false }
 serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.127"
+serde_json = "1.0.137"
 tokio = { version = "1.43.0", features = ["full"] }
 tower-http = { version = "0.6.2", features = ["trace"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["json", "env-filter"] }
 uuid = "1.12.1"
 dbus = { version = "0.9.7", features = ["vendored"] }
-rand = "0.8.5"
+rand = "0.9.0"
 unix-utils = { path = "./unix-utils" }
 crc32fast = "1.4.2"

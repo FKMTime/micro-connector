@@ -158,7 +158,7 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
     let mut prev_idx: Option<usize> = None;
     let mut last_time = 0;
     loop {
-        let next_idx: usize = rand::thread_rng().gen_range(0..tests.tests.len());
+        let next_idx: usize = rand::rng().random_range(0..tests.tests.len());
         if let Some(prev_idx) = prev_idx {
             if prev_idx == next_idx {
                 continue;
@@ -185,7 +185,7 @@ async fn run_test(
     let test = &tests.tests[test_index];
 
     tracing::info!("Running test: {} (esp: {esp_id})", test.name);
-    let mut random_time: u64 = rand::thread_rng().gen_range(501..123042);
+    let mut random_time: u64 = rand::rng().random_range(501..123042);
     if *last_time == random_time {
         random_time += 1;
     }

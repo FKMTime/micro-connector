@@ -2,6 +2,7 @@ use anyhow::Result;
 use unix_utils::{request::UnixRequestData, response::UnixResponseData, SnapshotData, UnixError};
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct CompetitorInfo {
     pub id: String,
     pub registrant_id: Option<i64>,
