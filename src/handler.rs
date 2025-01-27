@@ -11,10 +11,19 @@ pub async fn handle_client(
     esp_connect_info: &EspConnectInfo,
     state: SharedAppState,
 ) -> Result<()> {
+    tracing::info!(
+        file = format!("device_{}", esp_connect_info.id),
+        "============= Client connected! ============="
+    );
+
     {
         let state_inner = state.inner.read().await;
         if state_inner.should_update {
             if let Some(firmware) = super::updater::should_update(&state, esp_connect_info).await? {
+                tracing::info!(
+                    file = format!("device_{}", esp_connect_info.id),
+                    "Starting update."
+                );
                 super::updater::update_client(&mut socket, &esp_connect_info, firmware).await?;
 
                 return Ok(());
@@ -35,6 +44,7 @@ pub async fn handle_client(
             _ = hb_interval.tick() => {
                 if !hb_received {
                     error!("Closing connection due to no heartbeat ({})", esp_connect_info.id);
+                    tracing::error!(file = format!("device_{}", esp_connect_info.id), "============= Closing connection (due to no heartbeat) =============");
                     break;
                 }
 
