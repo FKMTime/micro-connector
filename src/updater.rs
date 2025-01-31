@@ -102,7 +102,9 @@ pub async fn update_client(
     };
 
     socket
-        .send(Message::Text(serde_json::to_string(&start_update_resp)?.into()))
+        .send(Message::Text(
+            serde_json::to_string(&start_update_resp)?.into(),
+        ))
         .await?;
 
     // wait for esp to respond

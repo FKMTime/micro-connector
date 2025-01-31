@@ -204,10 +204,7 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
 
             let mut devices = Vec::new();
             for room in status.rooms {
-                let room_settings = crate::structs::CompetitionDeviceSettings {
-                    use_inspection: room.use_inspection,
-                    secondary_text: room.secondary_text.clone(),
-                };
+                let room_settings = crate::structs::CompetitionDeviceSettings {};
 
                 for device in room.devices {
                     devices.push(device);

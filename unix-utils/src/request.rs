@@ -32,6 +32,7 @@ pub enum UnixRequestData {
         is_delegate: bool,
         session_id: String,
         inspection_time: i64,
+        round_id: String,
     },
     UpdateBatteryPercentage {
         esp_id: u32,

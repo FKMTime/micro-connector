@@ -6,9 +6,7 @@ const GITHUB_API_URL: &str = "https://api.github.com";
 const GH_OWNER: &str = "FKMTime";
 const GH_REPO: &str = "firmware";
 
-pub async fn get_releases(
-    client: &reqwest::Client,
-) -> Result<Vec<structs::ReleaseAssetItem>> {
+pub async fn get_releases(client: &reqwest::Client) -> Result<Vec<structs::ReleaseAssetItem>> {
     let url = format!("{GITHUB_API_URL}/repos/{GH_OWNER}/{GH_REPO}/releases");
 
     let res = client

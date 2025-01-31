@@ -106,23 +106,15 @@ async fn send_device_status(
 ) -> Result<()> {
     let state = state.inner.read().await;
     let settings = state.devices_settings.get(&esp_connect_info.id);
-    let frame = if let Some(settings) = settings {
+    let frame = if let Some(_settings) = settings {
         TimerPacket {
             tag: None,
-            data: TimerPacketInner::DeviceSettings {
-                use_inspection: settings.use_inspection,
-                secondary_text: settings.secondary_text.clone(),
-                added: true,
-            },
+            data: TimerPacketInner::DeviceSettings { added: true },
         }
     } else {
         TimerPacket {
             tag: None,
-            data: TimerPacketInner::DeviceSettings {
-                use_inspection: false,
-                secondary_text: "".to_string(),
-                added: false,
-            },
+            data: TimerPacketInner::DeviceSettings { added: false },
         }
     };
 
@@ -217,6 +209,7 @@ async fn on_timer_response(
                             country_iso2: info.country_iso2.unwrap_or_default(),
                             display: format!("{}{}", info.name, registrant_display),
                             can_compete: info.can_compete,
+                            possible_rounds: info.possible_rounds,
                         },
                     };
 
@@ -243,8 +236,9 @@ async fn on_timer_response(
             session_id,
             delegate,
             inspection_time,
+            round_id,
         } => {
-            trace!("Solve: {solve_time} ({penalty}) {competitor_id} {esp_id} {timestamp} {session_id} {delegate}");
+            trace!("Solve: {solve_time} ({penalty}) {competitor_id} {esp_id} {timestamp} {session_id} {delegate} {round_id}");
 
             let res = crate::socket::api::send_solve_entry(
                 solve_time,
@@ -256,6 +250,7 @@ async fn on_timer_response(
                 delegate,
                 &session_id,
                 inspection_time,
+                &round_id,
             )
             .await;
 

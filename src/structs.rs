@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use unix_utils::{SnapshotData, TestPacketData};
+use unix_utils::{response::PossibleRound, SnapshotData, TestPacketData};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TimerPacket {
@@ -28,6 +28,7 @@ pub enum TimerPacketInner {
         session_id: String, // UUID
         delegate: bool,
         inspection_time: i64,
+        round_id: String,
     },
     SolveConfirm {
         competitor_id: u64,
@@ -57,11 +58,10 @@ pub enum TimerPacketInner {
         display: String,
         country_iso2: String,
         can_compete: bool,
+        possible_rounds: Vec<PossibleRound>,
     },
     AttendanceMarked,
     DeviceSettings {
-        use_inspection: bool,
-        secondary_text: String,
         added: bool,
     },
     Logs {
@@ -105,10 +105,7 @@ pub struct AppState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompetitionDeviceSettings {
-    pub use_inspection: bool,
-    pub secondary_text: String,
-}
+pub struct CompetitionDeviceSettings {}
 
 impl SharedAppState {
     pub async fn new(dev_mode: bool) -> Self {

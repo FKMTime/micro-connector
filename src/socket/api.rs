@@ -1,5 +1,9 @@
 use anyhow::Result;
-use unix_utils::{request::UnixRequestData, response::UnixResponseData, SnapshotData, UnixError};
+use unix_utils::{
+    request::UnixRequestData,
+    response::{PossibleRound, UnixResponseData},
+    SnapshotData, UnixError,
+};
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -11,6 +15,7 @@ pub struct CompetitorInfo {
     pub country_iso2: Option<String>,
     pub gender: String,
     pub can_compete: bool,
+    pub possible_rounds: Vec<PossibleRound>,
 }
 
 pub async fn get_competitor_info(card_id: u64) -> Result<CompetitorInfo, UnixError> {
@@ -28,6 +33,7 @@ pub async fn get_competitor_info(card_id: u64) -> Result<CompetitorInfo, UnixErr
         country_iso2,
         gender,
         can_compete,
+        possible_rounds,
     } = res
     {
         return Ok(CompetitorInfo {
@@ -38,6 +44,26 @@ pub async fn get_competitor_info(card_id: u64) -> Result<CompetitorInfo, UnixErr
             country_iso2,
             gender,
             can_compete,
+            possible_rounds: possible_rounds.unwrap_or(
+                [
+                    PossibleRound {
+                        id: "333-r1".to_string(),
+                        name: "3x3 R1".to_string(),
+                        use_inspection: true,
+                    },
+                    PossibleRound {
+                        id: "222-r1".to_string(),
+                        name: "2x2 R1".to_string(),
+                        use_inspection: true,
+                    },
+                    PossibleRound {
+                        id: "other".to_string(),
+                        name: "Other room".to_string(),
+                        use_inspection: false,
+                    },
+                ]
+                .to_vec(),
+            ),
         });
     }
 
@@ -84,6 +110,7 @@ pub async fn send_solve_entry(
     is_delegate: bool,
     session_id: &str,
     inspection_time: i64,
+    round_id: &str,
 ) -> Result<(), UnixError> {
     let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)
         .ok_or_else(|| UnixError {
@@ -103,6 +130,7 @@ pub async fn send_solve_entry(
         is_delegate,
         session_id: session_id.to_string(),
         inspection_time,
+        round_id: round_id.to_string(),
     };
 
     let res = crate::UNIX_SOCKET
