@@ -159,6 +159,7 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
 
     send_test_packet(&unix_tx, &mut rx, esp_id, TestPacketData::ResetState).await?;
 
+    let mut counter = 0;
     let mut prev_idx: Option<usize> = None;
     let mut last_time = 0;
     loop {
@@ -175,6 +176,11 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
             tracing::error!("Run test error: {e:?}");
             break Ok(());
         }
+
+        counter += 1;
+        tracing::info!("==================================");
+        tracing::info!("Device ({esp_id}) COUNT: {counter}");
+        tracing::info!("==================================");
     }
 }
 
@@ -189,7 +195,7 @@ async fn run_test(
     let test = &tests.tests[test_index];
 
     tracing::info!("Running test: {} (esp: {esp_id})", test.name);
-    let mut random_time: u64 = rand::rng().random_range(501..123042);
+    let mut random_time: u64 = rand::rng().random_range(501..27132);
     if *last_time == random_time {
         random_time += 1;
     }
