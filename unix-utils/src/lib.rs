@@ -12,12 +12,11 @@ pub struct UnixError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum TestPacketData {
-    Start,
-    End,
     ResetState,
     ScanCard(u64),
-    ButtonPress { pins: Vec<u8>, press_time: u64 },
-    SolveTime(u64),
+    ButtonPress { pin: u8, press_time: u64 },
+    StackmatTime(u64),
+    StackmatReset,
     Snapshot,
 }
 

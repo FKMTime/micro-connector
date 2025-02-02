@@ -157,7 +157,6 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
     let unix_tx = UNIX_SENDER.get().expect("UNIX_SENDER not set!");
     let mut rx = spawn_new_sender(&senders, esp_id).await?;
 
-    send_test_packet(&unix_tx, &mut rx, esp_id, TestPacketData::Start).await?;
     send_test_packet(&unix_tx, &mut rx, esp_id, TestPacketData::ResetState).await?;
 
     let mut prev_idx: Option<usize> = None;
@@ -251,11 +250,21 @@ async fn run_step(
         }
         TestStep::SolveTime(time) => {
             *last_time = *time;
-            send_test_packet(&unix_tx, rx, esp_id, TestPacketData::SolveTime(*time)).await?;
+            send_test_packet(&unix_tx, rx, esp_id, TestPacketData::StackmatTime(*time)).await?;
+
+            tokio::time::sleep(Duration::from_millis(*time + 100)).await;
         }
         TestStep::SolveTimeRng => {
             *last_time = random_time;
-            send_test_packet(&unix_tx, rx, esp_id, TestPacketData::SolveTime(random_time)).await?;
+            send_test_packet(
+                &unix_tx,
+                rx,
+                esp_id,
+                TestPacketData::StackmatTime(random_time),
+            )
+            .await?;
+
+            tokio::time::sleep(Duration::from_millis(random_time + 100)).await;
         }
         TestStep::Snapshot => {
             send_test_packet(&unix_tx, rx, esp_id, TestPacketData::Snapshot).await?;
@@ -267,14 +276,14 @@ async fn run_step(
             send_test_packet(&unix_tx, rx, esp_id, TestPacketData::ScanCard(*card_id)).await?;
         }
         TestStep::Button { ref name, time } => {
-            let pins = tests.buttons.get(name);
-            if let Some(pins) = pins {
+            let pin = tests.buttons.get(name);
+            if let Some(&pin) = pin {
                 send_test_packet(
                     &unix_tx,
                     rx,
                     esp_id,
                     TestPacketData::ButtonPress {
-                        pins: pins.to_owned(),
+                        pin,
                         press_time: *time,
                     },
                 )

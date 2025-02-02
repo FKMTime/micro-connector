@@ -24,7 +24,7 @@ pub struct CompetitorInfo {
 pub struct TestsRoot {
     pub dump_state_after_test: bool,
     pub cards: HashMap<u64, CompetitorInfo>,
-    pub buttons: HashMap<String, Vec<u8>>,
+    pub buttons: HashMap<String, u8>,
     pub tests: Vec<TestData>,
 }
 

@@ -1,5 +1,5 @@
 {
-    "dumpStateAfterTest": true,
+    "dumpStateAfterTest": false,
     "cards": {
         "69420": {
             "registrantId": 1,
@@ -21,18 +21,10 @@
         }
     },
     "buttons": {
-        "penalty": [
-            32
-        ],
-        "inspect": [
-            27
-        ],
-        "delegate": [
-            26
-        ],
-        "submit": [
-            33
-        ]
+        "penalty": 3,
+        "inspect": 0,
+        "delegate": 1,
+        "submit": 2
     },
     "tests": [
         {
@@ -54,21 +46,21 @@
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 50
+                        "time": 100
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 50
+                        "time": 100
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "submit",
-                        "time": 50
+                        "time": 100
                     }
                 },
                 {
@@ -107,14 +99,14 @@
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 50
+                        "time": 100
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "submit",
-                        "time": 50
+                        "time": 100
                     }
                 },
                 {
@@ -193,28 +185,28 @@
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 50
+                        "time": 100
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 50
+                        "time": 100
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 50
+                        "time": 100
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "submit",
-                        "time": 50
+                        "time": 100
                     }
                 },
                 {
