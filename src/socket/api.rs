@@ -170,19 +170,15 @@ pub async fn add_device(esp_id: u32, firmware_type: &str) -> Result<(), UnixErro
     res
 }
 
-pub async fn get_wifi_settings() -> Result<(String, String)> {
+pub async fn get_auto_setup_settings() -> Result<String> {
     let res = crate::UNIX_SOCKET
-        .send_tagged_request(UnixRequestData::WifiSettings)
+        .send_tagged_request(UnixRequestData::AutoSetupSettings)
         .await
         .map_err(|e| anyhow::anyhow!("Unix error: {e:?}"))?;
 
-    if let UnixResponseData::WifiSettingsResp {
-        wifi_ssid,
-        wifi_password,
-    } = res
-    {
-        return Ok((wifi_ssid, wifi_password));
+    if let UnixResponseData::AutoSetupSettingsResp(resp) = res {
+        return Ok(serde_json::to_string(&resp)?);
     }
 
-    Err(anyhow::anyhow!("Cant get wifi settings!"))
+    Err(anyhow::anyhow!("Cant get auto setup settings!"))
 }

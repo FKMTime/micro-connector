@@ -16,7 +16,7 @@ pub enum UnixRequestData {
     PersonInfo {
         card_id: String,
     },
-    WifiSettings,
+    AutoSetupSettings,
     CreateAttendance {
         card_id: String,
         esp_id: u32,

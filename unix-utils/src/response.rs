@@ -11,14 +11,25 @@ pub struct UnixResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AutoSetupSettings {
+    pub ssid: String,
+    pub psk: String,
+    pub data: AutoSetupData,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AutoSetupData {
+    pub mdns: bool,
+
+    #[serde(rename = "wsUrl")]
+    pub ws_url: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type", content = "data")]
 #[serde(rename_all_fields = "camelCase")]
 pub enum UnixResponseData {
-    WifiSettingsResp2(String),
-    WifiSettingsResp {
-        wifi_ssid: String,
-        wifi_password: String,
-    },
+    AutoSetupSettingsResp(AutoSetupSettings),
     ServerStatus(CompetitionStatusResp),
     PersonInfoResp {
         id: String,

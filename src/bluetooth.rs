@@ -88,15 +88,13 @@ async fn setup_bt_device(device: btleplug::platform::Peripheral) -> Result<()> {
 
     // get wifi settings from API or env
     tracing::trace!("Getting wifi settings");
-    let (ssid, psk) = if let Ok((ssid, psk)) = crate::socket::api::get_wifi_settings().await {
-        (ssid, psk)
+    let auto_setup_settings = if let Ok(ass) = crate::socket::api::get_auto_setup_settings().await {
+        ass
     } else {
-        let ssid = std::env::var("WIFI_SSID")?;
-        let psk = std::env::var("WIFI_PSK")?;
-        (ssid, psk)
+        std::env::var("AUTOSETUP_SETTINGS")?
     };
 
-    let set_wifi_data = format!("{ssid}|{psk}");
+    let set_wifi_data = format!("{auto_setup_settings}\0");
     let set_wifi_data = set_wifi_data.as_bytes();
     tracing::trace!("Got wifi settings");
 
