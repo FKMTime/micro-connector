@@ -2,8 +2,8 @@ use anyhow::Result;
 use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::Manager;
 
-const FKM_UUID: uuid::Uuid = uuid::Uuid::from_u128(0x3ee59312_20bc_4c38_9e23_e785b6c385b1);
-const SET_WIFI_UUID: uuid::Uuid = uuid::Uuid::from_u128(0xe2ed1fc5_0d2e_4c2d_a0a7_31e38431cc0c);
+const FKM_UUID: uuid::Uuid = uuid::Uuid::from_u128(0xf254a578_ef88_4372_b5f5_5ecf87e65884);
+const SET_WIFI_UUID: uuid::Uuid = uuid::Uuid::from_u128(0xbcd7e573_b0b2_4775_83c0_acbf3aaf210c);
 
 pub async fn start_bluetooth_task() -> Result<()> {
     let manager = Manager::new().await?;
