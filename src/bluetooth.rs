@@ -2,8 +2,8 @@ use anyhow::Result;
 use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::Manager;
 
-const FKM_UUID: uuid::Uuid = uuid::Uuid::from_u128(0xf254a578_ef88_4372_b5f5_5ecf87e65884);
-const SET_WIFI_UUID: uuid::Uuid = uuid::Uuid::from_u128(0xbcd7e573_b0b2_4775_83c0_acbf3aaf210c);
+//const FKM_UUID: uuid::Uuid = uuid::uuid!("f254a578-ef88-4372-b5f5-5ecf87e65884");
+const SET_WIFI_UUID: uuid::Uuid = uuid::uuid!("bcd7e573-b0b2-4775-83c0-acbf3aaf210c");
 
 pub async fn start_bluetooth_task() -> Result<()> {
     let manager = Manager::new().await?;
@@ -39,9 +39,7 @@ async fn bluetooth_task() -> Result<()> {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-        let filter = ScanFilter {
-            services: vec![FKM_UUID],
-        };
+        let filter = ScanFilter { services: vec![] };
         adapter.start_scan(filter).await?;
 
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -51,7 +49,12 @@ async fn bluetooth_task() -> Result<()> {
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("No device properties found!"))?;
 
-            let is_fkm = properties.services.contains(&FKM_UUID);
+            //let is_fkm = properties.services.contains(&FKM_UUID);
+            let is_fkm = properties
+                .local_name
+                .as_ref()
+                .unwrap_or(&String::new())
+                .starts_with("FKM-");
             if !is_fkm {
                 continue;
             }
@@ -72,8 +75,11 @@ async fn bluetooth_task() -> Result<()> {
 }
 
 async fn setup_bt_device(device: btleplug::platform::Peripheral) -> Result<()> {
-    tracing::trace!("Connecting to device");
-    device.connect().await?;
+    if !device.is_connected().await? {
+        tracing::trace!("Connecting to device");
+        device.connect().await?;
+    }
+
     tracing::trace!("Connected to device");
     device.discover_services().await?;
     tracing::trace!("Discovered services");
