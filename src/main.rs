@@ -37,15 +37,8 @@ async fn main() -> Result<()> {
     let dev_mode = std::env::var("DEV").is_ok();
     let state = structs::SharedAppState::new(dev_mode).await;
 
-    let socket_path = env_or_default("SOCKET_PATH", "/tmp/socket.sock");
-    UNIX_SOCKET.init(&socket_path, state.clone()).await?;
-
     if std::env::var("NO_MDNS").is_err() {
         mdns::register_mdns(&port)?;
-    }
-
-    if std::env::var("NO_BT").is_err() {
-        bluetooth::start_bluetooth_task().await?;
     }
 
     watchers::spawn_watchers(state.clone()).await?;
