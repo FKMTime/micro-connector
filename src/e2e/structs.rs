@@ -5,7 +5,7 @@ use unix_utils::request::UnixRequestData;
 
 pub type SharedSenders = Arc<RwLock<HashMap<u32, UnboundedSender<UnixRequestData>>>>;
 pub struct State {
-    pub devices: Vec<u32>,
+    pub devices: Arc<RwLock<Vec<u32>>>,
     pub senders: SharedSenders,
     pub tests: Arc<RwLock<TestsRoot>>,
 }

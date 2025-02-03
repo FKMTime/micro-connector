@@ -22,6 +22,8 @@ mod structs;
 pub static UNIX_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<UnixResponse>> =
     OnceCell::const_new();
 
+pub static SEND_DEVICES: OnceCell<tokio::sync::mpsc::UnboundedSender<()>> = OnceCell::const_new();
+
 #[tokio::main]
 async fn main() -> Result<()> {
     _ = dotenvy::dotenv();
@@ -38,7 +40,7 @@ async fn main() -> Result<()> {
     let tests_root: TestsRoot = serde_json::from_slice(&tests_root)?;
 
     let mut state = State {
-        devices: vec![],
+        devices: Arc::new(RwLock::new(vec![])),
         senders: Arc::new(RwLock::new(HashMap::new())),
         tests: Arc::new(RwLock::new(tests_root)),
     };
@@ -46,11 +48,14 @@ async fn main() -> Result<()> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     UNIX_SENDER.set(tx)?;
 
+    let (tx, mut send_dev_rx) = tokio::sync::mpsc::unbounded_channel();
+    SEND_DEVICES.set(tx)?;
+
     let listener = UnixListener::bind(&socket_path)?;
     tracing::info!("Unix listener started on path {socket_path}!");
     loop {
         let (mut stream, _) = listener.accept().await?;
-        let res = handle_stream(&mut stream, &mut state, &mut rx).await;
+        let res = handle_stream(&mut stream, &mut state, &mut rx, &mut send_dev_rx).await;
         if let Err(e) = res {
             tracing::error!("Handle stream error: {e:?}");
         }
@@ -61,8 +66,11 @@ async fn handle_stream(
     stream: &mut UnixStream,
     state: &mut State,
     rx: &mut UnboundedReceiver<UnixResponse>,
+    send_dev_rx: &mut UnboundedReceiver<()>,
 ) -> Result<()> {
-    send_status_resp(stream, &state.devices).await?;
+    {
+        send_status_resp(stream, &state.devices.read().await.to_vec()).await?;
+    }
 
     let mut buf = Vec::with_capacity(512);
     loop {
@@ -73,12 +81,17 @@ async fn handle_stream(
 
                 match packet.data {
                     UnixRequestData::RequestToConnectDevice { esp_id, .. } => {
-                        state.devices.push(esp_id);
-                        send_status_resp(stream, &state.devices).await?;
+                        {
+                            let mut devices = state.devices.write().await;
+                            devices.push(esp_id);
+
+                            send_status_resp(stream, &devices.to_vec()).await?;
+                        }
+
                         send_resp(stream, UnixResponseData::Empty, packet.tag, false).await?;
 
                         let tests = state.tests.read().await.clone();
-                        new_test_sender(&esp_id, state.senders.clone(), tests).await?;
+                        new_test_sender(&esp_id, state.devices.clone(), state.senders.clone(), tests).await?;
                     }
                     UnixRequestData::PersonInfo { ref card_id } => {
                         let card_id: u64 = card_id.parse()?;
@@ -134,17 +147,25 @@ async fn handle_stream(
             Some(recv) = rx.recv() => {
                 send_raw_resp(stream, recv).await?;
             }
+            _ = send_dev_rx.recv() => {
+                send_status_resp(stream, &state.devices.read().await.to_vec()).await?;
+            }
         }
     }
 }
 
-async fn new_test_sender(esp_id: &u32, senders: SharedSenders, tests: TestsRoot) -> Result<()> {
+async fn new_test_sender(
+    esp_id: &u32,
+    devices: Arc<RwLock<Vec<u32>>>,
+    senders: SharedSenders,
+    tests: TestsRoot,
+) -> Result<()> {
     let esp_id = *esp_id;
 
     tokio::task::spawn(async move {
         tracing::info!("Starting new test sender for esp with id: {esp_id}");
 
-        let res = test_sender(esp_id, senders, tests).await;
+        let res = test_sender(esp_id, devices, senders, tests).await;
         if let Err(e) = res {
             tracing::error!("Test sender error: {e:?}");
         }
@@ -153,7 +174,12 @@ async fn new_test_sender(esp_id: &u32, senders: SharedSenders, tests: TestsRoot)
     Ok(())
 }
 
-async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> Result<()> {
+async fn test_sender(
+    esp_id: u32,
+    devices: Arc<RwLock<Vec<u32>>>,
+    senders: SharedSenders,
+    tests: TestsRoot,
+) -> Result<()> {
     let unix_tx = UNIX_SENDER.get().expect("UNIX_SENDER not set!");
     let mut rx = spawn_new_sender(&senders, esp_id).await?;
 
@@ -174,6 +200,21 @@ async fn test_sender(esp_id: u32, senders: SharedSenders, tests: TestsRoot) -> R
         let res = run_test(&unix_tx, &mut rx, esp_id, &tests, next_idx, &mut last_time).await;
         if let Err(e) = res {
             tracing::error!("Run test error: {e:?}");
+            {
+                let mut dev = devices.write().await;
+                let index = dev
+                    .iter()
+                    .enumerate()
+                    .find(|(_, e)| **e == esp_id)
+                    .map(|(i, _)| i);
+
+                if let Some(index) = index {
+                    dev.remove(index);
+                }
+
+                _ = SEND_DEVICES.get().unwrap().send(());
+            }
+
             break Ok(());
         }
 
