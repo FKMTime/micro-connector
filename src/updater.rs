@@ -46,13 +46,18 @@ pub async fn should_update(
             continue;
         }
 
-        let (chip, firmware, version) = (
+        let (hw, firmware, version) = (
             name_split[0],
             name_split[1],
             Version::from_str(name_split[2]),
         );
 
-        if chip != esp_connect_info.chip || firmware != esp_connect_info.firmware {
+        // only update old esp32(v2) to v2
+        if hw != "v2" || esp_connect_info.chip != "esp32" {
+            continue;
+        }
+
+        if firmware != esp_connect_info.firmware {
             continue;
         }
 
