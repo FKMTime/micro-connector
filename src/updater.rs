@@ -46,13 +46,13 @@ pub async fn should_update(
             continue;
         }
 
-        let (chip, firmware, version) = (
+        let (hw, firmware, version) = (
             name_split[0],
             name_split[1],
             Version::from_str(name_split[2]),
         );
 
-        if chip != esp_connect_info.chip || firmware != esp_connect_info.firmware {
+        if hw != esp_connect_info.hw || firmware != esp_connect_info.firmware {
             continue;
         }
 

@@ -21,7 +21,7 @@ btleplug = "0.11.7"
 chrono = "0.4.39"
 dotenvy = "0.15.7"
 local-ip-address = "0.6.3"
-mdns-sd = "0.13.1"
+mdns-sd = "0.13.2"
 reqwest = { version = "0.12.12", features = ["json", "rustls-tls"], default-features = false }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"

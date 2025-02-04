@@ -11,10 +11,6 @@ use tokio::net::TcpListener;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tracing::{error, info};
 
-fn default_chip() -> String {
-    "no-chip".to_string()
-}
-
 fn default_firmware() -> String {
     "no-firmware".to_string()
 }
@@ -26,11 +22,10 @@ pub struct EspConnectInfo {
     #[serde(rename = "ver")]
     pub version: String,
 
-    #[serde(default = "default_chip")]
-    pub chip: String,
-
     #[serde(default = "default_firmware")]
     pub firmware: String,
+
+    pub hw: String,
 }
 
 pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
