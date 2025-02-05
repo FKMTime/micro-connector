@@ -15,6 +15,7 @@ pub struct UnixRequest {
 pub enum UnixRequestData {
     PersonInfo {
         card_id: String,
+        esp_id: u32
     },
     AutoSetupSettings,
     CreateAttendance {

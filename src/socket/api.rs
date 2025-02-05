@@ -18,10 +18,11 @@ pub struct CompetitorInfo {
     pub possible_rounds: Vec<PossibleRound>,
 }
 
-pub async fn get_competitor_info(card_id: u64) -> Result<CompetitorInfo, UnixError> {
+pub async fn get_competitor_info(card_id: u64, esp_id: u32) -> Result<CompetitorInfo, UnixError> {
     let res = crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::PersonInfo {
             card_id: card_id.to_string(),
+            esp_id,
         })
         .await?;
 
