@@ -39,7 +39,7 @@ pub enum UnixResponseData {
         country_iso2: Option<String>,
         gender: String,
         can_compete: bool,
-        possible_rounds: Option<Vec<PossibleRound>>, // TODO: remove option,
+        possible_groups: Option<Vec<PossibleGroup>>, // TODO: remove option,
     },
     Error {
         message: String,
@@ -76,10 +76,10 @@ pub struct Room {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct PossibleRound {
-    pub id: String,
-    pub name: String,
+pub struct PossibleGroup {
+    pub group_id: String,
     pub use_inspection: bool,
+    pub secondary_text: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

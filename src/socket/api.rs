@@ -1,7 +1,7 @@
 use anyhow::Result;
 use unix_utils::{
     request::UnixRequestData,
-    response::{PossibleRound, UnixResponseData},
+    response::{PossibleGroup, UnixResponseData},
     SnapshotData, UnixError,
 };
 
@@ -15,7 +15,7 @@ pub struct CompetitorInfo {
     pub country_iso2: Option<String>,
     pub gender: String,
     pub can_compete: bool,
-    pub possible_rounds: Vec<PossibleRound>,
+    pub possible_groups: Vec<PossibleGroup>,
 }
 
 pub async fn get_competitor_info(card_id: u64, esp_id: u32) -> Result<CompetitorInfo, UnixError> {
@@ -34,7 +34,7 @@ pub async fn get_competitor_info(card_id: u64, esp_id: u32) -> Result<Competitor
         country_iso2,
         gender,
         can_compete,
-        possible_rounds,
+        possible_groups,
     } = res
     {
         return Ok(CompetitorInfo {
@@ -45,21 +45,21 @@ pub async fn get_competitor_info(card_id: u64, esp_id: u32) -> Result<Competitor
             country_iso2,
             gender,
             can_compete,
-            possible_rounds: possible_rounds.unwrap_or(
+            possible_groups: possible_groups.unwrap_or(
                 [
-                    PossibleRound {
-                        id: "333-r1".to_string(),
-                        name: "3x3 R1".to_string(),
+                    PossibleGroup {
+                        group_id: "333-r1".to_string(),
+                        secondary_text: "3x3 R1".to_string(),
                         use_inspection: true,
                     },
-                    PossibleRound {
-                        id: "222-r1".to_string(),
-                        name: "2x2 R1".to_string(),
+                    PossibleGroup {
+                        group_id: "222-r1".to_string(),
+                        secondary_text: "2x2 R1".to_string(),
                         use_inspection: true,
                     },
-                    PossibleRound {
-                        id: "other".to_string(),
-                        name: "Other room".to_string(),
+                    PossibleGroup {
+                        group_id: "other".to_string(),
+                        secondary_text: "Other room".to_string(),
                         use_inspection: false,
                     },
                 ]

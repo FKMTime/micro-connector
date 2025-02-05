@@ -210,7 +210,7 @@ async fn on_timer_response(
                                 country_iso2: info.country_iso2.unwrap_or_default(),
                                 display: format!("{}{}", info.name, registrant_display),
                                 can_compete: info.can_compete,
-                                possible_rounds: info.possible_rounds,
+                                possible_groups: info.possible_groups,
                             },
                         };
 
@@ -237,7 +237,7 @@ async fn on_timer_response(
             session_id,
             delegate,
             inspection_time,
-            round_id,
+            group_id: round_id,
         } => {
             trace!("Solve: {solve_time} ({penalty}) {competitor_id} {esp_id} {timestamp} {session_id} {delegate} {round_id}");
 

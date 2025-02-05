@@ -13,7 +13,7 @@ use tokio::{
 };
 use unix_utils::{
     request::{UnixRequest, UnixRequestData},
-    response::{CompetitionStatusResp, PossibleRound, Room, UnixResponse, UnixResponseData},
+    response::{CompetitionStatusResp, PossibleGroup, Room, UnixResponse, UnixResponseData},
     TestPacketData,
 };
 
@@ -107,9 +107,9 @@ async fn handle_stream(
                                 country_iso2: Some("PL".to_string()),
                                 gender: "Male".to_string(),
                                 can_compete: competitor.can_compete,
-                                possible_rounds: Some([PossibleRound {
-                                    id: "2x2-r1".to_string(),
-                                    name: "2x2 R1".to_string(),
+                                possible_groups: Some([PossibleGroup {
+                                    group_id: "2x2-r1".to_string(),
+                                    secondary_text: "2x2 R1".to_string(),
                                     use_inspection: true
                                 }].to_vec())
                             },

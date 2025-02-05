@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use unix_utils::{response::PossibleRound, SnapshotData, TestPacketData};
+use unix_utils::{response::PossibleGroup, SnapshotData, TestPacketData};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TimerPacket {
@@ -28,7 +28,7 @@ pub enum TimerPacketInner {
         session_id: String, // UUID
         delegate: bool,
         inspection_time: i64,
-        round_id: String,
+        group_id: String,
     },
     SolveConfirm {
         competitor_id: u64,
@@ -58,7 +58,7 @@ pub enum TimerPacketInner {
         display: String,
         country_iso2: String,
         can_compete: bool,
-        possible_rounds: Vec<PossibleRound>,
+        possible_groups: Vec<PossibleGroup>,
     },
     AttendanceMarked,
     DeviceSettings {
