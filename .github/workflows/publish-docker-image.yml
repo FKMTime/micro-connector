@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - master
+    paths:
+      - src/**
+      - unix-utils/**
+      - Cargo.toml
+      - Cargo.lock
+      - Dockerfile
 
 env:
   REGISTRY: ghcr.io
