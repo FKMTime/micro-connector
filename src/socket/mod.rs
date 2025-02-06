@@ -202,24 +202,19 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
             inner_state.should_update = status.should_update;
             let mut changed = false;
 
-            let mut devices = Vec::new();
-            for room in status.rooms {
+            for &device in &status.devices {
                 let room_settings = crate::structs::CompetitionDeviceSettings {};
+                let old = inner_state
+                    .devices_settings
+                    .insert(device, room_settings.clone());
 
-                for device in room.devices {
-                    devices.push(device);
-                    let old = inner_state
-                        .devices_settings
-                        .insert(device, room_settings.clone());
-
-                    if old.as_ref() != Some(&room_settings) {
-                        changed = true;
-                    }
+                if old.as_ref() != Some(&room_settings) {
+                    changed = true;
                 }
             }
 
             for (k, _) in inner_state.devices_settings.clone() {
-                if !devices.contains(&k) {
+                if !status.devices.contains(&k) {
                     inner_state.devices_settings.remove(&k);
                     changed = true;
                 }

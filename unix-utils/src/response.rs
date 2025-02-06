@@ -39,7 +39,7 @@ pub enum UnixResponseData {
         country_iso2: Option<String>,
         gender: String,
         can_compete: bool,
-        possible_groups: Option<Vec<PossibleGroup>>, // TODO: remove option,
+        possible_groups: Vec<PossibleGroup>,
     },
     Error {
         message: String,
@@ -64,18 +64,11 @@ pub enum UnixResponseData {
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionStatusResp {
     pub should_update: bool,
-    pub rooms: Vec<Room>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Room {
-    pub id: String,
-    pub name: String,
     pub devices: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct PossibleGroup {
     pub group_id: String,
     pub use_inspection: bool,

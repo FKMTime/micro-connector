@@ -45,26 +45,7 @@ pub async fn get_competitor_info(card_id: u64, esp_id: u32) -> Result<Competitor
             country_iso2,
             gender,
             can_compete,
-            possible_groups: possible_groups.unwrap_or(
-                [
-                    PossibleGroup {
-                        group_id: "333-r1".to_string(),
-                        secondary_text: "3x3 R1".to_string(),
-                        use_inspection: true,
-                    },
-                    PossibleGroup {
-                        group_id: "222-r1".to_string(),
-                        secondary_text: "2x2 R1".to_string(),
-                        use_inspection: true,
-                    },
-                    PossibleGroup {
-                        group_id: "other".to_string(),
-                        secondary_text: "Other room".to_string(),
-                        use_inspection: false,
-                    },
-                ]
-                .to_vec(),
-            ),
+            possible_groups,
         });
     }
 

@@ -13,7 +13,7 @@ use tokio::{
 };
 use unix_utils::{
     request::{UnixRequest, UnixRequestData},
-    response::{CompetitionStatusResp, PossibleGroup, Room, UnixResponse, UnixResponseData},
+    response::{CompetitionStatusResp, PossibleGroup, UnixResponse, UnixResponseData},
     TestPacketData,
 };
 
@@ -107,11 +107,11 @@ async fn handle_stream(
                                 country_iso2: Some("PL".to_string()),
                                 gender: "Male".to_string(),
                                 can_compete: competitor.can_compete,
-                                possible_groups: Some([PossibleGroup {
+                                possible_groups: [PossibleGroup {
                                     group_id: "2x2-r1".to_string(),
                                     secondary_text: "2x2 R1".to_string(),
                                     use_inspection: true
-                                }].to_vec())
+                                }].to_vec()
                             },
                             None => UnixResponseData::Error {
                                 message: "Competitor not found".to_string(),
@@ -472,11 +472,7 @@ async fn send_status_resp(stream: &mut UnixStream, device_store: &Vec<u32>) -> R
         error: None,
         data: Some(UnixResponseData::ServerStatus(CompetitionStatusResp {
             should_update: true,
-            rooms: vec![Room {
-                id: "dsa".to_string(),
-                name: "room 1".to_string(),
-                devices: device_store.to_vec(),
-            }],
+            devices: device_store.to_vec(),
         })),
     };
 
