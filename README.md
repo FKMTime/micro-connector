@@ -12,8 +12,8 @@ RUST_LOG=none,backend=trace cargo run
   ```bash
   git clone -b old-fw-update https://github.com/FKMTime/micro-connector
   ```
-- Run it using `cargo run`
-- Connect devices to it and it will start updating!
+- Cd into cloned directory and run micro-connector using `FIRMWARE_DIR=/tmp/fkm-build cargo run`
+- Connect devices to it and they will start updating!
 
 Why is this required? Devices with firmware < `2.4` are 
 communicating using different packet structures. 
