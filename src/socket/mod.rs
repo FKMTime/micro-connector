@@ -1,5 +1,6 @@
 use crate::structs::{SharedAppState, TimerPacket, TimerPacketInner};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use base64::Engine;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -41,13 +42,13 @@ impl Socket {
         let (socket_channel, rx) = tokio::sync::mpsc::unbounded_channel();
 
         let inner = Arc::new(RwLock::new(SocketInner {
-            state,
+            state: state.clone(),
             socket_channel,
             tag_channels: HashMap::new(),
         }));
         self.inner.set(inner)?;
 
-        socket_task(socket_path.to_string(), rx).await;
+        socket_task(socket_path.to_string(), rx, state).await;
         Ok(())
     }
 
@@ -148,10 +149,14 @@ impl Socket {
     }
 }
 
-async fn socket_task(socket_path: String, mut rx: UnboundedReceiver<UnixRequest>) {
+async fn socket_task(
+    socket_path: String,
+    mut rx: UnboundedReceiver<UnixRequest>,
+    state: SharedAppState,
+) {
     tokio::task::spawn(async move {
         loop {
-            let res = inner_socket_task(&socket_path, &mut rx).await;
+            let res = inner_socket_task(&socket_path, &mut rx, &state).await;
             if let Err(e) = res {
                 tracing::error!("Socket task err: {e:?}");
                 _ = tokio::time::sleep(Duration::from_millis(500)).await;
@@ -163,6 +168,7 @@ async fn socket_task(socket_path: String, mut rx: UnboundedReceiver<UnixRequest>
 async fn inner_socket_task(
     socket_path: &str,
     rx: &mut UnboundedReceiver<UnixRequest>,
+    state: &SharedAppState,
 ) -> Result<()> {
     let mut stream = UnixStream::connect(socket_path).await?;
 
@@ -179,7 +185,7 @@ async fn inner_socket_task(
                 if let Some(tag) = resp.tag {
                     super::UNIX_SOCKET.send_resp_to_channel(tag, resp.data).await?;
                 } else if let Some(data) = resp.data {
-                    process_untagged_response(data).await?;
+                    process_untagged_response(data, state).await?;
                 }
             }
             Some(recv) = rx.recv() => {
@@ -192,7 +198,7 @@ async fn inner_socket_task(
     }
 }
 
-async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
+async fn process_untagged_response(data: UnixResponseData, state: &SharedAppState) -> Result<()> {
     match data {
         UnixResponseData::ServerStatus(status) => {
             let inner = crate::UNIX_SOCKET.get_inner().await?;
@@ -255,6 +261,34 @@ async fn process_untagged_response(data: UnixResponseData) -> Result<()> {
                     TimerPacket {
                         tag: None,
                         data: TimerPacketInner::TestPacket(data),
+                    },
+                )
+                .await?;
+        }
+        UnixResponseData::UploadFirmware {
+            file_name,
+            file_data,
+        } => {
+            let mut split = file_name.split('_');
+            let hw = split.next().ok_or_else(|| anyhow!("No hw in filename"))?;
+            let firmware = split
+                .next()
+                .ok_or_else(|| anyhow!("No firmware in filename"))?;
+
+            let data = base64::prelude::BASE64_STANDARD.decode(file_data);
+            let Ok(data) = data else {
+                tracing::error!("ForceUpdate Base64 parse error!");
+                return Ok(());
+            };
+
+            state
+                .force_update(
+                    hw.to_string(),
+                    crate::updater::Firmware {
+                        data,
+                        version: crate::updater::Version::Other,
+                        build_time: 0,
+                        firmware: firmware.to_string(),
                     },
                 )
                 .await?;

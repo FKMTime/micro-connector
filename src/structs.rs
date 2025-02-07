@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use unix_utils::{response::PossibleGroup, SnapshotData, TestPacketData};
 
+use crate::updater::Firmware;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TimerPacket {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,6 +91,7 @@ pub enum BroadcastPacket {
     Build,
     Resp((u32, TimerPacket)),
     UpdateDeviceSettings,
+    ForceUpdate((String, Firmware)),
 }
 
 #[derive(Debug, Clone)]
@@ -123,6 +126,11 @@ impl SharedAppState {
 
     pub async fn build_broadcast(&self) -> anyhow::Result<()> {
         self.bc.send(BroadcastPacket::Build)?;
+        Ok(())
+    }
+
+    pub async fn force_update(&self, hw: String, firmware: Firmware) -> anyhow::Result<()> {
+        self.bc.send(BroadcastPacket::ForceUpdate((hw, firmware)))?;
         Ok(())
     }
 

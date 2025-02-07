@@ -9,7 +9,7 @@ use tracing::{debug, error, info};
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Firmware {
     pub data: Vec<u8>,
     pub version: Version,
@@ -159,7 +159,7 @@ pub async fn update_client(
 /// Inner u128 is calculated version number,
 /// if version is newer, the number should be bigger
 /// * Important: you can't compare between Dev and Stable version!
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Version {
     /// Like v2.1.0
     Stable(String),

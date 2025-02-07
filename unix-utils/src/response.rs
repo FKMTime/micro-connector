@@ -58,6 +58,10 @@ pub enum UnixResponseData {
         data: TestPacketData,
     },
     Empty,
+    UploadFirmware {
+        file_name: String,
+        file_data: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

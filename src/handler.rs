@@ -53,8 +53,6 @@ pub async fn handle_client(
                 hb_received = false;
             }
             Ok(res) = bc.recv() => {
-                tracing::trace!("Bc recv: {:?}", res);
-
                 match res {
                     crate::structs::BroadcastPacket::Build => {
                         let inner_state = state.inner.read().await;
@@ -78,6 +76,14 @@ pub async fn handle_client(
                     },
                     crate::structs::BroadcastPacket::UpdateDeviceSettings => {
                         send_device_status(&mut socket, esp_connect_info, &state).await?;
+                    }
+                    crate::structs::BroadcastPacket::ForceUpdate((hw, firmware)) => {
+                        if firmware.firmware == esp_connect_info.firmware && hw == esp_connect_info.hw {
+                            let res = super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
+                            if res {
+                                break;
+                            }
+                        }
                     }
                 }
             }
