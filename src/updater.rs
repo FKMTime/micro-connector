@@ -2,9 +2,9 @@ use crate::{
     http::EspConnectInfo,
     structs::{SharedAppState, TimerPacket, TimerPacketInner},
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use axum::extract::ws::{Message, WebSocket};
-use std::path::PathBuf;
+use std::{fs::DirEntry, path::PathBuf};
 use tracing::{debug, error, info};
 
 const UPDATE_CHUNK_SIZE: usize = 1024 * 4;
@@ -15,6 +15,61 @@ pub struct Firmware {
     pub version: Version,
     pub build_time: u64,
     pub firmware: String,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct FirmwareMetadata {
+    pub version: [u8; 32],
+    pub firmware: [u8; 16],
+    pub hardware: [u8; 16],
+    pub build_time: u64,
+}
+const METADATA_SIZE: usize = core::mem::size_of::<FirmwareMetadata>();
+
+impl FirmwareMetadata {
+    pub async fn from_dir_entry(entry: &DirEntry) -> Result<Self> {
+        let path = entry.path();
+        let file_data = tokio::fs::read(&path).await?;
+        let file_name = path
+            .file_stem()
+            .ok_or_else(|| anyhow::anyhow!("file_name is none"))?
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("file_name is none"))?;
+
+        Self::from_file(file_name, &file_data).await
+    }
+
+    pub async fn from_file(file_name: &str, data: &Vec<u8>) -> Result<Self> {
+        let metadata_bytes = &data[data.len() - METADATA_SIZE..];
+        let metadata: FirmwareMetadata =
+            unsafe { core::ptr::read(metadata_bytes.as_ptr() as *const FirmwareMetadata) };
+
+        let metadata_parse_success = core::str::from_utf8(&metadata.version).is_ok()
+            && core::str::from_utf8(&metadata.firmware).is_ok()
+            && core::str::from_utf8(&metadata.hardware).is_ok();
+
+        if metadata_parse_success {
+            return Ok(metadata);
+        }
+
+        let name_split: Vec<&str> = file_name.split('_').collect();
+        if name_split.len() != 3 {
+            return Err(anyhow!("Wrong file name!"));
+        }
+
+        let mut metadata = FirmwareMetadata {
+            version: [0; 32],
+            firmware: [0; 16],
+            hardware: [0; 16],
+            build_time: 0,
+        };
+
+        metadata.version[..name_split[2].len()].copy_from_slice(name_split[2].as_bytes());
+        metadata.firmware[..name_split[1].len()].copy_from_slice(name_split[1].as_bytes());
+        metadata.hardware[..name_split[0].len()].copy_from_slice(name_split[0].as_bytes());
+        Ok(metadata)
+    }
 }
 
 pub async fn should_update(
@@ -32,24 +87,24 @@ pub async fn should_update(
 
     for entry in firmware_dir.read_dir()? {
         let entry = entry?;
-        //let modified = entry.metadata()?.modified()?;
-        let path = entry.path();
-        let file_name = path.file_stem();
-        let name_split: Vec<&str> = file_name
-            .ok_or_else(|| anyhow::anyhow!("file_name is none"))?
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("file_name is none"))?
-            .split('_')
-            .collect();
-
-        if name_split.len() != 3 {
+        let metadata = FirmwareMetadata::from_dir_entry(&entry).await;
+        let Ok(metadata) = metadata else {
+            tracing::error!("metadata error: {:?}", metadata.unwrap_err());
             continue;
-        }
+        };
 
         let (hw, firmware, version) = (
-            name_split[0],
-            name_split[1],
-            Version::from_str(name_split[2]),
+            core::str::from_utf8(&metadata.hardware)
+                .unwrap()
+                .trim_end_matches('\0'),
+            core::str::from_utf8(&metadata.firmware)
+                .unwrap()
+                .trim_end_matches('\0'),
+            Version::from_str(
+                core::str::from_utf8(&metadata.version)
+                    .unwrap()
+                    .trim_end_matches('\0'),
+            ),
         );
 
         if hw != esp_connect_info.hw || firmware != esp_connect_info.firmware {

@@ -1,5 +1,8 @@
-use crate::structs::{SharedAppState, TimerPacket, TimerPacketInner};
-use anyhow::{anyhow, Result};
+use crate::{
+    structs::{SharedAppState, TimerPacket, TimerPacketInner},
+    updater::FirmwareMetadata,
+};
+use anyhow::Result;
 use base64::Engine;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
@@ -269,25 +272,42 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             file_name,
             file_data,
         } => {
-            let mut split = file_name.split('_');
-            let hw = split.next().ok_or_else(|| anyhow!("No hw in filename"))?;
-            let firmware = split
-                .next()
-                .ok_or_else(|| anyhow!("No firmware in filename"))?;
-
             let data = base64::prelude::BASE64_STANDARD.decode(file_data);
             let Ok(data) = data else {
                 tracing::error!("ForceUpdate Base64 parse error!");
                 return Ok(());
             };
 
+            let metadata = FirmwareMetadata::from_file(&file_name, &data).await;
+            let Ok(metadata) = metadata else {
+                tracing::error!(
+                    "ForceUpdate File metadata read error! {:?}",
+                    metadata.unwrap_err()
+                );
+                return Ok(());
+            };
+
+            let (hardware, firmware, version) = (
+                core::str::from_utf8(&metadata.hardware)
+                    .unwrap()
+                    .trim_end_matches('\0'),
+                core::str::from_utf8(&metadata.firmware)
+                    .unwrap()
+                    .trim_end_matches('\0'),
+                crate::updater::Version::from_str(
+                    core::str::from_utf8(&metadata.version)
+                        .unwrap()
+                        .trim_end_matches('\0'),
+                ),
+            );
+
             state
                 .force_update(
-                    hw.to_string(),
+                    hardware.to_string(),
                     crate::updater::Firmware {
                         data,
-                        version: crate::updater::Version::Other,
-                        build_time: 0,
+                        version,
+                        build_time: metadata.build_time,
                         firmware: firmware.to_string(),
                     },
                 )
