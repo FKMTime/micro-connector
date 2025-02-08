@@ -136,6 +136,7 @@ impl SharedAppState {
 
     pub async fn device_settings_broadcast(&self) -> anyhow::Result<()> {
         self.bc.send(BroadcastPacket::UpdateDeviceSettings)?;
+        self.bc.send(BroadcastPacket::Build)?;
         Ok(())
     }
 

@@ -208,9 +208,9 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let inner = inner.read().await;
             let mut inner_state = inner.state.inner.write().await;
 
-            inner_state.should_update = status.should_update;
-            let mut changed = false;
+            let mut changed = inner_state.should_update != status.should_update;
 
+            inner_state.should_update = status.should_update;
             for &device in &status.devices {
                 let room_settings = crate::structs::CompetitionDeviceSettings {};
                 let old = inner_state
