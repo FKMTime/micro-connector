@@ -13,7 +13,7 @@ use tokio::{
 };
 use unix_utils::{
     request::{UnixRequest, UnixRequestData},
-    response::{CompetitionStatusResp, PossibleGroup, UnixResponse, UnixResponseData},
+    response::{CompetitionStatusResp, UnixResponse, UnixResponseData},
     TestPacketData,
 };
 
@@ -107,11 +107,11 @@ async fn handle_stream(
                                 country_iso2: Some("PL".to_string()),
                                 gender: "Male".to_string(),
                                 can_compete: competitor.can_compete,
-                                possible_groups: [PossibleGroup {
-                                    group_id: "2x2-r1".to_string(),
-                                    secondary_text: "2x2 R1".to_string(),
-                                    use_inspection: true
-                                }].to_vec()
+                                possible_groups: tests_root.groups
+                                    .clone()
+                                    .into_iter()
+                                    .filter(|x| competitor.groups.contains(&x.group_id))
+                                    .collect(),
                             },
                             None => UnixResponseData::Error {
                                 message: "Competitor not found".to_string(),

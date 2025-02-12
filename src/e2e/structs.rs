@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
-use unix_utils::request::UnixRequestData;
+use unix_utils::{request::UnixRequestData, response::PossibleGroup};
 
 pub type SharedSenders = Arc<RwLock<HashMap<u32, UnboundedSender<UnixRequestData>>>>;
 pub struct State {
@@ -17,12 +17,14 @@ pub struct CompetitorInfo {
     pub name: String,
     pub wca_id: String,
     pub can_compete: bool,
+    pub groups: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TestsRoot {
     pub dump_state_after_test: bool,
+    pub groups: Vec<PossibleGroup>,
     pub cards: HashMap<u64, CompetitorInfo>,
     pub buttons: HashMap<String, u8>,
     pub tests: Vec<TestData>,

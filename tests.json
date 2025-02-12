@@ -1,23 +1,38 @@
 {
     "dumpStateAfterTest": false,
+    "groups": [
+        {
+            "groupId": "333-r1",
+            "useInspection": true,
+            "secondaryText": "3x3x3 - R1"
+        },
+        {
+            "groupId": "333-bf",
+            "useInspection": false,
+            "secondaryText": "3x3x3 - BF"
+        }
+    ],
     "cards": {
         "69420": {
             "registrantId": 1,
             "name": "Filip Dziurka",
             "wcaId": "FILDZI01",
-            "canCompete": true
+            "canCompete": true,
+            "groups": ["333-r1"]
         },
         "3004425529": {
             "registrantId": 0,
             "name": "Filip Sciurka",
             "wcaId": "FILSCI01",
-            "canCompete": true
+            "canCompete": true,
+            "groups": ["333-bf"]
         },
         "1264825046": {
             "registrantId": 2,
             "name": "Filip Sciurka 1234567890",
             "wcaId": "FILSCI02",
-            "canCompete": true
+            "canCompete": true,
+            "groups": ["333-r1"]
         }
     },
     "buttons": {
