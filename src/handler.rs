@@ -243,9 +243,9 @@ async fn on_timer_response(
             session_id,
             delegate,
             inspection_time,
-            group_id: round_id,
+            group_id,
         } => {
-            trace!("Solve: {solve_time} ({penalty}) {competitor_id} {esp_id} {timestamp} {session_id} {delegate} {round_id}");
+            trace!("Solve: {solve_time} ({penalty}) {competitor_id} {esp_id} {timestamp} {session_id} {delegate} {group_id}");
 
             let res = crate::socket::api::send_solve_entry(
                 solve_time,
@@ -257,7 +257,7 @@ async fn on_timer_response(
                 delegate,
                 &session_id,
                 inspection_time,
-                &round_id,
+                &group_id,
             )
             .await;
 

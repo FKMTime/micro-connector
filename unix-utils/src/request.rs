@@ -15,7 +15,7 @@ pub struct UnixRequest {
 pub enum UnixRequestData {
     PersonInfo {
         card_id: String,
-        esp_id: u32
+        esp_id: u32,
     },
     AutoSetupSettings,
     CreateAttendance {
@@ -33,7 +33,7 @@ pub enum UnixRequestData {
         is_delegate: bool,
         session_id: String,
         inspection_time: i64,
-        round_id: String,
+        group_id: String,
     },
     UpdateBatteryPercentage {
         esp_id: u32,

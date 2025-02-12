@@ -92,7 +92,7 @@ pub async fn send_solve_entry(
     is_delegate: bool,
     session_id: &str,
     inspection_time: i64,
-    round_id: &str,
+    group_id: &str,
 ) -> Result<(), UnixError> {
     let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)
         .ok_or_else(|| UnixError {
@@ -112,7 +112,7 @@ pub async fn send_solve_entry(
         is_delegate,
         session_id: session_id.to_string(),
         inspection_time,
-        round_id: round_id.to_string(),
+        group_id: group_id.to_string(),
     };
 
     let res = crate::UNIX_SOCKET
