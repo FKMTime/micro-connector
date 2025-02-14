@@ -12,7 +12,7 @@ use tokio::{
 };
 use unix_utils::{
     request::{UnixRequest, UnixRequestData},
-    response::{UnixResponse, UnixResponseData},
+    response::{TranslationLocale, TranslationRecord, UnixResponse, UnixResponseData},
     UnixError,
 };
 
@@ -208,12 +208,29 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let inner = inner.read().await;
             let mut inner_state = inner.state.inner.write().await;
 
+            // remove all unicode weirdness
+            let translations: Vec<TranslationLocale> = status
+                .translations
+                .into_iter()
+                .map(|l| TranslationLocale {
+                    locale: l.locale,
+                    translations: l
+                        .translations
+                        .into_iter()
+                        .map(|t| TranslationRecord {
+                            key: t.key,
+                            translation: unidecode::unidecode(&t.translation),
+                        })
+                        .collect(),
+                })
+                .collect();
+
             let mut changed = inner_state.should_update != status.should_update
-                || inner_state.locales != status.translations
+                || inner_state.locales != translations
                 || inner_state.default_locale != status.default_locale;
 
             inner_state.should_update = status.should_update;
-            inner_state.locales = status.translations;
+            inner_state.locales = translations;
             inner_state.default_locale = status.default_locale;
             for &device in &status.devices {
                 let room_settings = crate::structs::CompetitionDeviceSettings {};

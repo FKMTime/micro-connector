@@ -143,6 +143,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "unidecode",
  "unix-utils",
  "uuid",
 ]
@@ -1911,6 +1912,12 @@ checksum = "5c5713f0fc4b5db668a2ac63cdb7bb4469d8c9fed047b1d0292cc7b0ce2ba921"
 dependencies = [
  "tinyvec",
 ]
+
+[[package]]
+name = "unidecode"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "402bb19d8e03f1d1a7450e2bd613980869438e0666331be3e073089124aa1adc"
 
 [[package]]
 name = "unix-utils"
