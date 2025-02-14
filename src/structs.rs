@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use unix_utils::{response::PossibleGroup, SnapshotData, TestPacketData};
+use unix_utils::{
+    response::{PossibleGroup, TranslationLocale},
+    SnapshotData, TestPacketData,
+};
 
 use crate::updater::Firmware;
 
@@ -65,6 +68,8 @@ pub enum TimerPacketInner {
     AttendanceMarked,
     DeviceSettings {
         added: bool,
+        locales: Vec<TranslationLocale>,
+        default_locale: String,
     },
     Logs {
         logs: Vec<String>,
@@ -105,6 +110,8 @@ pub struct SharedAppState {
 pub struct AppState {
     pub should_update: bool,
     pub devices_settings: HashMap<u32, CompetitionDeviceSettings>,
+    pub locales: Vec<TranslationLocale>,
+    pub default_locale: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -119,6 +126,8 @@ impl SharedAppState {
             inner: std::sync::Arc::new(tokio::sync::RwLock::new(AppState {
                 should_update: false,
                 devices_settings: HashMap::new(),
+                locales: Vec::new(),
+                default_locale: "".to_string(),
             })),
             bc,
         }

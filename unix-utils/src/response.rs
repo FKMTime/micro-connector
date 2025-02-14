@@ -64,11 +64,27 @@ pub enum UnixResponseData {
     },
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslationLocale {
+    pub locale: String,
+    pub translations: Vec<TranslationRecord>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslationRecord {
+    pub key: String,
+    pub translation: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionStatusResp {
     pub should_update: bool,
     pub devices: Vec<u32>,
+    pub translations: Vec<TranslationLocale>,
+    pub default_locale: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

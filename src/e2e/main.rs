@@ -473,6 +473,8 @@ async fn send_status_resp(stream: &mut UnixStream, device_store: &Vec<u32>) -> R
         data: Some(UnixResponseData::ServerStatus(CompetitionStatusResp {
             should_update: true,
             devices: device_store.to_vec(),
+            translations: Vec::new(),
+            default_locale: "en".to_string(),
         })),
     };
 

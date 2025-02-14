@@ -112,19 +112,27 @@ async fn send_device_status(
 ) -> Result<()> {
     let state = state.inner.read().await;
     let settings = state.devices_settings.get(&esp_connect_info.id);
-    let frame = if let Some(_settings) = settings {
+    let settings_frame = if let Some(_settings) = settings {
         TimerPacket {
             tag: None,
-            data: TimerPacketInner::DeviceSettings { added: true },
+            data: TimerPacketInner::DeviceSettings {
+                added: true,
+                locales: state.locales.clone(),
+                default_locale: state.default_locale.clone(),
+            },
         }
     } else {
         TimerPacket {
             tag: None,
-            data: TimerPacketInner::DeviceSettings { added: false },
+            data: TimerPacketInner::DeviceSettings {
+                added: false,
+                locales: state.locales.clone(),
+                default_locale: state.default_locale.clone(),
+            },
         }
     };
 
-    let response = serde_json::to_string(&frame)?;
+    let response = serde_json::to_string(&settings_frame)?;
     socket.send(Message::Text(response.into())).await?;
     Ok(())
 }
