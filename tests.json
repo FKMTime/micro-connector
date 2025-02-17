@@ -61,21 +61,21 @@
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 100
+                        "time": 150
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 100
+                        "time": 150
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "submit",
-                        "time": 100
+                        "time": 150
                     }
                 },
                 {
@@ -114,14 +114,14 @@
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 100
+                        "time": 150
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "submit",
-                        "time": 100
+                        "time": 150
                     }
                 },
                 {
@@ -200,28 +200,28 @@
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 100
+                        "time": 150
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 100
+                        "time": 150
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "penalty",
-                        "time": 100
+                        "time": 150
                     }
                 },
                 {
                     "type": "Button",
                     "data": {
                         "name": "submit",
-                        "time": 100
+                        "time": 150
                     }
                 },
                 {

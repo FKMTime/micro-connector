@@ -26,6 +26,8 @@ pub struct HilDeviceQueue {
     pub current_step: usize,
     pub wait_for_ack: bool,
 
+    pub last_test: usize,
+
     pub expected_time: u64,
     pub remove_after: bool,
 }
@@ -33,6 +35,13 @@ pub struct HilDeviceQueue {
 impl HilState {
     pub fn process_packet(&mut self, packet: Option<UnixRequest>) -> Result<Vec<UnixResponse>> {
         let mut responses = Vec::new();
+        self.devices = self
+            .devices
+            .iter()
+            .filter(|d| !d.remove_after)
+            .cloned()
+            .collect();
+
         if self.should_send_status {
             send_status_resp(&mut responses, &self);
             self.should_send_status = false;
@@ -41,6 +50,11 @@ impl HilState {
         if let Some(packet) = packet {
             match packet.data {
                 UnixRequestData::RequestToConnectDevice { esp_id, .. } => {
+                    let dev = self.devices.iter().find(|d| d.id == esp_id);
+                    if dev.is_some() {
+                        return Ok(responses);
+                    }
+
                     let device = HilDeviceQueue {
                         id: esp_id,
                         current_test: None,
@@ -48,6 +62,8 @@ impl HilState {
                         current_step: 0,
                         next_step_time: 0,
                         wait_for_ack: false,
+
+                        last_test: usize::MAX,
 
                         expected_time: 0,
                         remove_after: false,
@@ -123,19 +139,13 @@ impl HilState {
             tracing::trace!("{packet:?}");
         }
 
-        self.devices = self
-            .devices
-            .iter()
-            .filter(|d| !d.remove_after)
-            .cloned()
-            .collect();
-
         for device in &mut self.devices {
             if device.wait_for_ack {
                 let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                 if timeout_reached {
                     tracing::error!("TIMEOUT REACHED!");
                     device.remove_after = true;
+                    self.should_send_status = true;
                 }
 
                 continue;
@@ -147,10 +157,18 @@ impl HilState {
 
             // get new test (currently first one)
             if device.current_test.is_none() {
-                let next_idx: usize = rand::rng().random_range(0..self.tests.tests.len());
+                let mut next_idx: usize = rand::rng().random_range(0..self.tests.tests.len());
+                if next_idx == device.last_test {
+                    next_idx += 1;
+                    if next_idx >= self.tests.tests.len() {
+                        next_idx = 0;
+                    }
+                }
+
                 device.current_test = Some(next_idx);
                 device.current_step = 0;
                 device.next_step_time = (self.get_ms)();
+                device.last_test = next_idx;
             }
 
             let Some(current_step) = &self.tests.tests[device.current_test.unwrap_or(0)]
@@ -174,7 +192,7 @@ impl HilState {
                 TestStep::ResetState => {
                     send_test_packet(&mut responses, device.id, TestPacketData::ResetState);
                     device.current_step += 1;
-                    device.next_step_time = (self.get_ms)();
+                    device.next_step_time = (self.get_ms)() + 300;
                 }
                 TestStep::SolveTime(time) => {
                     send_test_packet(
@@ -185,7 +203,7 @@ impl HilState {
 
                     device.expected_time = *time;
                     device.current_step += 1;
-                    device.next_step_time = (self.get_ms)() + *time + 100;
+                    device.next_step_time = (self.get_ms)() + *time + 500;
                 }
                 TestStep::SolveTimeRng => {
                     let mut random_time: u64 = rand::rng().random_range(501..14132);
@@ -201,7 +219,7 @@ impl HilState {
 
                     device.expected_time = random_time;
                     device.current_step += 1;
-                    device.next_step_time = (self.get_ms)() + random_time + 100;
+                    device.next_step_time = (self.get_ms)() + random_time + 500;
                 }
                 TestStep::Snapshot => {
                     // TODO: add Snapshots to new firmware
@@ -219,7 +237,7 @@ impl HilState {
                         TestPacketData::ScanCard(*card_id),
                     );
                     device.current_step += 1;
-                    device.next_step_time = (self.get_ms)();
+                    device.next_step_time = (self.get_ms)() + 300;
                 }
                 TestStep::Button { ref name, time } => {
                     let pin = self.tests.buttons.get(name);
@@ -234,10 +252,11 @@ impl HilState {
                         );
 
                         device.current_step += 1;
-                        device.next_step_time = (self.get_ms)() + *time;
+                        device.next_step_time = (self.get_ms)() + *time + 200;
                     } else {
                         tracing::error!("Wrong button name");
                         device.remove_after = true;
+                        self.should_send_status = true;
                     }
                 }
                 TestStep::VerifySolveTime {
@@ -249,6 +268,7 @@ impl HilState {
                         if timeout_reached {
                             tracing::error!("TIMEOUT REACHED!");
                             device.remove_after = true;
+                            self.should_send_status = true;
                         }
 
                         continue;
@@ -267,6 +287,7 @@ impl HilState {
                                 "Wrong time value! Real: {value} Expected: {time_to_check}"
                             );
                             device.remove_after = true;
+                            self.should_send_status = true;
                         }
 
                         if *penalty != *penalty_to_check {
@@ -274,6 +295,7 @@ impl HilState {
                                 "Wrong penalty value! Real: {penalty} Expected: {penalty_to_check}"
                             );
                             device.remove_after = true;
+                            self.should_send_status = true;
                         }
 
                         if *is_delegate {
@@ -281,10 +303,12 @@ impl HilState {
                                 "Wrong is_delegate value! Real: {is_delegate} Expected: false"
                             );
                             device.remove_after = true;
+                            self.should_send_status = true;
                         }
                     } else {
                         tracing::error!("Wrong packet, cant verify solve time!");
                         device.remove_after = true;
+                        self.should_send_status = true;
                     }
 
                     device.current_step += 1;
@@ -296,6 +320,7 @@ impl HilState {
                         if timeout_reached {
                             tracing::error!("TIMEOUT REACHED!");
                             device.remove_after = true;
+                            self.should_send_status = true;
                         }
 
                         continue;
@@ -307,10 +332,12 @@ impl HilState {
                                 "Wrong is_delegate value! Real: {is_delegate} Expected: true"
                             );
                             device.remove_after = true;
+                            self.should_send_status = true;
                         }
                     } else {
                         tracing::error!("Wrong packet, cant verify delegate!");
                         device.remove_after = true;
+                        self.should_send_status = true;
                     }
 
                     device.current_step += 1;
@@ -352,6 +379,7 @@ impl HilState {
             if timeout_reached {
                 tracing::error!("TIMEOUT REACHED!");
                 device.remove_after = true;
+                self.should_send_status = true;
                 continue;
             }
         }
