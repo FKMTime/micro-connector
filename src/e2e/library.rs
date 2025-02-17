@@ -1,130 +1,313 @@
-use crate::structs::TestStep;
 use anyhow::Result;
-use rand::Rng;
-use std::{
-    collections::HashMap,
-    path::Path,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
-use structs::{SharedSenders, State, TestsRoot};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{UnixListener, UnixStream},
-    sync::{
-        mpsc::{UnboundedReceiver, UnboundedSender},
-        OnceCell, RwLock,
-    },
-};
 use unix_utils::{
     request::{UnixRequest, UnixRequestData},
     response::{CompetitionStatusResp, UnixResponse, UnixResponseData},
     TestPacketData,
 };
 
-mod library;
-mod structs;
+use crate::structs::{TestData, TestStep, TestsRoot};
 
-pub static UNIX_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<UnixResponse>> =
-    OnceCell::const_new();
+pub struct HilState {
+    pub devices: Vec<HilDeviceQueue>,
+    pub tests: TestsRoot,
 
-pub static SEND_DEVICES: OnceCell<tokio::sync::mpsc::UnboundedSender<()>> = OnceCell::const_new();
+    pub should_send_status: bool,
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    _ = dotenvy::dotenv();
-    tracing_subscriber::fmt::init();
+    pub get_ms: fn() -> u64,
+}
 
-    let socket_path = std::env::var("SOCKET_PATH").unwrap_or("/tmp/sock/socket.sock".to_string());
-    let socket_dir = Path::new(&socket_path).parent().unwrap();
-    _ = tokio::fs::create_dir_all(socket_dir).await;
-    _ = tokio::fs::remove_file(&socket_path).await;
+pub struct HilDeviceQueue {
+    pub id: u32,
+    pub back_packet: Option<UnixRequestData>,
+    pub next_step_time: u64,
 
-    let tests_root = tokio::fs::read("tests.json")
-        .await
-        .map_err(|_| anyhow::anyhow!("tests.json doesnt exists!"))?;
-    let tests_root: TestsRoot = serde_json::from_slice(&tests_root)?;
+    pub current_test: Option<usize>,
+    pub test_step_idx: usize,
 
-    let mut state = State {
-        devices: Arc::new(RwLock::new(vec![])),
-        senders: Arc::new(RwLock::new(HashMap::new())),
-        tests: Arc::new(RwLock::new(tests_root.clone())),
-    };
+    pub last_rng_time: u64,
+}
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    UNIX_SENDER.set(tx)?;
-
-    let (tx, mut send_dev_rx) = tokio::sync::mpsc::unbounded_channel();
-    SEND_DEVICES.set(tx)?;
-
-    let listener = UnixListener::bind(&socket_path)?;
-    tracing::info!("Unix listener started on path {socket_path}!");
-    loop {
-        let (mut stream, _) = listener.accept().await?;
-        let mut state = library::HilState {
-            devices: Vec::new(),
-            tests: tests_root,
-            should_send_status: true,
-            get_ms: || {
-                return SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64;
-            },
-        };
-
-        if let Ok(out) = state.process_packet(None) {
-            for packet in out {
-                _ = send_raw_resp(&mut stream, packet).await;
-            }
+impl HilState {
+    pub fn process_packet(&mut self, packet: Option<UnixRequest>) -> Result<Vec<UnixResponse>> {
+        let mut responses = Vec::new();
+        if self.should_send_status {
+            send_status_resp(&mut responses, &self);
+            self.should_send_status = false;
         }
 
-        let mut buf = Vec::with_capacity(512);
-        loop {
-            let res = read_until_null(&mut stream, &mut buf).await;
-            tracing::trace!("{res:?}");
+        if let Some(packet) = packet {
+            match packet.data {
+                UnixRequestData::RequestToConnectDevice { esp_id, .. } => {
+                    let device = HilDeviceQueue {
+                        id: esp_id,
+                        current_test: None,
+                        back_packet: None,
+                        test_step_idx: 0,
+                        next_step_time: 0,
 
-            if let Ok(bytes) = res {
-                let packet: UnixRequest = serde_json::from_slice(&bytes[..])?;
-                if let Ok(out) = state.process_packet(Some(packet)) {
-                    for packet in out {
-                        _ = send_raw_resp(&mut stream, packet).await;
+                        last_rng_time: 0,
+                    };
+                    self.devices.push(device);
+
+                    send_status_resp(&mut responses, &self);
+                    send_resp(&mut responses, UnixResponseData::Empty, packet.tag, false);
+                }
+                UnixRequestData::PersonInfo {
+                    ref card_id,
+                    esp_id: _,
+                } => {
+                    let card_id: u64 = card_id.parse()?;
+                    let competitor = self.tests.cards.get(&card_id);
+
+                    let resp = match competitor {
+                        Some(competitor) => UnixResponseData::PersonInfoResp {
+                            id: card_id.to_string(),
+                            registrant_id: Some(competitor.registrant_id),
+                            name: competitor.name.to_string(),
+                            wca_id: Some(competitor.wca_id.to_string()),
+                            country_iso2: Some("PL".to_string()),
+                            gender: "Male".to_string(),
+                            can_compete: competitor.can_compete,
+                            possible_groups: self
+                                .tests
+                                .groups
+                                .clone()
+                                .into_iter()
+                                .filter(|x| competitor.groups.contains(&x.group_id))
+                                .collect(),
+                        },
+                        None => UnixResponseData::Error {
+                            message: "Competitor not found".to_string(),
+                            should_reset_time: false,
+                        },
+                    };
+
+                    send_resp(&mut responses, resp, packet.tag, competitor.is_none());
+                }
+                UnixRequestData::EnterAttempt { esp_id, .. } => {
+                    let dev = self.devices.iter_mut().find(|d| d.id == esp_id);
+                    if let Some(dev) = dev {
+                        dev.back_packet = Some(packet.data.clone());
+                        dev.next_step_time = (self.get_ms)() + 300; // run next step after 300ms
                     }
+
+                    send_resp(&mut responses, UnixResponseData::Empty, packet.tag, false);
+                }
+                UnixRequestData::Snapshot(ref data) => {
+                    let dev = self.devices.iter_mut().find(|d| d.id == data.esp_id);
+                    if let Some(dev) = dev {
+                        dev.back_packet = Some(packet.data.clone());
+                    }
+
+                    send_resp(&mut responses, UnixResponseData::Empty, packet.tag, false);
+                }
+                UnixRequestData::UpdateBatteryPercentage { .. } => {
+                    send_resp(&mut responses, UnixResponseData::Empty, packet.tag, false);
+                }
+                UnixRequestData::TestAck { esp_id } => {
+                    let dev = self.devices.iter_mut().find(|d| d.id == esp_id);
+                    if let Some(dev) = dev {
+                        dev.back_packet = Some(packet.data.clone());
+                    }
+                }
+                _ => {
+                    send_resp(&mut responses, UnixResponseData::Empty, packet.tag, false);
                 }
             }
 
-            //state.
-            tokio::time::sleep(Duration::from_millis(1)).await;
+            tracing::trace!("{packet:?}");
         }
 
-        /*
-        let res = handle_stream(&mut stream, &mut state, &mut rx, &mut send_dev_rx).await;
-        if let Err(e) = res {
-            tracing::error!("Handle stream error: {e:?}");
+        for device in &mut self.devices {
+            if device.next_step_time > (self.get_ms)() {
+                continue;
+            }
+
+            // get new test (currently first one)
+            if device.current_test.is_none() {
+                device.current_test = Some(0);
+            }
+
+            //let current_step =
         }
-        */
+
+        Ok(responses)
     }
 }
 
-async fn send_raw_resp(stream: &mut UnixStream, data: UnixResponse) -> Result<()> {
-    stream.write_all(&serde_json::to_vec(&data)?).await?;
-    stream.write_u8(0x00).await?;
+/*
+async fn run_step(
+    unix_tx: &UnboundedSender<UnixResponse>,
+    rx: &mut UnboundedReceiver<UnixRequestData>,
+    esp_id: u32,
+    tests: &TestsRoot,
+    test_index: usize,
+    step_index: usize,
+    random_time: u64,
+    last_time: &mut u64,
+) -> Result<()> {
+    let test = &tests.tests[test_index];
+    let step = &test.steps[step_index];
+
+    tracing::info!(" > Running step: {step:?} (esp_id: {esp_id})");
+
+    match step {
+        TestStep::Sleep(ms) => {
+            tokio::time::sleep(Duration::from_millis(*ms)).await;
+            return Ok(()); // to skip sleep_between after
+        }
+        TestStep::ResetState => {
+            send_test_packet(&unix_tx, rx, esp_id, TestPacketData::ResetState).await?;
+        }
+        TestStep::SolveTime(time) => {
+            *last_time = *time;
+            send_test_packet(&unix_tx, rx, esp_id, TestPacketData::StackmatTime(*time)).await?;
+
+            tokio::time::sleep(Duration::from_millis(*time + 100)).await;
+        }
+        TestStep::SolveTimeRng => {
+            *last_time = random_time;
+            send_test_packet(
+                &unix_tx,
+                rx,
+                esp_id,
+                TestPacketData::StackmatTime(random_time),
+            )
+            .await?;
+
+            tokio::time::sleep(Duration::from_millis(random_time + 100)).await;
+        }
+        TestStep::Snapshot => {
+            send_test_packet(&unix_tx, rx, esp_id, TestPacketData::Snapshot).await?;
+
+            let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await?;
+            tracing::debug!("Snapshot data: {recv:?}");
+        }
+        TestStep::ScanCard(card_id) => {
+            send_test_packet(&unix_tx, rx, esp_id, TestPacketData::ScanCard(*card_id)).await?;
+        }
+        TestStep::Button { ref name, time } => {
+            let pin = tests.buttons.get(name);
+            if let Some(&pin) = pin {
+                send_test_packet(
+                    &unix_tx,
+                    rx,
+                    esp_id,
+                    TestPacketData::ButtonPress {
+                        pin,
+                        press_time: *time,
+                    },
+                )
+                .await?;
+
+                tokio::time::sleep(Duration::from_millis(*time)).await;
+            } else {
+                tracing::error!("Wrong button name");
+            }
+        }
+        TestStep::VerifySolveTime {
+            time,
+            penalty: penalty_to_check,
+        } => {
+            let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Shouldnt be none"))?;
+
+            if let UnixRequestData::EnterAttempt {
+                value,
+                penalty,
+                is_delegate,
+                ..
+            } = recv
+            {
+                let time_to_check = time.unwrap_or(random_time) / 10;
+                if value != time_to_check {
+                    anyhow::bail!("Wrong time value! Real: {value} Expected: {time_to_check}")
+                }
+
+                if penalty != *penalty_to_check {
+                    anyhow::bail!(
+                        "Wrong penalty value! Real: {penalty} Expected: {penalty_to_check}"
+                    )
+                }
+
+                if is_delegate {
+                    anyhow::bail!("Wrong is_delegate value! Real: {is_delegate} Expected: false")
+                }
+            } else {
+                anyhow::bail!("Wrong packet, cant verify solve time!")
+            }
+        }
+        TestStep::VerifyDelegateSent => {
+            let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Shouldnt be none"))?;
+
+            if let UnixRequestData::EnterAttempt { is_delegate, .. } = recv {
+                if !is_delegate {
+                    anyhow::bail!("Wrong is_delegate value! Real: {is_delegate} Expected: true")
+                }
+            } else {
+                anyhow::bail!("Wrong packet, cant verify delegate!")
+            }
+        }
+        TestStep::DelegateResolve {
+            should_scan_cards,
+            penalty,
+            value,
+        } => {
+            unix_tx.send(UnixResponse {
+                error: None,
+                tag: None,
+                data: Some(UnixResponseData::IncidentResolved {
+                    esp_id,
+                    should_scan_cards: *should_scan_cards,
+                    attempt: unix_utils::response::IncidentAttempt {
+                        session_id: "".to_string(),
+                        penalty: *penalty,
+                        value: *value,
+                    },
+                }),
+            })?;
+        }
+
+        #[allow(unreachable_patterns)]
+        _ => {
+            tracing::error!("Step not matched! {step:?}");
+        }
+    }
 
     Ok(())
 }
+*/
 
-async fn read_until_null(stream: &mut UnixStream, buf: &mut Vec<u8>) -> Result<Vec<u8>> {
-    loop {
-        let byte = stream.read_u8().await?;
-        if byte == 0x00 {
-            let ret = buf.to_owned();
-            buf.clear();
+fn send_resp(
+    responses: &mut Vec<UnixResponse>,
+    data: UnixResponseData,
+    tag: Option<u32>,
+    error: bool,
+) {
+    let packet = UnixResponse {
+        tag,
+        error: Some(error),
+        data: Some(data),
+    };
 
-            return Ok(ret);
-        }
+    responses.push(packet);
+}
 
-        buf.push(byte);
-    }
+fn send_status_resp(responses: &mut Vec<UnixResponse>, state: &HilState) {
+    send_resp(
+        responses,
+        UnixResponseData::ServerStatus(CompetitionStatusResp {
+            should_update: true,
+            devices: state.devices.iter().map(|d| d.id).collect(),
+            translations: Vec::new(),
+            default_locale: "en".to_string(),
+        }),
+        None,
+        false,
+    );
 }
 
 /*
