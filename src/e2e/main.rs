@@ -81,19 +81,24 @@ async fn main() -> Result<()> {
 
         let mut buf = Vec::with_capacity(512);
         loop {
-            let res = read_until_null(&mut stream, &mut buf).await;
-            tracing::trace!("{res:?}");
+            let res = tokio::time::timeout(
+                Duration::from_millis(50),
+                read_until_null(&mut stream, &mut buf),
+            )
+            .await;
 
-            if let Ok(bytes) = res {
-                let packet: UnixRequest = serde_json::from_slice(&bytes[..])?;
-                if let Ok(out) = state.process_packet(Some(packet)) {
-                    for packet in out {
-                        _ = send_raw_resp(&mut stream, packet).await;
-                    }
+            let packet: Option<UnixRequest> = if let Ok(Ok(bytes)) = res {
+                serde_json::from_slice(&bytes[..])?
+            } else {
+                None
+            };
+
+            if let Ok(out) = state.process_packet(packet) {
+                for packet in out {
+                    _ = send_raw_resp(&mut stream, packet).await;
                 }
             }
 
-            //state.
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
 
