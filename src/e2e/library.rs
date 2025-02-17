@@ -147,7 +147,8 @@ impl HilState {
 
             // get new test (currently first one)
             if device.current_test.is_none() {
-                device.current_test = Some(0);
+                let next_idx: usize = rand::rng().random_range(0..self.tests.tests.len());
+                device.current_test = Some(next_idx);
                 device.current_step = 0;
                 device.next_step_time = (self.get_ms)();
             }
@@ -335,6 +336,7 @@ impl HilState {
                     };
 
                     responses.push(packet);
+                    device.current_step += 1;
                 }
                 #[allow(unreachable_patterns)]
                 _ => {
