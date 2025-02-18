@@ -27,7 +27,7 @@ pub struct HilDevice {
 
     pub last_test: usize,
 
-    pub expected_time: u64,
+    pub last_solve_time: u64,
     pub remove_after: bool,
 }
 
@@ -64,7 +64,7 @@ impl HilState {
 
                         last_test: usize::MAX,
 
-                        expected_time: 0,
+                        last_solve_time: 0,
                         remove_after: false,
                     };
                     self.devices.push(device);
@@ -128,7 +128,7 @@ impl HilState {
                     let dev = self.devices.iter_mut().find(|d| d.id == esp_id);
                     if let Some(dev) = dev {
                         dev.wait_for_ack = false;
-                        dev.next_step_time = (self.get_ms)() + 100;
+                        dev.next_step_time = (self.get_ms)() + 50;
                     }
                 }
                 _ => {
@@ -204,14 +204,14 @@ impl HilState {
                     );
 
                     device.wait_for_ack = true;
-                    device.expected_time = *time;
+                    device.last_solve_time = *time;
                     device.current_step += 1;
                     device.next_step_time = (self.get_ms)() + *time;
                 }
                 TestStep::SolveTimeRng => {
                     let mut random_time: u64 = rand::rng().random_range(501..14132);
-                    if random_time == device.expected_time {
-                        random_time += 1;
+                    if random_time == device.last_solve_time {
+                        random_time += 200;
                     }
 
                     send_test_packet(
@@ -221,7 +221,7 @@ impl HilState {
                     );
 
                     device.wait_for_ack = true;
-                    device.expected_time = random_time;
+                    device.last_solve_time = random_time;
                     device.current_step += 1;
                     device.next_step_time = (self.get_ms)() + random_time;
                 }
@@ -295,7 +295,7 @@ impl HilState {
                         ..
                     } = back_packet
                     {
-                        let time_to_check = time.unwrap_or(device.expected_time) / 10;
+                        let time_to_check = time.unwrap_or(device.last_solve_time) / 10;
                         if *value != time_to_check {
                             tracing::error!(
                                 "Wrong time value! Real: {value} Expected: {time_to_check}"
@@ -376,7 +376,6 @@ impl HilState {
                         }),
                     };
 
-                    tracing::info!("SEND REOLSVE: {packet:?}");
                     responses.push(packet);
                     device.current_step += 1;
                 }
