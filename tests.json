@@ -108,7 +108,7 @@
                 },
                 {
                     "type": "SolveTime",
-                    "data": 69420
+                    "data": 12345
                 },
                 {
                     "type": "Button",
@@ -135,7 +135,7 @@
                 {
                     "type": "VerifySolveTime",
                     "data": {
-                        "time": 69420,
+                        "time": 12345,
                         "penalty": 2
                     }
                 }
@@ -156,7 +156,8 @@
                     "type": "Button",
                     "data": {
                         "name": "delegate",
-                        "time": 3200
+                        "time": 3200,
+                        "ack": false
                     }
                 },
                 {

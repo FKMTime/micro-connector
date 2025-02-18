@@ -59,6 +59,7 @@ pub enum TestStep {
     Button {
         name: String,
         time: u64,
+        ack: Option<bool>,
     },
     DelegateResolve {
         should_scan_cards: bool,

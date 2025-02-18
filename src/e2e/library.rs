@@ -7,17 +7,16 @@ use unix_utils::{
     TestPacketData,
 };
 
+#[derive(Clone)]
 pub struct HilState {
-    pub devices: Vec<HilDeviceQueue>,
+    pub devices: Vec<HilDevice>,
     pub tests: TestsRoot,
-
     pub should_send_status: bool,
-
     pub get_ms: fn() -> u64,
 }
 
 #[derive(Clone)]
-pub struct HilDeviceQueue {
+pub struct HilDevice {
     pub id: u32,
     pub back_packet: Option<UnixRequestData>,
     pub next_step_time: u64,
@@ -35,14 +34,14 @@ pub struct HilDeviceQueue {
 impl HilState {
     pub fn process_packet(&mut self, packet: Option<UnixRequest>) -> Result<Vec<UnixResponse>> {
         let mut responses = Vec::new();
-        self.devices = self
-            .devices
-            .iter()
-            .filter(|d| !d.remove_after)
-            .cloned()
-            .collect();
-
         if self.should_send_status {
+            self.devices = self
+                .devices
+                .iter()
+                .filter(|d| !d.remove_after)
+                .cloned()
+                .collect();
+
             send_status_resp(&mut responses, &self);
             self.should_send_status = false;
         }
@@ -55,7 +54,7 @@ impl HilState {
                         return Ok(responses);
                     }
 
-                    let device = HilDeviceQueue {
+                    let device = HilDevice {
                         id: esp_id,
                         current_test: None,
                         back_packet: None,
@@ -109,7 +108,7 @@ impl HilState {
                     let dev = self.devices.iter_mut().find(|d| d.id == esp_id);
                     if let Some(dev) = dev {
                         dev.back_packet = Some(packet.data.clone());
-                        dev.next_step_time = (self.get_ms)() + 300; // run next step after 300ms
+                        dev.next_step_time = (self.get_ms)(); // run next step after 300ms
                     }
 
                     send_resp(&mut responses, UnixResponseData::Empty, packet.tag, false);
@@ -129,6 +128,7 @@ impl HilState {
                     let dev = self.devices.iter_mut().find(|d| d.id == esp_id);
                     if let Some(dev) = dev {
                         dev.wait_for_ack = false;
+                        dev.next_step_time = (self.get_ms)() + 100;
                     }
                 }
                 _ => {
@@ -143,7 +143,7 @@ impl HilState {
             if device.wait_for_ack {
                 let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                 if timeout_reached {
-                    tracing::error!("TIMEOUT REACHED!");
+                    tracing::error!("TIMEOUT REACHED! 1");
                     device.remove_after = true;
                     self.should_send_status = true;
                 }
@@ -191,8 +191,10 @@ impl HilState {
                 }
                 TestStep::ResetState => {
                     send_test_packet(&mut responses, device.id, TestPacketData::ResetState);
+
+                    device.wait_for_ack = true;
                     device.current_step += 1;
-                    device.next_step_time = (self.get_ms)() + 300;
+                    device.next_step_time = (self.get_ms)();
                 }
                 TestStep::SolveTime(time) => {
                     send_test_packet(
@@ -201,9 +203,10 @@ impl HilState {
                         TestPacketData::StackmatTime(*time),
                     );
 
+                    device.wait_for_ack = true;
                     device.expected_time = *time;
                     device.current_step += 1;
-                    device.next_step_time = (self.get_ms)() + *time + 500;
+                    device.next_step_time = (self.get_ms)() + *time;
                 }
                 TestStep::SolveTimeRng => {
                     let mut random_time: u64 = rand::rng().random_range(501..14132);
@@ -217,9 +220,10 @@ impl HilState {
                         TestPacketData::StackmatTime(random_time),
                     );
 
+                    device.wait_for_ack = true;
                     device.expected_time = random_time;
                     device.current_step += 1;
-                    device.next_step_time = (self.get_ms)() + random_time + 500;
+                    device.next_step_time = (self.get_ms)() + random_time;
                 }
                 TestStep::Snapshot => {
                     // TODO: add Snapshots to new firmware
@@ -236,10 +240,16 @@ impl HilState {
                         device.id,
                         TestPacketData::ScanCard(*card_id),
                     );
+
+                    device.wait_for_ack = true;
                     device.current_step += 1;
-                    device.next_step_time = (self.get_ms)() + 300;
+                    device.next_step_time = (self.get_ms)();
                 }
-                TestStep::Button { ref name, time } => {
+                TestStep::Button {
+                    ref name,
+                    time,
+                    ack,
+                } => {
                     let pin = self.tests.buttons.get(name);
                     if let Some(&pin) = pin {
                         send_test_packet(
@@ -251,8 +261,12 @@ impl HilState {
                             },
                         );
 
+                        if *ack != Some(false) {
+                            device.wait_for_ack = true;
+                        }
+
                         device.current_step += 1;
-                        device.next_step_time = (self.get_ms)() + *time + 200;
+                        device.next_step_time = (self.get_ms)() + *time;
                     } else {
                         tracing::error!("Wrong button name");
                         device.remove_after = true;
@@ -266,7 +280,7 @@ impl HilState {
                     let Some(ref back_packet) = device.back_packet else {
                         let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                         if timeout_reached {
-                            tracing::error!("TIMEOUT REACHED!");
+                            tracing::error!("TIMEOUT REACHED 2!");
                             device.remove_after = true;
                             self.should_send_status = true;
                         }
@@ -318,7 +332,7 @@ impl HilState {
                     let Some(ref back_packet) = device.back_packet else {
                         let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                         if timeout_reached {
-                            tracing::error!("TIMEOUT REACHED!");
+                            tracing::error!("TIMEOUT REACHED 3!");
                             device.remove_after = true;
                             self.should_send_status = true;
                         }
@@ -362,6 +376,7 @@ impl HilState {
                         }),
                     };
 
+                    tracing::info!("SEND REOLSVE: {packet:?}");
                     responses.push(packet);
                     device.current_step += 1;
                 }
@@ -377,7 +392,7 @@ impl HilState {
             // timeout = 5s
             let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
             if timeout_reached {
-                tracing::error!("TIMEOUT REACHED!");
+                tracing::error!("TIMEOUT REACHED 4!");
                 device.remove_after = true;
                 self.should_send_status = true;
                 continue;
