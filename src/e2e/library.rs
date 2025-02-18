@@ -13,6 +13,8 @@ pub struct HilState {
     pub tests: TestsRoot,
     pub should_send_status: bool,
     pub get_ms: fn() -> u64,
+
+    pub completed_count: usize,
 }
 
 #[derive(Clone)]
@@ -29,6 +31,8 @@ pub struct HilDevice {
 
     pub last_solve_time: u64,
     pub remove_after: bool,
+
+    pub completed_count: usize,
 }
 
 impl HilState {
@@ -66,6 +70,7 @@ impl HilState {
 
                         last_solve_time: 0,
                         remove_after: false,
+                        completed_count: 0,
                     };
                     self.devices.push(device);
 
@@ -165,6 +170,12 @@ impl HilState {
                     }
                 }
 
+                tracing::info!(
+                    "Startin new test({}): {}",
+                    device.id,
+                    self.tests.tests[next_idx].name
+                );
+
                 device.current_test = Some(next_idx);
                 device.current_step = 0;
                 device.next_step_time = (self.get_ms)();
@@ -175,13 +186,21 @@ impl HilState {
                 .steps
                 .get(device.current_step)
             else {
-                tracing::info!("test end?");
+                self.completed_count += 1;
+                device.completed_count += 1;
+                tracing::info!(
+                    "Test end! ({}) [{}] [{}]",
+                    device.id,
+                    device.completed_count,
+                    self.completed_count
+                );
+
                 device.current_test = None;
                 continue;
             };
 
-            tracing::trace!("current_step: {current_step:?}");
-            //tracing::info!(" > Running step: {step:?} (esp_id: {esp_id})");
+            //tracing::trace!(" current_step: {current_step:?}");
+            tracing::info!(" > Running step: {current_step:?} (esp_id: {})", device.id);
 
             match current_step {
                 TestStep::Sleep(ms) => {

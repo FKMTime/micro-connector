@@ -71,6 +71,8 @@ async fn main() -> Result<()> {
                     .unwrap()
                     .as_millis() as u64;
             },
+
+            completed_count: 0,
         };
 
         if let Ok(out) = state.process_packet(None) {
