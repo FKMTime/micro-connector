@@ -12,6 +12,7 @@ pub struct UnixError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum TestPacketData {
+    HardStateReset,
     ResetState,
     ScanCard(u64),
     ButtonPress { pin: u8, press_time: u64 },

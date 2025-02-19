@@ -1,18 +1,38 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{mpsc::UnboundedSender, RwLock};
+use std::collections::HashMap;
 use unix_utils::{request::UnixRequestData, response::PossibleGroup};
 
-pub type SharedSenders = Arc<RwLock<HashMap<u32, UnboundedSender<UnixRequestData>>>>;
-pub struct State {
-    pub devices: Arc<RwLock<Vec<u32>>>,
-    pub senders: SharedSenders,
-    pub tests: Arc<RwLock<TestsRoot>>,
+#[derive(Clone)]
+pub struct HilState {
+    pub devices: Vec<HilDevice>,
+    pub tests: TestsRoot,
+    pub should_send_status: bool,
+    pub get_ms: fn() -> u64,
+
+    pub completed_count: usize,
+}
+
+#[derive(Clone)]
+pub struct HilDevice {
+    pub id: u32,
+    pub back_packet: Option<UnixRequestData>,
+    pub next_step_time: u64,
+
+    pub current_test: Option<usize>,
+    pub current_step: usize,
+    pub wait_for_ack: bool,
+
+    pub last_test: usize,
+
+    pub last_solve_time: u64,
+    pub remove_after: bool,
+
+    pub completed_count: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct CompetitorInfo {
+pub struct CardInfo {
     pub registrant_id: i64,
     pub name: String,
     pub wca_id: String,
@@ -25,7 +45,7 @@ pub struct CompetitorInfo {
 pub struct TestsRoot {
     pub dump_state_after_test: bool,
     pub groups: Vec<PossibleGroup>,
-    pub cards: HashMap<u64, CompetitorInfo>,
+    pub cards: HashMap<u64, CardInfo>,
     pub buttons: HashMap<String, u8>,
     pub tests: Vec<TestData>,
 }

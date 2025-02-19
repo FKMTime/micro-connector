@@ -36,3 +36,4 @@ unix-utils = { path = "./unix-utils" }
 crc32fast = "1.4.2"
 base64 = "0.22.1"
 unidecode = "0.3.0"
+hil-processor = { path = "./hil-processor" }
