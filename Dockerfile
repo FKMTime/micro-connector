@@ -40,12 +40,18 @@ COPY ./unix-utils/Cargo.lock ./unix-utils/Cargo.lock
 RUN mkdir -p ./unix-utils/src
 RUN echo "fn dsa() {}" > ./unix-utils/src/lib.rs
 
+RUN mkdir -p ./hil-processor
+COPY ./hil-processor/Cargo.toml ./hil-processor/Cargo.toml
+COPY ./hil-processor/Cargo.lock ./hil-processor/Cargo.lock
+RUN mkdir -p ./hil-processor/src
+RUN echo "fn dsa() {}" > ./hil-processor/src/lib.rs
+
 # Initial builds for dependency caching
 RUN cargo build -r --target x86_64-unknown-linux-musl --config target.x86_64-unknown-linux-musl.linker=\"x86_64-alpine-linux-musl-gcc\"
 RUN cargo build -r --target aarch64-unknown-linux-musl --config target.aarch64-unknown-linux-musl.linker=\"aarch64-linux-musl-gcc\"
 
 # Clean up artifacts that need to be rebuilt
-RUN rm -f target/*/release/deps/unix_utils* target/*/release/deps/libunix_utils* target/*/release/deps/backend* target/*/release/deps/e2e*
+RUN rm -f target/*/release/deps/unix_utils* target/*/release/deps/libunix_utils* target/*/release/deps/hil_processor* target/*/release/deps/libhil_processor* target/*/release/deps/backend* target/*/release/deps/e2e*
 
 # Copy actual source code and perform final builds
 COPY . .
