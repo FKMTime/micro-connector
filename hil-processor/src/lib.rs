@@ -2,9 +2,9 @@ use crate::structs::TestStep;
 use anyhow::Result;
 use rand::Rng as _;
 use unix_utils::{
-    TestPacketData,
     request::{UnixRequest, UnixRequestData},
     response::{CompetitionStatusResp, UnixResponse, UnixResponseData},
+    TestPacketData,
 };
 
 pub use structs::{HilDevice, HilState};
@@ -287,10 +287,14 @@ impl HilState {
                 TestStep::Button { name, time, ack } => {
                     let pin = self.tests.buttons.get(name);
                     if let Some(&pin) = pin {
-                        send_test_packet(&mut responses, device.id, TestPacketData::ButtonPress {
-                            pin,
-                            press_time: *time,
-                        });
+                        send_test_packet(
+                            &mut responses,
+                            device.id,
+                            TestPacketData::ButtonPress {
+                                pin,
+                                press_time: *time,
+                            },
+                        );
 
                         if *ack != Some(false) {
                             device.wait_for_ack = true;
