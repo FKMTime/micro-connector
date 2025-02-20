@@ -38,6 +38,7 @@ async fn main() -> Result<()> {
                     .unwrap()
                     .as_millis() as u64;
             },
+            status: Default::default(),
 
             completed_count: 0,
             packet_queue: Vec::new(),

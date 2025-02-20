@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use unix_utils::{
     request::UnixRequestData,
-    response::{PossibleGroup, UnixResponse},
+    response::{CompetitionStatusResp, PossibleGroup, UnixResponse},
 };
 
 #[derive(Clone)]
@@ -10,6 +10,7 @@ pub struct HilState {
     pub devices: Vec<HilDevice>,
     pub tests: TestsRoot,
     pub should_send_status: bool,
+    pub status: CompetitionStatusResp,
 
     pub completed_count: usize,
     pub packet_queue: Vec<UnixResponse>,

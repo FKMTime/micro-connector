@@ -1,4 +1,5 @@
 use hil_processor::HilState;
+use unix_utils::response::CompetitionStatusResp;
 use wasm_bindgen::prelude::*;
 
 static mut LOG_FUNC: Option<js_sys::Function> = None;
@@ -37,13 +38,24 @@ impl WasmState {
 
         out
     }
+
+    pub fn set_status(&mut self, status: String) {
+        if let Ok(status) = serde_json::from_str::<CompetitionStatusResp>(&status) {
+            self.inner.status.should_update = status.should_update;
+            self.inner.status.translations = status.translations;
+            self.inner.status.default_locale = status.default_locale;
+            self.inner.send_status_resp();
+        }
+    }
 }
 
 static TESTS_JSON: &str = include_str!("../../tests.json");
 
 #[wasm_bindgen]
-// TODO: add server state here?
-pub fn init(log_func: js_sys::Function) -> WasmState {
+pub fn init(log_func: js_sys::Function, initial_status: Option<String>) -> WasmState {
+    let initial_status: Option<CompetitionStatusResp> =
+        initial_status.and_then(|status| serde_json::from_str(&status).ok());
+
     unsafe {
         LOG_FUNC = Some(log_func);
     }
@@ -63,16 +75,18 @@ pub fn init(log_func: js_sys::Function) -> WasmState {
         format!("HilProcessor init! Version: {}", env!("CARGO_PKG_VERSION")),
     );
 
-    let state = HilState {
+    let mut state = HilState {
         tests: serde_json::from_str(TESTS_JSON).unwrap(),
         devices: Vec::new(),
         completed_count: 0,
         should_send_status: true,
+        status: initial_status.unwrap_or_default(),
 
         get_ms: || js_sys::Date::now() as u64,
         packet_queue: Vec::new(),
         log_fn: log_fn.clone(),
     };
+    state.process_initial_status_devices();
 
     WasmState {
         inner: state,

@@ -45,6 +45,25 @@ macro_rules! trace {
     );
 }
 
+impl HilDevice {
+    pub fn new(id: u32) -> HilDevice {
+        HilDevice {
+            id,
+            current_test: None,
+            back_packet: None,
+            current_step: 0,
+            next_step_time: 0,
+            wait_for_ack: false,
+
+            last_test: usize::MAX,
+
+            last_solve_time: 0,
+            remove_after: false,
+            completed_count: 0,
+        }
+    }
+}
+
 impl HilState {
     pub fn feed(&mut self, packet: Option<UnixRequest>) -> Result<()> {
         if let Some(packet) = packet {
@@ -55,20 +74,7 @@ impl HilState {
                         return Ok(());
                     }
 
-                    let device = HilDevice {
-                        id: esp_id,
-                        current_test: None,
-                        back_packet: None,
-                        current_step: 0,
-                        next_step_time: 0,
-                        wait_for_ack: false,
-
-                        last_test: usize::MAX,
-
-                        last_solve_time: 0,
-                        remove_after: false,
-                        completed_count: 0,
-                    };
+                    let device = HilDevice::new(esp_id);
                     self.devices.push(device);
 
                     self.send_status_resp();
@@ -430,7 +436,7 @@ impl HilState {
         Ok(self.packet_queue.drain(..).collect())
     }
 
-    fn send_resp(&mut self, data: UnixResponseData, tag: Option<u32>, error: bool) {
+    pub fn send_resp(&mut self, data: UnixResponseData, tag: Option<u32>, error: bool) {
         let packet = UnixResponse {
             tag,
             error: Some(error),
@@ -440,21 +446,20 @@ impl HilState {
         self.packet_queue.push(packet);
     }
 
-    // TODO: make it conigurable
-    fn send_status_resp(&mut self) {
+    pub fn send_status_resp(&mut self) {
         self.send_resp(
             UnixResponseData::ServerStatus(CompetitionStatusResp {
-                should_update: true,
+                should_update: self.status.should_update,
                 devices: self.devices.iter().map(|d| d.id).collect(),
-                translations: Vec::new(),
-                default_locale: "en".to_string(),
+                translations: self.status.translations.clone(),
+                default_locale: self.status.default_locale.clone(),
             }),
             None,
             false,
         );
     }
 
-    fn send_test_packet(&mut self, esp_id: u32, data: TestPacketData) {
+    pub fn send_test_packet(&mut self, esp_id: u32, data: TestPacketData) {
         let packet = UnixResponse {
             error: None,
             tag: None,
@@ -462,6 +467,13 @@ impl HilState {
         };
 
         self.packet_queue.push(packet);
+    }
+
+    pub fn process_initial_status_devices(&mut self) {
+        for &dev_id in &self.status.devices {
+            let device = HilDevice::new(dev_id);
+            self.devices.push(device);
+        }
     }
 
     fn log(&self, tag: &str, msg: String) {

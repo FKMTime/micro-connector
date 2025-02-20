@@ -109,3 +109,14 @@ pub struct IncidentAttempt {
     pub penalty: Option<i64>,
     pub value: Option<u64>,
 }
+
+impl Default for CompetitionStatusResp {
+    fn default() -> Self {
+        Self {
+            should_update: true,
+            devices: Vec::new(),
+            translations: Vec::new(),
+            default_locale: "en".to_string(),
+        }
+    }
+}
