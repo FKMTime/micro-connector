@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use unix_utils::{request::UnixRequestData, response::PossibleGroup};
+use unix_utils::{
+    request::UnixRequestData,
+    response::{PossibleGroup, UnixResponse},
+};
 
 #[derive(Clone)]
 pub struct HilState {
@@ -10,6 +13,7 @@ pub struct HilState {
     pub get_ms: fn() -> u64,
 
     pub completed_count: usize,
+    pub packet_queue: Vec<UnixResponse>,
 }
 
 #[derive(Clone)]

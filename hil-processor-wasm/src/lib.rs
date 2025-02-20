@@ -19,13 +19,16 @@ pub struct WasmState {
 
 #[wasm_bindgen]
 impl WasmState {
-    pub fn test(&mut self, packet_str: &str) -> String {
-        let res = self
-            .inner
-            .process_packet(serde_json::from_str(packet_str).ok());
+    pub fn feed_packet(&mut self, packet_str: &str) {
+        let res = self.inner.feed(serde_json::from_str(packet_str).ok());
+        if let Err(e) = res {
+            unsafe { hil_log("ERROR", format!("Hil feed error! {e:?}")) };
+        }
+    }
 
+    pub fn generate_output(&mut self) -> String {
         let mut out = String::new();
-        if let Ok(packets) = res {
+        if let Ok(packets) = self.inner.process() {
             for packet in packets {
                 let res = serde_json::to_string(&packet);
                 match res {
@@ -42,12 +45,23 @@ impl WasmState {
 
         out
     }
+
+    pub fn test(&self, dsa: js_sys::Function) {
+        dsa.call1(&JsValue::null(), &JsValue::from_f64(12.345));
+    }
 }
 
 static TESTS_JSON: &str = include_str!("../../tests.json");
+
 #[wasm_bindgen]
+// TODO: add server state here?
 pub fn init() -> WasmState {
-    log("Wasm init!");
+    unsafe {
+        hil_log(
+            "INFO",
+            format!("HilProcessor init! Version: {}", env!("CARGO_PKG_VERSION")),
+        );
+    };
 
     let state = HilState {
         tests: serde_json::from_str(TESTS_JSON).unwrap(),
@@ -56,6 +70,7 @@ pub fn init() -> WasmState {
         should_send_status: true,
 
         get_ms: || js_sys::Date::now() as u64,
+        packet_queue: Vec::new(),
     };
 
     WasmState { inner: state }

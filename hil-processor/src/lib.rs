@@ -50,26 +50,13 @@ macro_rules! trace {
 }
 
 impl HilState {
-    pub fn process_packet(&mut self, packet: Option<UnixRequest>) -> Result<Vec<UnixResponse>> {
-        let mut responses = Vec::new();
-        if self.should_send_status {
-            self.devices = self
-                .devices
-                .iter()
-                .filter(|d| !d.remove_after)
-                .cloned()
-                .collect();
-
-            send_status_resp(&mut responses, &self);
-            self.should_send_status = false;
-        }
-
+    pub fn feed(&mut self, packet: Option<UnixRequest>) -> Result<()> {
         if let Some(packet) = packet {
             match packet.data {
                 UnixRequestData::RequestToConnectDevice { esp_id, .. } => {
                     let dev = self.devices.iter().find(|d| d.id == esp_id);
                     if dev.is_some() {
-                        return Ok(responses);
+                        return Ok(());
                     }
 
                     let device = HilDevice {
@@ -88,10 +75,9 @@ impl HilState {
                     };
                     self.devices.push(device);
 
-                    send_status_resp(&mut responses, &self);
-                    send_resp(&mut responses, UnixResponseData::Empty, packet.tag, false);
-                    send_resp(
-                        &mut responses,
+                    self.send_status_resp();
+                    self.send_resp(UnixResponseData::Empty, packet.tag, false);
+                    self.send_resp(
                         UnixResponseData::TestPacket {
                             esp_id,
                             data: TestPacketData::HardStateReset,
@@ -130,7 +116,7 @@ impl HilState {
                         },
                     };
 
-                    send_resp(&mut responses, resp, packet.tag, competitor.is_none());
+                    self.send_resp(resp, packet.tag, competitor.is_none());
                 }
                 UnixRequestData::EnterAttempt { esp_id, .. } => {
                     let dev = self.devices.iter_mut().find(|d| d.id == esp_id);
@@ -139,7 +125,7 @@ impl HilState {
                         dev.next_step_time = (self.get_ms)(); // run next step after 300ms
                     }
 
-                    send_resp(&mut responses, UnixResponseData::Empty, packet.tag, false);
+                    self.send_resp(UnixResponseData::Empty, packet.tag, false);
                 }
                 UnixRequestData::Snapshot(ref data) => {
                     let dev = self.devices.iter_mut().find(|d| d.id == data.esp_id);
@@ -147,10 +133,10 @@ impl HilState {
                         dev.back_packet = Some(packet.data.clone());
                     }
 
-                    send_resp(&mut responses, UnixResponseData::Empty, packet.tag, false);
+                    self.send_resp(UnixResponseData::Empty, packet.tag, false);
                 }
                 UnixRequestData::UpdateBatteryPercentage { .. } => {
-                    send_resp(&mut responses, UnixResponseData::Empty, packet.tag, false);
+                    self.send_resp(UnixResponseData::Empty, packet.tag, false);
                 }
                 UnixRequestData::TestAck { esp_id } => {
                     let dev = self.devices.iter_mut().find(|d| d.id == esp_id);
@@ -160,18 +146,35 @@ impl HilState {
                     }
                 }
                 _ => {
-                    send_resp(&mut responses, UnixResponseData::Empty, packet.tag, false);
+                    self.send_resp(UnixResponseData::Empty, packet.tag, false);
                 }
             }
 
             trace!("{packet:?}");
         }
 
-        for device in &mut self.devices {
+        Ok(())
+    }
+
+    pub fn process(&mut self) -> Result<Vec<UnixResponse>> {
+        if self.should_send_status {
+            self.devices = self
+                .devices
+                .iter()
+                .filter(|d| !d.remove_after)
+                .cloned()
+                .collect();
+
+            self.send_status_resp();
+            self.should_send_status = false;
+        }
+
+        let mut devices_clone = self.devices.clone();
+        for device in &mut devices_clone {
             if device.wait_for_ack {
                 let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                 if timeout_reached {
-                    error!("TIMEOUT REACHED! 1");
+                    error!("TIMEOUT REACHED! 1 ({})", device.id);
                     device.remove_after = true;
                     self.should_send_status = true;
                 }
@@ -207,6 +210,7 @@ impl HilState {
             let Some(current_step) = &self.tests.tests[device.current_test.unwrap_or(0)]
                 .steps
                 .get(device.current_step)
+                .cloned()
             else {
                 self.completed_count += 1;
                 device.completed_count += 1;
@@ -229,18 +233,14 @@ impl HilState {
                     continue; // to skip sleep_between after
                 }
                 TestStep::ResetState => {
-                    send_test_packet(&mut responses, device.id, TestPacketData::ResetState);
+                    self.send_test_packet(device.id, TestPacketData::ResetState);
 
                     device.wait_for_ack = true;
                     device.current_step += 1;
                     device.next_step_time = (self.get_ms)();
                 }
                 TestStep::SolveTime(time) => {
-                    send_test_packet(
-                        &mut responses,
-                        device.id,
-                        TestPacketData::StackmatTime(*time),
-                    );
+                    self.send_test_packet(device.id, TestPacketData::StackmatTime(*time));
 
                     device.wait_for_ack = true;
                     device.last_solve_time = *time;
@@ -248,16 +248,9 @@ impl HilState {
                     device.next_step_time = (self.get_ms)() + *time;
                 }
                 TestStep::SolveTimeRng => {
-                    let mut random_time: u64 = rand::rng().random_range(501..14132);
-                    if random_time == device.last_solve_time {
-                        random_time += 200;
-                    }
+                    let random_time: u64 = rand::rng().random_range(501..14132);
 
-                    send_test_packet(
-                        &mut responses,
-                        device.id,
-                        TestPacketData::StackmatTime(random_time),
-                    );
+                    self.send_test_packet(device.id, TestPacketData::StackmatTime(random_time));
 
                     device.wait_for_ack = true;
                     device.last_solve_time = random_time;
@@ -274,11 +267,7 @@ impl HilState {
                     */
                 }
                 TestStep::ScanCard(card_id) => {
-                    send_test_packet(
-                        &mut responses,
-                        device.id,
-                        TestPacketData::ScanCard(*card_id),
-                    );
+                    self.send_test_packet(device.id, TestPacketData::ScanCard(*card_id));
 
                     device.wait_for_ack = true;
                     device.current_step += 1;
@@ -287,8 +276,7 @@ impl HilState {
                 TestStep::Button { name, time, ack } => {
                     let pin = self.tests.buttons.get(name);
                     if let Some(&pin) = pin {
-                        send_test_packet(
-                            &mut responses,
+                        self.send_test_packet(
                             device.id,
                             TestPacketData::ButtonPress {
                                 pin,
@@ -315,7 +303,7 @@ impl HilState {
                     let Some(ref back_packet) = device.back_packet else {
                         let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                         if timeout_reached {
-                            error!("TIMEOUT REACHED 2!");
+                            error!("TIMEOUT REACHED 2! ({})", device.id);
                             device.remove_after = true;
                             self.should_send_status = true;
                         }
@@ -363,7 +351,7 @@ impl HilState {
                     let Some(ref back_packet) = device.back_packet else {
                         let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                         if timeout_reached {
-                            error!("TIMEOUT REACHED 3!");
+                            error!("TIMEOUT REACHED 3! ({})", device.id);
                             device.remove_after = true;
                             self.should_send_status = true;
                         }
@@ -391,10 +379,8 @@ impl HilState {
                     penalty,
                     value,
                 } => {
-                    let packet = UnixResponse {
-                        error: None,
-                        tag: None,
-                        data: Some(UnixResponseData::IncidentResolved {
+                    self.send_resp(
+                        UnixResponseData::IncidentResolved {
                             esp_id: device.id,
                             should_scan_cards: *should_scan_cards,
                             attempt: unix_utils::response::IncidentAttempt {
@@ -402,10 +388,11 @@ impl HilState {
                                 penalty: *penalty,
                                 value: *value,
                             },
-                        }),
-                    };
+                        },
+                        None,
+                        false,
+                    );
 
-                    responses.push(packet);
                     device.current_step += 1;
                 }
                 #[allow(unreachable_patterns)]
@@ -420,52 +407,48 @@ impl HilState {
             // timeout = 5s
             let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
             if timeout_reached {
-                error!("TIMEOUT REACHED 4!");
+                error!("TIMEOUT REACHED 4! ({})", device.id);
                 device.remove_after = true;
                 self.should_send_status = true;
                 continue;
             }
         }
 
-        Ok(responses)
+        self.devices = devices_clone;
+        Ok(self.packet_queue.drain(..).collect())
     }
-}
 
-fn send_resp(
-    responses: &mut Vec<UnixResponse>,
-    data: UnixResponseData,
-    tag: Option<u32>,
-    error: bool,
-) {
-    let packet = UnixResponse {
-        tag,
-        error: Some(error),
-        data: Some(data),
-    };
+    fn send_resp(&mut self, data: UnixResponseData, tag: Option<u32>, error: bool) {
+        let packet = UnixResponse {
+            tag,
+            error: Some(error),
+            data: Some(data),
+        };
 
-    responses.push(packet);
-}
+        self.packet_queue.push(packet);
+    }
 
-fn send_status_resp(responses: &mut Vec<UnixResponse>, state: &HilState) {
-    send_resp(
-        responses,
-        UnixResponseData::ServerStatus(CompetitionStatusResp {
-            should_update: true,
-            devices: state.devices.iter().map(|d| d.id).collect(),
-            translations: Vec::new(),
-            default_locale: "en".to_string(),
-        }),
-        None,
-        false,
-    );
-}
+    // TODO: make it conigurable
+    fn send_status_resp(&mut self) {
+        self.send_resp(
+            UnixResponseData::ServerStatus(CompetitionStatusResp {
+                should_update: true,
+                devices: self.devices.iter().map(|d| d.id).collect(),
+                translations: Vec::new(),
+                default_locale: "en".to_string(),
+            }),
+            None,
+            false,
+        );
+    }
 
-fn send_test_packet(responses: &mut Vec<UnixResponse>, esp_id: u32, data: TestPacketData) {
-    let packet = UnixResponse {
-        error: None,
-        tag: None,
-        data: Some(UnixResponseData::TestPacket { esp_id, data }),
-    };
+    fn send_test_packet(&mut self, esp_id: u32, data: TestPacketData) {
+        let packet = UnixResponse {
+            error: None,
+            tag: None,
+            data: Some(UnixResponseData::TestPacket { esp_id, data }),
+        };
 
-    responses.push(packet);
+        self.packet_queue.push(packet);
+    }
 }
