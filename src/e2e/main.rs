@@ -9,11 +9,6 @@ use tokio::{
 };
 use unix_utils::{request::UnixRequest, response::UnixResponse};
 
-#[no_mangle]
-pub unsafe extern "Rust" fn hil_log(tag: &str, content: String) {
-    println!("[{tag}] {content}");
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     _ = dotenvy::dotenv();
@@ -45,9 +40,13 @@ async fn main() -> Result<()> {
             },
 
             completed_count: 0,
+            packet_queue: Vec::new(),
+            log_fn: |tag, msg| {
+                println!("[{tag}] {msg}");
+            },
         };
 
-        if let Ok(out) = state.process_packet(None) {
+        if let Ok(out) = state.process() {
             for packet in out {
                 _ = send_raw_resp(&mut stream, packet).await;
             }
@@ -67,7 +66,8 @@ async fn main() -> Result<()> {
                 None
             };
 
-            if let Ok(out) = state.process_packet(packet) {
+            _ = state.feed(packet);
+            if let Ok(out) = state.process() {
                 for packet in out {
                     _ = send_raw_resp(&mut stream, packet).await;
                 }

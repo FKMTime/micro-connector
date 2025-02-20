@@ -1,20 +1,12 @@
 use hil_processor::HilState;
 use wasm_bindgen::prelude::*;
 
-#[no_mangle]
-pub unsafe extern "Rust" fn hil_log(tag: &str, content: String) {
-    log(&format!("[{tag}] {content}"));
-}
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-}
+static mut LOG_FUNC: Option<js_sys::Function> = None;
 
 #[wasm_bindgen]
 pub struct WasmState {
     inner: HilState,
+    log_fn: fn(&str, String),
 }
 
 #[wasm_bindgen]
@@ -22,7 +14,7 @@ impl WasmState {
     pub fn feed_packet(&mut self, packet_str: &str) {
         let res = self.inner.feed(serde_json::from_str(packet_str).ok());
         if let Err(e) = res {
-            unsafe { hil_log("ERROR", format!("Hil feed error! {e:?}")) };
+            (self.log_fn)("ERROR", format!("Hil feed error! {e:?}"));
         }
     }
 
@@ -36,18 +28,14 @@ impl WasmState {
                         out.push_str(&packet_str);
                         out.push('\0'); // split packets using null byte
                     }
-                    Err(e) => unsafe {
-                        hil_log("ERROR", format!("{e:?}"));
-                    },
+                    Err(e) => {
+                        (self.log_fn)("ERROR", format!("Output packet to string: {e:?}"));
+                    }
                 }
             }
         }
 
         out
-    }
-
-    pub fn test(&self, dsa: js_sys::Function) {
-        dsa.call1(&JsValue::null(), &JsValue::from_f64(12.345));
     }
 }
 
@@ -55,13 +43,25 @@ static TESTS_JSON: &str = include_str!("../../tests.json");
 
 #[wasm_bindgen]
 // TODO: add server state here?
-pub fn init() -> WasmState {
+pub fn init(log_func: js_sys::Function) -> WasmState {
     unsafe {
-        hil_log(
-            "INFO",
-            format!("HilProcessor init! Version: {}", env!("CARGO_PKG_VERSION")),
-        );
+        LOG_FUNC = Some(log_func);
+    }
+
+    let log_fn: fn(&str, String) = |tag: &str, msg: String| unsafe {
+        if let Some(ref l) = LOG_FUNC {
+            _ = l.call2(
+                &JsValue::null(),
+                &JsValue::from_str(tag),
+                &JsValue::from_str(&msg),
+            );
+        }
     };
+
+    log_fn(
+        "INFO",
+        format!("HilProcessor init! Version: {}", env!("CARGO_PKG_VERSION")),
+    );
 
     let state = HilState {
         tests: serde_json::from_str(TESTS_JSON).unwrap(),
@@ -71,7 +71,11 @@ pub fn init() -> WasmState {
 
         get_ms: || js_sys::Date::now() as u64,
         packet_queue: Vec::new(),
+        log_fn: log_fn.clone(),
     };
 
-    WasmState { inner: state }
+    WasmState {
+        inner: state,
+        log_fn,
+    }
 }

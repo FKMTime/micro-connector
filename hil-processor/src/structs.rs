@@ -10,10 +10,12 @@ pub struct HilState {
     pub devices: Vec<HilDevice>,
     pub tests: TestsRoot,
     pub should_send_status: bool,
-    pub get_ms: fn() -> u64,
 
     pub completed_count: usize,
     pub packet_queue: Vec<UnixResponse>,
+
+    pub get_ms: fn() -> u64,
+    pub log_fn: fn(&str, String),
 }
 
 #[derive(Clone)]

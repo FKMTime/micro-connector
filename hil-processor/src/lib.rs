@@ -10,42 +10,38 @@ use unix_utils::{
 pub use structs::{HilDevice, HilState};
 pub mod structs;
 
-unsafe extern "Rust" {
-    pub fn hil_log(tag: &str, content: String);
-}
-
 #[allow(unused_macros)]
 macro_rules! info {
-    ($($arg:tt)+) => (
-        unsafe { hil_log("INFO", format!($($arg)+)); }
+    ($self:ident, $($arg:tt)+) => (
+        $self.log("INFO", format!($($arg)+));
     );
 }
 
 #[allow(unused_macros)]
 macro_rules! debug {
-    ($($arg:tt)+) => (
-        unsafe { hil_log("DEBUG", format!($($arg)+)); }
+    ($self:ident, $($arg:tt)+) => (
+        $self.log("DEBUG", format!($($arg)+));
     );
 }
 
 #[allow(unused_macros)]
 macro_rules! error {
-    ($($arg:tt)+) => (
-        unsafe { hil_log("ERROR", format!($($arg)+)); }
+    ($self:ident, $($arg:tt)+) => (
+        $self.log("ERROR", format!($($arg)+));
     );
 }
 
 #[allow(unused_macros)]
 macro_rules! warn {
-    ($($arg:tt)+) => (
-        unsafe { hil_log("WARN", format!($($arg)+)); }
+    ($self:ident, $($arg:tt)+) => (
+        $self.log("WARN", format!($($arg)+));
     );
 }
 
 #[allow(unused_macros)]
 macro_rules! trace {
-    ($($arg:tt)+) => (
-        unsafe { hil_log("TRACE", format!($($arg)+)); }
+    ($self:ident, $($arg:tt)+) => (
+        $self.log("TRACE", format!($($arg)+));
     );
 }
 
@@ -150,7 +146,7 @@ impl HilState {
                 }
             }
 
-            trace!("{packet:?}");
+            trace!(self, "{packet:?}");
         }
 
         Ok(())
@@ -174,7 +170,7 @@ impl HilState {
             if device.wait_for_ack {
                 let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                 if timeout_reached {
-                    error!("TIMEOUT REACHED! 1 ({})", device.id);
+                    error!(self, "TIMEOUT REACHED! 1 ({})", device.id);
                     device.remove_after = true;
                     self.should_send_status = true;
                 }
@@ -197,8 +193,8 @@ impl HilState {
                 }
 
                 info!(
-                    "Startin new test({}): {}",
-                    device.id, self.tests.tests[next_idx].name
+                    self,
+                    "Startin new test({}): {}", device.id, self.tests.tests[next_idx].name
                 );
 
                 device.current_test = Some(next_idx);
@@ -215,16 +211,22 @@ impl HilState {
                 self.completed_count += 1;
                 device.completed_count += 1;
                 info!(
+                    self,
                     "Test end! ({}) [{}] [{}]",
-                    device.id, device.completed_count, self.completed_count
+                    device.id,
+                    device.completed_count,
+                    self.completed_count
                 );
 
                 device.current_test = None;
                 continue;
             };
 
-            //trace!(" current_step: {current_step:?}");
-            info!(" > Running step: {current_step:?} (esp_id: {})", device.id);
+            trace!(
+                self,
+                " > Running step: {current_step:?} (esp_id: {})",
+                device.id
+            );
 
             match current_step {
                 TestStep::Sleep(ms) => {
@@ -291,7 +293,7 @@ impl HilState {
                         device.current_step += 1;
                         device.next_step_time = (self.get_ms)() + *time;
                     } else {
-                        error!("Wrong button name");
+                        error!(self, "Wrong button name");
                         device.remove_after = true;
                         self.should_send_status = true;
                     }
@@ -303,7 +305,7 @@ impl HilState {
                     let Some(ref back_packet) = device.back_packet else {
                         let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                         if timeout_reached {
-                            error!("TIMEOUT REACHED 2! ({})", device.id);
+                            error!(self, "TIMEOUT REACHED 2! ({})", device.id);
                             device.remove_after = true;
                             self.should_send_status = true;
                         }
@@ -320,13 +322,17 @@ impl HilState {
                     {
                         let time_to_check = time.unwrap_or(device.last_solve_time) / 10;
                         if *value != time_to_check {
-                            error!("Wrong time value! Real: {value} Expected: {time_to_check}");
+                            error!(
+                                self,
+                                "Wrong time value! Real: {value} Expected: {time_to_check}"
+                            );
                             device.remove_after = true;
                             self.should_send_status = true;
                         }
 
                         if *penalty != *penalty_to_check {
                             error!(
+                                self,
                                 "Wrong penalty value! Real: {penalty} Expected: {penalty_to_check}"
                             );
                             device.remove_after = true;
@@ -334,12 +340,15 @@ impl HilState {
                         }
 
                         if *is_delegate {
-                            error!("Wrong is_delegate value! Real: {is_delegate} Expected: false");
+                            error!(
+                                self,
+                                "Wrong is_delegate value! Real: {is_delegate} Expected: false"
+                            );
                             device.remove_after = true;
                             self.should_send_status = true;
                         }
                     } else {
-                        error!("Wrong packet, cant verify solve time!");
+                        error!(self, "Wrong packet, cant verify solve time!");
                         device.remove_after = true;
                         self.should_send_status = true;
                     }
@@ -351,7 +360,7 @@ impl HilState {
                     let Some(ref back_packet) = device.back_packet else {
                         let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                         if timeout_reached {
-                            error!("TIMEOUT REACHED 3! ({})", device.id);
+                            error!(self, "TIMEOUT REACHED 3! ({})", device.id);
                             device.remove_after = true;
                             self.should_send_status = true;
                         }
@@ -361,12 +370,15 @@ impl HilState {
 
                     if let UnixRequestData::EnterAttempt { is_delegate, .. } = back_packet {
                         if !is_delegate {
-                            error!("Wrong is_delegate value! Real: {is_delegate} Expected: true");
+                            error!(
+                                self,
+                                "Wrong is_delegate value! Real: {is_delegate} Expected: true"
+                            );
                             device.remove_after = true;
                             self.should_send_status = true;
                         }
                     } else {
-                        error!("Wrong packet, cant verify delegate!");
+                        error!(self, "Wrong packet, cant verify delegate!");
                         device.remove_after = true;
                         self.should_send_status = true;
                     }
@@ -397,7 +409,7 @@ impl HilState {
                 }
                 #[allow(unreachable_patterns)]
                 _ => {
-                    error!("Step not matched! {current_step:?}");
+                    error!(self, "Step not matched! {current_step:?}");
                 }
             }
 
@@ -407,7 +419,7 @@ impl HilState {
             // timeout = 5s
             let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
             if timeout_reached {
-                error!("TIMEOUT REACHED 4! ({})", device.id);
+                error!(self, "TIMEOUT REACHED 4! ({})", device.id);
                 device.remove_after = true;
                 self.should_send_status = true;
                 continue;
@@ -450,5 +462,9 @@ impl HilState {
         };
 
         self.packet_queue.push(packet);
+    }
+
+    fn log(&self, tag: &str, msg: String) {
+        (self.log_fn)(tag, msg);
     }
 }
