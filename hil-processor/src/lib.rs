@@ -179,6 +179,15 @@ impl HilState {
                     error!(self, "TIMEOUT REACHED! 1 ({})", device.id);
                     device.remove_after = true;
                     self.should_send_status = true;
+                    self.send_device_custom_message(
+                        device.id,
+                        format!("HIL Error ACK"),
+                        format!(
+                            "T:{} S:{}",
+                            device.current_test.unwrap_or(0),
+                            device.current_step
+                        ),
+                    );
                 }
 
                 continue;
@@ -314,6 +323,15 @@ impl HilState {
                             error!(self, "TIMEOUT REACHED 2! ({})", device.id);
                             device.remove_after = true;
                             self.should_send_status = true;
+                            self.send_device_custom_message(
+                                device.id,
+                                format!("HIL Error VST"),
+                                format!(
+                                    "T:{} S:{}",
+                                    device.current_test.unwrap_or(0),
+                                    device.current_step
+                                ),
+                            );
                         }
 
                         continue;
@@ -334,6 +352,15 @@ impl HilState {
                             );
                             device.remove_after = true;
                             self.should_send_status = true;
+                            self.send_device_custom_message(
+                                device.id,
+                                format!("HIL Error TIME"),
+                                format!(
+                                    "T:{} S:{} {value}/{time_to_check}",
+                                    device.current_test.unwrap_or(0),
+                                    device.current_step
+                                ),
+                            );
                         }
 
                         if *penalty != *penalty_to_check {
@@ -343,6 +370,15 @@ impl HilState {
                             );
                             device.remove_after = true;
                             self.should_send_status = true;
+                            self.send_device_custom_message(
+                                device.id,
+                                format!("HIL Error PEN"),
+                                format!(
+                                    "T:{} S:{} {penalty}/{penalty_to_check}",
+                                    device.current_test.unwrap_or(0),
+                                    device.current_step
+                                ),
+                            );
                         }
 
                         if *is_delegate {
@@ -352,6 +388,15 @@ impl HilState {
                             );
                             device.remove_after = true;
                             self.should_send_status = true;
+                            self.send_device_custom_message(
+                                device.id,
+                                format!("HIL Error DEL"),
+                                format!(
+                                    "T:{} S:{}",
+                                    device.current_test.unwrap_or(0),
+                                    device.current_step
+                                ),
+                            );
                         }
                     } else {
                         error!(self, "Wrong packet, cant verify solve time!");
@@ -369,6 +414,15 @@ impl HilState {
                             error!(self, "TIMEOUT REACHED 3! ({})", device.id);
                             device.remove_after = true;
                             self.should_send_status = true;
+                            self.send_device_custom_message(
+                                device.id,
+                                format!("HIL Error VDS"),
+                                format!(
+                                    "T:{} S:{}",
+                                    device.current_test.unwrap_or(0),
+                                    device.current_step
+                                ),
+                            );
                         }
 
                         continue;
@@ -382,6 +436,15 @@ impl HilState {
                             );
                             device.remove_after = true;
                             self.should_send_status = true;
+                            self.send_device_custom_message(
+                                device.id,
+                                format!("HIL Error DEL"),
+                                format!(
+                                    "T:{} S:{}",
+                                    device.current_test.unwrap_or(0),
+                                    device.current_step
+                                ),
+                            );
                         }
                     } else {
                         error!(self, "Wrong packet, cant verify delegate!");
@@ -428,12 +491,33 @@ impl HilState {
                 error!(self, "TIMEOUT REACHED 4! ({})", device.id);
                 device.remove_after = true;
                 self.should_send_status = true;
+                self.send_device_custom_message(
+                    device.id,
+                    format!("HIL Error MISC"),
+                    format!(
+                        "T:{} S:{}",
+                        device.current_test.unwrap_or(0),
+                        device.current_step
+                    ),
+                );
                 continue;
             }
         }
 
         self.devices = devices_clone;
         Ok(self.packet_queue.drain(..).collect())
+    }
+
+    fn send_device_custom_message(&mut self, esp_id: u32, line1: String, line2: String) {
+        self.send_resp(
+            UnixResponseData::CustomMessage {
+                esp_id,
+                line1,
+                line2,
+            },
+            None,
+            false,
+        );
     }
 
     pub fn send_resp(&mut self, data: UnixResponseData, tag: Option<u32>, error: bool) {

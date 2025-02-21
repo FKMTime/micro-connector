@@ -203,6 +203,22 @@ async fn inner_socket_task(
 
 async fn process_untagged_response(data: UnixResponseData, state: &SharedAppState) -> Result<()> {
     match data {
+        UnixResponseData::CustomMessage {
+            esp_id,
+            line1,
+            line2,
+        } => {
+            let packet = TimerPacket {
+                tag: None,
+                data: TimerPacketInner::CustomMessage { line1, line2 },
+            };
+
+            let inner = crate::UNIX_SOCKET.get_inner().await?;
+            let inner = inner.read().await;
+            let state = &inner.state;
+
+            state.send_timer_packet(esp_id, packet).await?;
+        }
         UnixResponseData::ServerStatus(status) => {
             let inner = crate::UNIX_SOCKET.get_inner().await?;
             let inner = inner.read().await;

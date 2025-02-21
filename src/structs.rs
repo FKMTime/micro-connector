@@ -52,6 +52,10 @@ pub enum TimerPacketInner {
         error: String,
         should_reset_time: bool,
     },
+    CustomMessage {
+        line1: String,
+        line2: String
+    },
     CardInfoRequest {
         card_id: u64,
 

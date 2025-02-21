@@ -41,6 +41,11 @@ pub enum UnixResponseData {
         can_compete: bool,
         possible_groups: Vec<PossibleGroup>,
     },
+    CustomMessage {
+        esp_id: u32,
+        line1: String,
+        line2: String,
+    },
     Error {
         message: String,
         should_reset_time: bool,
