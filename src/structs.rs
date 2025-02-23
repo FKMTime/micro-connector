@@ -91,8 +91,7 @@ pub enum TimerPacketInner {
 
     // packet for end to end testing
     TestPacket(TestPacketData),
-    Snapshot(SnapshotData),
-    TestAck,
+    TestAck(SnapshotData),
 }
 
 #[derive(Debug, Clone)]

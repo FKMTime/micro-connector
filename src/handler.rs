@@ -313,11 +313,8 @@ async fn on_timer_response(
             _ = crate::socket::api::add_device(esp_id, &firmware).await;
             trace!("Add device: {}", esp_id);
         }
-        TimerPacketInner::Snapshot(data) => {
-            _ = crate::socket::api::send_snapshot_data(data).await;
-        }
-        TimerPacketInner::TestAck => {
-            _ = crate::socket::api::send_test_ack(esp_id).await;
+        TimerPacketInner::TestAck(snapshot) => {
+            _ = crate::socket::api::send_test_ack(esp_id, snapshot).await;
         }
         _ => {
             trace!("Not implemented timer response received: {:?}", response);

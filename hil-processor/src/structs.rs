@@ -79,10 +79,8 @@ pub struct TestData {
 pub enum TestStep {
     Sleep(u64),
     ScanCard(u64),
-    Snapshot,
     ResetState,
-    SolveTime(u64),
-    SolveTimeRng,
+    SolveTime,
     Button {
         name: String,
         time: u64,
@@ -98,6 +96,7 @@ pub enum TestStep {
     VerifySolveTime {
         time: Option<u64>,
         penalty: i64,
+        inspection: Option<bool>,
     },
     VerifyDelegateSent,
     // TODO: VerifySnapshotState (with options like in delegate)

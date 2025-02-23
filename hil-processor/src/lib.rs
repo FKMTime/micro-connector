@@ -9,8 +9,10 @@ use unix_utils::{
 
 pub use structs::{HilDevice, HilState};
 pub mod structs;
+pub mod snapshot;
 
 #[allow(unused_macros)]
+#[macro_export]
 macro_rules! info {
     ($self:ident, $($arg:tt)+) => (
         $self.log("INFO", format!($($arg)+));
@@ -18,6 +20,7 @@ macro_rules! info {
 }
 
 #[allow(unused_macros)]
+#[macro_export]
 macro_rules! debug {
     ($self:ident, $($arg:tt)+) => (
         $self.log("DEBUG", format!($($arg)+));
@@ -25,6 +28,7 @@ macro_rules! debug {
 }
 
 #[allow(unused_macros)]
+#[macro_export]
 macro_rules! error {
     ($self:ident, $($arg:tt)+) => (
         $self.log("ERROR", format!($($arg)+));
@@ -32,6 +36,7 @@ macro_rules! error {
 }
 
 #[allow(unused_macros)]
+#[macro_export]
 macro_rules! warn {
     ($self:ident, $($arg:tt)+) => (
         $self.log("WARN", format!($($arg)+));
@@ -39,6 +44,7 @@ macro_rules! warn {
 }
 
 #[allow(unused_macros)]
+#[macro_export]
 macro_rules! trace {
     ($self:ident, $($arg:tt)+) => (
         $self.log("TRACE", format!($($arg)+));
@@ -129,22 +135,18 @@ impl HilState {
 
                     self.send_resp(UnixResponseData::Empty, packet.tag, false);
                 }
-                UnixRequestData::Snapshot(ref data) => {
-                    let dev = self.devices.iter_mut().find(|d| d.id == data.esp_id);
-                    if let Some(dev) = dev {
-                        dev.back_packet = Some(packet.data.clone());
-                    }
-
-                    self.send_resp(UnixResponseData::Empty, packet.tag, false);
-                }
                 UnixRequestData::UpdateBatteryPercentage { .. } => {
                     self.send_resp(UnixResponseData::Empty, packet.tag, false);
                 }
-                UnixRequestData::TestAck { esp_id } => {
+                UnixRequestData::TestAck {
+                    esp_id,
+                    ref snapshot,
+                } => {
+                    // TODO: set snapshot for device.
                     let dev = self.devices.iter_mut().find(|d| d.id == esp_id);
                     if let Some(dev) = dev {
                         dev.wait_for_ack = false;
-                        dev.next_step_time = (self.get_ms)() + 100;
+                        dev.next_step_time = (self.get_ms)() + 250;
                     }
                 }
                 _ => {
@@ -256,15 +258,7 @@ impl HilState {
                     device.current_step += 1;
                     device.next_step_time = (self.get_ms)();
                 }
-                TestStep::SolveTime(time) => {
-                    self.send_test_packet(device.id, TestPacketData::StackmatTime(*time));
-
-                    device.wait_for_ack = true;
-                    device.last_solve_time = *time;
-                    device.current_step += 1;
-                    device.next_step_time = (self.get_ms)() + *time;
-                }
-                TestStep::SolveTimeRng => {
+                TestStep::SolveTime => {
                     let random_time: u64 = rand::rng().random_range(501..14132);
 
                     self.send_test_packet(device.id, TestPacketData::StackmatTime(random_time));
@@ -273,15 +267,6 @@ impl HilState {
                     device.last_solve_time = random_time;
                     device.current_step += 1;
                     device.next_step_time = (self.get_ms)() + random_time;
-                }
-                TestStep::Snapshot => {
-                    // TODO: add Snapshots to new firmware
-                    /*
-                    send_test_packet(&unix_tx, rx, esp_id, TestPacketData::Snapshot).await?;
-
-                    let recv = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await?;
-                    debug!("Snapshot data: {recv:?}");
-                    */
                 }
                 TestStep::ScanCard(card_id) => {
                     self.send_test_packet(device.id, TestPacketData::ScanCard(*card_id));
@@ -316,7 +301,10 @@ impl HilState {
                 TestStep::VerifySolveTime {
                     time,
                     penalty: penalty_to_check,
+                    inspection,
                 } => {
+                    let inspection = inspection.unwrap_or(false);
+
                     let Some(ref back_packet) = device.back_packet else {
                         let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                         if timeout_reached {
@@ -341,6 +329,7 @@ impl HilState {
                         value,
                         penalty,
                         is_delegate,
+                        inspection_time,
                         ..
                     } = back_packet
                     {
@@ -391,6 +380,25 @@ impl HilState {
                             self.send_device_custom_message(
                                 device.id,
                                 format!("HIL Error DEL"),
+                                format!(
+                                    "T:{} S:{}",
+                                    device.current_test.unwrap_or(0),
+                                    device.current_step
+                                ),
+                            );
+                        }
+
+                        let solve_has_inspection = *inspection_time != 0;
+                        if inspection != solve_has_inspection {
+                            error!(
+                                self,
+                                "Wrong inspection value! Real: {solve_has_inspection} Expected: {inspection}"
+                            );
+                            device.remove_after = true;
+                            self.should_send_status = true;
+                            self.send_device_custom_message(
+                                device.id,
+                                format!("HIL Error INS"),
                                 format!(
                                     "T:{} S:{}",
                                     device.current_test.unwrap_or(0),
@@ -460,6 +468,10 @@ impl HilState {
                     penalty,
                     value,
                 } => {
+                    if let Some(time) = value {
+                        device.last_solve_time = *time;
+                    }
+
                     self.send_resp(
                         UnixResponseData::IncidentResolved {
                             esp_id: device.id,
@@ -467,7 +479,7 @@ impl HilState {
                             attempt: unix_utils::response::IncidentAttempt {
                                 session_id: "".to_string(),
                                 penalty: *penalty,
-                                value: *value,
+                                value: value.map(|v| v / 10),
                             },
                         },
                         None,

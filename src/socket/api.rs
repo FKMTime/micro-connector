@@ -68,17 +68,8 @@ pub async fn mark_attendance(esp_id: u32, card_id: u64) -> Result<(), UnixError>
     res
 }
 
-pub async fn send_snapshot_data(data: SnapshotData) -> Result<(), UnixError> {
-    let res = crate::UNIX_SOCKET
-        .send_tagged_request(UnixRequestData::Snapshot(data))
-        .await
-        .map(|_| ());
-
-    res
-}
-
-pub async fn send_test_ack(esp_id: u32) -> Result<(), UnixError> {
-    let data = UnixRequestData::TestAck { esp_id };
+pub async fn send_test_ack(esp_id: u32, snapshot: SnapshotData) -> Result<(), UnixError> {
+    let data = UnixRequestData::TestAck { esp_id, snapshot };
     crate::UNIX_SOCKET.send_async_request(data).await
 }
 

@@ -279,7 +279,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                 tag: None,
                 data: TimerPacketInner::DelegateResponse {
                     should_scan_cards,
-                    solve_time: attempt.value.map(|x| x * 10), // from cs to ms
+                    solve_time: attempt.value.map(|x| x * 10),
                     penalty: attempt.penalty,
                 },
             };
