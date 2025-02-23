@@ -1,0 +1,450 @@
+You have device that has 4buttons, one card scanner and one timer input. 
+
+The device is used to send timer data to remote server. User that is using the timer is called competitor. The user that is judging current competitor is called judge. Competitor can scan his card, and then can start its timer. After the timer ends the judge can select penalty for him and his time, after accept judge must scan his card, and after him competitor must scan his card - the order must be exactly like this, judge first, competitor second. If competitor has scanned his card (so even before timer finished) - delegate can ba called. If delegate is called the response must be given that can change current timer time and/or current penalty. Delegate can also reset whole time. If delegate wasn't called and competitor and judge scans theirs cards the device will reset its time and penalty and wait for another competitor. If competitor has multiple groups to be selected, after his first scan of card the group select menu will be shown, that show one group at the time that can be scrolled left/right with wrap around using left and right buttons (inspection button and penalty button). To select current group competitor must click submit button. The groups of user cannot be empty, there always will be at least one group. Competitor with only one group will automatically be selected his group. Competitor can also scan his card after the time is finished on timer. If competitor starts timer before card scan, the group select menu will be shown after his card scan. Each step is started exactly after previous step executes. Only SolveTime step sleeps for the timer time. If inspection starts please sleep for few seconds (like 3) to generate longer inspection time. Delegate cannot be called before if timer is currently running - so it can be called before timer start or after. If button is required to be pressed for 1s (for example dnf) press time should be slight larger like 1150). After delegate response (resolve) competitor cannot solve time - if shouldScanCards is true competitor and judge must scan their cards as normal, if this is false the state will be reset awaitng next competitor. Time confirmation is only possible by the submit button. Time is automatically confirmed after delegate response. If inspection is started before competitor card is scanned, inspection will start, and will function like normal - in that case you need to then start the timer and after time finishes scan competitor card.
+
+Buttons:
+1 - Inspection: This button starts inspection timer. Can be only pressed before final timer output time. Inspection time can be canceled by long pressing inspection button (1s). Inspection button also function as left button in group select scene.
+2 - Delegate: This button can be held to send call to delegate. This can only happen if first user (competitor) scanned his card. Delegate works in this way: You must hold it 3s or longer. If hold time is less, the action won't start. Delegate cannot be called if competitor didnt select group.
+3 - Submit: This button is used to confirm entered time results after the timer is finished. It also selects current group. This button also can be hold for 3s to reset current competitor. 
+4 - Penalty: This button is used to select current penalty for competitor after timer is finished. Penalty works in this way: It starts with 0, each press is adding +2, and it wraps around after 16 (8 presses). So if current penalty is 16 and there is another press - the penalty will be 0. So after 9 clicks it will be 0 again. This button can also be long pressed for 1s to select current time as -1 (also called DNF). This button also function as select right button in group select menu. After competitor scans card, defaulty group_selected_idx will be 0. Groups are indexed from 0. You need to confirm group selection using Submit button. Inspection time will be some only after inspection ends (so after timer starts the time).
+
+Your goal is to generate test case scenerios in JSON to test multiple outcomes. Only generate tests, do not copy groups, cards and buttons. You must place comments on each test step to know what are you doing. Here is example JSON with multiple test scenarios:
+
+```json
+{
+    "dumpStateAfterTest": false,
+    "groups": [
+        {
+            "groupId": "333-r1",
+            "useInspection": true,
+            "secondaryText": "3x3x3 - R1"
+        },
+        {
+            "groupId": "333-bf",
+            "useInspection": false,
+            "secondaryText": "3x3x3 - BF"
+        }
+    ],
+    "cards": {
+        "69420": {
+            "registrantId": 1,
+            "name": "Filip Dziurka",
+            "wcaId": "FILDZI01",
+            "canCompete": true,
+            "groups": ["333-r1"]
+        },
+        "3004425529": {
+            "registrantId": 0,
+            "name": "Filip Sciurka",
+            "wcaId": "FILSCI01",
+            "canCompete": true,
+            "groups": ["333-bf"]
+        },
+        "1264825046": {
+            "registrantId": 2,
+            "name": "Multi Group",
+            "wcaId": "FILSCI02",
+            "canCompete": true,
+            "groups": ["333-r1", "333-bf"]
+        }
+    },
+    "buttons": {
+        "penalty": 3,
+        "inspect": 0,
+        "delegate": 1,
+        "submit": 2
+    },
+    "tests": [
+        {
+            "name": "Test solve without inspection",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "inspect",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "Sleep",
+                    "data": 1000
+                },
+                {
+                    "type": "SolveTime"
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "VerifySnapshot",
+                    "data": [
+                        "inspection_time is none"
+                    ]
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": 4,
+                        "delegate": false
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Test solve with inspection",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "inspect",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "Sleep",
+                    "data": 1000
+                },
+                {
+                    "type": "SolveTime"
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "VerifySnapshot",
+                    "data": [
+                        "inspection_time is some"
+                    ]
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": 0,
+                        "delegate": false
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Test long inspection (DNF)",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "inspect",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "Sleep",
+                    "data": 17000
+                },
+                {
+                    "type": "SolveTime"
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "VerifySnapshot",
+                    "data": [
+                        "inspection_time > 17000",
+                        "solve_time is some"
+                    ]
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": -1,
+                        "delegate": false
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Test delegate",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "SolveTime"
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "delegate",
+                        "time": 3200,
+                        "ack": false
+                    }
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "delegate": true
+                    }
+                },
+                {
+                    "type": "DelegateResolve",
+                    "data": {
+                        "shouldScanCards": true,
+                        "penalty": 2
+                    }
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": 2,
+                        "delegate": false
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Test delegate 2",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "SolveTime"
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "delegate",
+                        "time": 3200,
+                        "ack": false
+                    }
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "delegate": true
+                    }
+                },
+                {
+                    "type": "DelegateResolve",
+                    "data": {
+                        "shouldScanCards": true,
+                        "penalty": 8,
+                        "value": 69420
+                    }
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": 69420,
+                        "penalty": 8,
+                        "delegate": false
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Test solve before scan",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "SolveTime"
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": 6,
+                        "delegate": false
+                    }
+                }
+            ]
+        }
+    ]
+}
+
+```
+
+Do not change give groups, cards and buttons, only generate tests based on these example tests. As you can see only competitor with card "1264825046" has multiple groups. 
+
+Possible test steps types:
+    Sleep(u64),
+    ScanCard(u64),
+    ResetState,
+
+    /// Simulate timer time (random)
+    SolveTime,
+    Button {
+        name: String,
+        time: u64,
+        ack: Option<bool>,
+    },
+    DelegateResolve {
+        should_scan_cards: bool,
+        penalty: Option<i64>,
+        value: Option<u64>,
+    },
+
+    VerifySend {
+        /// If none, this wont be checked,
+        /// if -1 this will check against random generated timer time,
+        /// if any other value this will check exact value
+        time: Option<i64>,
+
+        /// If none, this wont be checked,
+        /// If any value this will check exact value
+        penalty: Option<i64>,
+
+        /// If true this will check if delegate request was sent
+        delegate: bool,
+    },
+
+    /// List of dsl "queries"
+    VerifySnapshot(Vec<String>),
+
+DSL examples:
+time > 10 - time greater than 10
+time < 10 - time less than 10
+time == 10 - time equal 10
+penalty is some - penalty is any value
+penalty is none - penalty is null
+time_confirmed == true - timeconfirmed is true
+time == timer - time equal random generated time
+
+DSL keys (first argument):
+    pub scene: usize,
+    pub inspection_time: Option<u64>,
+    pub solve_time: Option<u64>,
+    pub penalty: Option<i8>,
+    pub time_confirmed: bool,
+    pub possible_groups: usize,
+    pub group_selected_idx: usize,
+    pub current_competitor: Option<u64>,
+    pub current_judge: Option<u64>,

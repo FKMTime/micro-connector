@@ -51,7 +51,7 @@ pub fn snapshot_dsl_check(
         "scene" => Some(snapshot.scene as i128),
         "inspection_time" => snapshot.inspection_time.map(|t| t as i128),
         "solve_time" => snapshot.solve_time.map(|t| t as i128),
-        "penalty" => Some(snapshot.penalty.unwrap_or(0) as i128),
+        "penalty" => snapshot.penalty.map(|p| p as i128),
         "time_confirmed" => Some(snapshot.time_confirmed as i128),
         "possible_groups" => Some(snapshot.possible_groups as i128),
         "group_selected_idx" => Some(snapshot.group_selected_idx as i128),
