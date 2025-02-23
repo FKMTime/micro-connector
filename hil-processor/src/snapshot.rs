@@ -4,7 +4,6 @@ pub use unix_utils::SnapshotData;
 pub fn snapshot_dsl_check(
     hil_state: &HilState,
     device: &HilDevice,
-    snapshot: &SnapshotData,
     check: &str,
 ) -> Result<bool, ()> {
     let dsl_split = check.split(" ").collect::<Vec<&str>>();
@@ -41,6 +40,11 @@ pub fn snapshot_dsl_check(
             }
         }),
         _ => DslOp::SmallerThan(0),
+    };
+
+    let Some(ref snapshot) = device.last_snapshot else {
+        crate::error!(hil_state, "Device doesnt have last snapshot!");
+        return Err(());
     };
 
     let value_to_check: Option<i128> = match dsl_split[0] {
@@ -114,7 +118,7 @@ mod tests {
 
     use super::*;
 
-    fn generate_state() -> (HilState, HilDevice, SnapshotData) {
+    fn generate_state() -> (HilState, HilDevice) {
         let state = HilState {
             tests: crate::structs::TestsRoot {
                 dump_state_after_test: false,
@@ -148,181 +152,194 @@ mod tests {
             current_step: 0,
             wait_for_ack: false,
             next_step_time: 0,
+            last_snapshot: Some(SnapshotData {
+                scene: 0,
+                inspection_time: None,
+                solve_time: None,
+                penalty: None,
+                time_confirmed: false,
+                possible_groups: 0,
+                group_selected_idx: 0,
+                current_competitor: None,
+                current_judge: None,
+            }),
         };
 
-        let snapshot = SnapshotData {
-            scene: 0,
-            inspection_time: None,
-            solve_time: None,
-            penalty: None,
-            time_confirmed: false,
-            possible_groups: 0,
-            group_selected_idx: 0,
-            current_competitor: None,
-            current_judge: None,
-        };
-
-        (state, device, snapshot)
+        (state, device)
     }
 
     #[test]
     fn test_smaller_than() {
-        let (state, device, mut snapshot) = generate_state();
-        snapshot.possible_groups = 1;
+        let (state, mut device) = generate_state();
+        if let Some(snapshot) = device.last_snapshot.as_mut() {
+            snapshot.possible_groups = 1;
+        }
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "possible_groups < 2"),
+            snapshot_dsl_check(&state, &device, "possible_groups < 2"),
             Ok(true)
         );
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "possible_groups < 1"),
+            snapshot_dsl_check(&state, &device, "possible_groups < 1"),
             Ok(false)
         );
     }
 
     #[test]
     fn test_greater_than() {
-        let (state, device, mut snapshot) = generate_state();
-        snapshot.group_selected_idx = 3;
+        let (state, mut device) = generate_state();
+        if let Some(snapshot) = device.last_snapshot.as_mut() {
+            snapshot.group_selected_idx = 3;
+        }
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "group_selected_idx > 2"),
+            snapshot_dsl_check(&state, &device, "group_selected_idx > 2"),
             Ok(true)
         );
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "group_selected_idx > 3"),
+            snapshot_dsl_check(&state, &device, "group_selected_idx > 3"),
             Ok(false)
         );
     }
 
     #[test]
     fn test_equal() {
-        let (state, device, mut snapshot) = generate_state();
-        snapshot.time_confirmed = true;
-        snapshot.solve_time = Some(69420); // same as device last solve time
+        let (state, mut device) = generate_state();
+        if let Some(snapshot) = device.last_snapshot.as_mut() {
+            snapshot.time_confirmed = true;
+            snapshot.solve_time = Some(69420); // same as device last solve time
+        }
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "time_confirmed == true"),
+            snapshot_dsl_check(&state, &device, "time_confirmed == true"),
             Ok(true)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "time_confirmed == 1"),
+            snapshot_dsl_check(&state, &device, "time_confirmed == 1"),
             Ok(true)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "time_confirmed == false"),
+            snapshot_dsl_check(&state, &device, "time_confirmed == false"),
             Ok(false)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "solve_time == 69420"),
+            snapshot_dsl_check(&state, &device, "solve_time == 69420"),
             Ok(true)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "solve_time == 12345"),
+            snapshot_dsl_check(&state, &device, "solve_time == 12345"),
             Ok(false)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "solve_time == timer"),
+            snapshot_dsl_check(&state, &device, "solve_time == timer"),
             Ok(true)
         );
 
-        snapshot.solve_time = Some(12345);
+        if let Some(snapshot) = device.last_snapshot.as_mut() {
+            snapshot.solve_time = Some(12345);
+        }
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "solve_time == timer"),
+            snapshot_dsl_check(&state, &device, "solve_time == timer"),
             Ok(false)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "penalty == 0"),
+            snapshot_dsl_check(&state, &device, "penalty == 0"),
             Ok(true)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "penalty == 1"),
+            snapshot_dsl_check(&state, &device, "penalty == 1"),
             Ok(false)
         );
     }
 
     #[test]
     fn test_notequal() {
-        let (state, device, mut snapshot) = generate_state();
-        snapshot.time_confirmed = true;
-        snapshot.solve_time = Some(69420); // same as device last solve time
+        let (state, mut device) = generate_state();
+        if let Some(snapshot) = device.last_snapshot.as_mut() {
+            snapshot.time_confirmed = true;
+            snapshot.solve_time = Some(69420); // same as device last solve time
+        }
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "time_confirmed != true"),
+            snapshot_dsl_check(&state, &device, "time_confirmed != true"),
             Ok(false)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "time_confirmed != 1"),
+            snapshot_dsl_check(&state, &device, "time_confirmed != 1"),
             Ok(false)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "time_confirmed != false"),
+            snapshot_dsl_check(&state, &device, "time_confirmed != false"),
             Ok(true)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "solve_time != 69420"),
+            snapshot_dsl_check(&state, &device, "solve_time != 69420"),
             Ok(false)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "solve_time != 12345"),
+            snapshot_dsl_check(&state, &device, "solve_time != 12345"),
             Ok(true)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "solve_time != timer"),
+            snapshot_dsl_check(&state, &device, "solve_time != timer"),
             Ok(false)
         );
 
-        snapshot.solve_time = Some(12345);
+        if let Some(snapshot) = device.last_snapshot.as_mut() {
+            snapshot.solve_time = Some(12345);
+        }
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "solve_time != timer"),
+            snapshot_dsl_check(&state, &device, "solve_time != timer"),
             Ok(true)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "penalty != 0"),
+            snapshot_dsl_check(&state, &device, "penalty != 0"),
             Ok(false)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "penalty != 1"),
+            snapshot_dsl_check(&state, &device, "penalty != 1"),
             Ok(true)
         );
     }
 
     #[test]
     fn test_is() {
-        let (state, device, mut snapshot) = generate_state();
-        snapshot.inspection_time = Some(123);
+        let (state, mut device) = generate_state();
+        if let Some(snapshot) = device.last_snapshot.as_mut() {
+            snapshot.inspection_time = Some(123);
+        }
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "inspection_time is some"),
+            snapshot_dsl_check(&state, &device, "inspection_time is some"),
             Ok(true)
         );
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "inspection_time is none"),
+            snapshot_dsl_check(&state, &device, "inspection_time is none"),
             Ok(false)
         );
 
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "solve_time is some"),
+            snapshot_dsl_check(&state, &device, "solve_time is some"),
             Ok(false)
         );
         assert_eq!(
-            snapshot_dsl_check(&state, &device, &snapshot, "solve_time is none"),
+            snapshot_dsl_check(&state, &device, "solve_time is none"),
             Ok(true)
         );
     }

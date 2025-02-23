@@ -8,8 +8,8 @@ use unix_utils::{
 };
 
 pub use structs::{HilDevice, HilState};
-pub mod structs;
 pub mod snapshot;
+pub mod structs;
 
 #[allow(unused_macros)]
 #[macro_export]
@@ -55,6 +55,7 @@ impl HilDevice {
     pub fn new(id: u32) -> HilDevice {
         HilDevice {
             id,
+            last_snapshot: None,
             current_test: None,
             back_packet: None,
             current_step: 0,
@@ -73,6 +74,8 @@ impl HilDevice {
 impl HilState {
     pub fn feed(&mut self, packet: Option<UnixRequest>) -> Result<()> {
         if let Some(packet) = packet {
+            trace!(self, "Feed: {packet:?}");
+
             match packet.data {
                 UnixRequestData::RequestToConnectDevice { esp_id, .. } => {
                     let dev = self.devices.iter().find(|d| d.id == esp_id);
@@ -138,13 +141,10 @@ impl HilState {
                 UnixRequestData::UpdateBatteryPercentage { .. } => {
                     self.send_resp(UnixResponseData::Empty, packet.tag, false);
                 }
-                UnixRequestData::TestAck {
-                    esp_id,
-                    ref snapshot,
-                } => {
-                    // TODO: set snapshot for device.
+                UnixRequestData::TestAck { esp_id, snapshot } => {
                     let dev = self.devices.iter_mut().find(|d| d.id == esp_id);
                     if let Some(dev) = dev {
+                        dev.last_snapshot = Some(snapshot);
                         dev.wait_for_ack = false;
                         dev.next_step_time = (self.get_ms)() + 250;
                     }
@@ -153,8 +153,6 @@ impl HilState {
                     self.send_resp(UnixResponseData::Empty, packet.tag, false);
                 }
             }
-
-            trace!(self, "{packet:?}");
         }
 
         Ok(())
@@ -298,13 +296,11 @@ impl HilState {
                         self.should_send_status = true;
                     }
                 }
-                TestStep::VerifySolveTime {
-                    time,
+                TestStep::VerifySend {
+                    time: time_to_check,
                     penalty: penalty_to_check,
-                    inspection,
+                    delegate: was_delegate,
                 } => {
-                    let inspection = inspection.unwrap_or(false);
-
                     let Some(ref back_packet) = device.back_packet else {
                         let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                         if timeout_reached {
@@ -329,48 +325,55 @@ impl HilState {
                         value,
                         penalty,
                         is_delegate,
-                        inspection_time,
                         ..
                     } = back_packet
                     {
-                        let time_to_check = time.unwrap_or(device.last_solve_time) / 10;
-                        if *value != time_to_check {
-                            error!(
-                                self,
-                                "Wrong time value! Real: {value} Expected: {time_to_check}"
-                            );
-                            device.remove_after = true;
-                            self.should_send_status = true;
-                            self.send_device_custom_message(
-                                device.id,
-                                format!("HIL Error TIME"),
-                                format!(
-                                    "T:{} S:{} {value}/{time_to_check}",
-                                    device.current_test.unwrap_or(0),
-                                    device.current_step
-                                ),
-                            );
+                        if let Some(mut time_to_check) = time_to_check {
+                            if time_to_check == -1 {
+                                time_to_check = device.last_solve_time as i64;
+                            }
+
+                            time_to_check /= 10;
+                            if *value != time_to_check as u64 {
+                                error!(
+                                    self,
+                                    "Wrong time value! Real: {value} Expected: {time_to_check}"
+                                );
+                                device.remove_after = true;
+                                self.should_send_status = true;
+                                self.send_device_custom_message(
+                                    device.id,
+                                    format!("HIL Error TIME"),
+                                    format!(
+                                        "T:{} S:{} {value}/{time_to_check}",
+                                        device.current_test.unwrap_or(0),
+                                        device.current_step
+                                    ),
+                                );
+                            }
                         }
 
-                        if *penalty != *penalty_to_check {
-                            error!(
+                        if let Some(penalty_to_check) = penalty_to_check {
+                            if *penalty != *penalty_to_check {
+                                error!(
                                 self,
                                 "Wrong penalty value! Real: {penalty} Expected: {penalty_to_check}"
                             );
-                            device.remove_after = true;
-                            self.should_send_status = true;
-                            self.send_device_custom_message(
-                                device.id,
-                                format!("HIL Error PEN"),
-                                format!(
-                                    "T:{} S:{} {penalty}/{penalty_to_check}",
-                                    device.current_test.unwrap_or(0),
-                                    device.current_step
-                                ),
-                            );
+                                device.remove_after = true;
+                                self.should_send_status = true;
+                                self.send_device_custom_message(
+                                    device.id,
+                                    format!("HIL Error PEN"),
+                                    format!(
+                                        "T:{} S:{} {penalty}/{penalty_to_check}",
+                                        device.current_test.unwrap_or(0),
+                                        device.current_step
+                                    ),
+                                );
+                            }
                         }
 
-                        if *is_delegate {
+                        if *is_delegate != *was_delegate {
                             error!(
                                 self,
                                 "Wrong is_delegate value! Real: {is_delegate} Expected: false"
@@ -387,75 +390,8 @@ impl HilState {
                                 ),
                             );
                         }
-
-                        let solve_has_inspection = *inspection_time != 0;
-                        if inspection != solve_has_inspection {
-                            error!(
-                                self,
-                                "Wrong inspection value! Real: {solve_has_inspection} Expected: {inspection}"
-                            );
-                            device.remove_after = true;
-                            self.should_send_status = true;
-                            self.send_device_custom_message(
-                                device.id,
-                                format!("HIL Error INS"),
-                                format!(
-                                    "T:{} S:{}",
-                                    device.current_test.unwrap_or(0),
-                                    device.current_step
-                                ),
-                            );
-                        }
                     } else {
                         error!(self, "Wrong packet, cant verify solve time!");
-                        device.remove_after = true;
-                        self.should_send_status = true;
-                    }
-
-                    device.current_step += 1;
-                    device.back_packet = None;
-                }
-                TestStep::VerifyDelegateSent => {
-                    let Some(ref back_packet) = device.back_packet else {
-                        let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
-                        if timeout_reached {
-                            error!(self, "TIMEOUT REACHED 3! ({})", device.id);
-                            device.remove_after = true;
-                            self.should_send_status = true;
-                            self.send_device_custom_message(
-                                device.id,
-                                format!("HIL Error VDS"),
-                                format!(
-                                    "T:{} S:{}",
-                                    device.current_test.unwrap_or(0),
-                                    device.current_step
-                                ),
-                            );
-                        }
-
-                        continue;
-                    };
-
-                    if let UnixRequestData::EnterAttempt { is_delegate, .. } = back_packet {
-                        if !is_delegate {
-                            error!(
-                                self,
-                                "Wrong is_delegate value! Real: {is_delegate} Expected: true"
-                            );
-                            device.remove_after = true;
-                            self.should_send_status = true;
-                            self.send_device_custom_message(
-                                device.id,
-                                format!("HIL Error DEL"),
-                                format!(
-                                    "T:{} S:{}",
-                                    device.current_test.unwrap_or(0),
-                                    device.current_step
-                                ),
-                            );
-                        }
-                    } else {
-                        error!(self, "Wrong packet, cant verify delegate!");
                         device.remove_after = true;
                         self.should_send_status = true;
                     }
@@ -487,6 +423,25 @@ impl HilState {
                     );
 
                     device.current_step += 1;
+                }
+                TestStep::VerifySnapshot(queries) => {
+                    for query in queries {
+                        if snapshot::snapshot_dsl_check(&self, device, &query) != Ok(true) {
+                            error!(self, "HIL query failed: {query}");
+                            device.remove_after = true;
+                            self.should_send_status = true;
+                            self.send_device_custom_message(
+                                device.id,
+                                format!("HIL Error QUERY"),
+                                format!("{query}",),
+                            );
+
+                            continue;
+                        }
+                    }
+
+                    device.current_step += 1;
+                    device.next_step_time = (self.get_ms)();
                 }
                 #[allow(unreachable_patterns)]
                 _ => {

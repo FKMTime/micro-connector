@@ -29,10 +29,10 @@
         },
         "1264825046": {
             "registrantId": 2,
-            "name": "Filip Sciurka 1234567890",
+            "name": "Multi Group",
             "wcaId": "FILSCI02",
             "canCompete": true,
-            "groups": ["333-r1"]
+            "groups": ["333-r1", "333-bf"]
         }
     },
     "buttons": {
@@ -43,7 +43,7 @@
     },
     "tests": [
         {
-            "name": "Test random solve",
+            "name": "Test solve without inspection",
             "sleepBetween": 500,
             "steps": [
                 {
@@ -51,11 +51,18 @@
                     "data": 3004425529
                 },
                 {
-                    "type": "Sleep",
-                    "data": 100
+                    "type": "Button",
+                    "data": {
+                        "name": "inspect",
+                        "time": 150
+                    }
                 },
                 {
-                    "type": "SolveTimeRng"
+                    "type": "Sleep",
+                    "data": 1000
+                },
+                {
+                    "type": "SolveTime"
                 },
                 {
                     "type": "Button",
@@ -79,6 +86,12 @@
                     }
                 },
                 {
+                    "type": "VerifySnapshot",
+                    "data": [
+                        "inspection_time is none"
+                    ]
+                },
+                {
                     "type": "ScanCard",
                     "data": 69420
                 },
@@ -87,35 +100,36 @@
                     "data": 3004425529
                 },
                 {
-                    "type": "VerifySolveTime",
+                    "type": "VerifySend",
                     "data": {
-                        "penalty": 4
+                        "time": -1,
+                        "penalty": 4,
+                        "delegate": false
                     }
                 }
             ]
         },
         {
-            "name": "Test solve",
+            "name": "Test solve with inspection",
             "sleepBetween": 500,
             "steps": [
                 {
                     "type": "ScanCard",
-                    "data": 3004425529
-                },
-                {
-                    "type": "Sleep",
-                    "data": 100
-                },
-                {
-                    "type": "SolveTime",
-                    "data": 12345
+                    "data": 69420
                 },
                 {
                     "type": "Button",
                     "data": {
-                        "name": "penalty",
+                        "name": "inspect",
                         "time": 150
                     }
+                },
+                {
+                    "type": "Sleep",
+                    "data": 1000
+                },
+                {
+                    "type": "SolveTime"
                 },
                 {
                     "type": "Button",
@@ -125,18 +139,132 @@
                     }
                 },
                 {
-                    "type": "ScanCard",
-                    "data": 69420
+                    "type": "VerifySnapshot",
+                    "data": [
+                        "inspection_time is some"
+                    ]
                 },
                 {
                     "type": "ScanCard",
                     "data": 3004425529
                 },
                 {
-                    "type": "VerifySolveTime",
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "VerifySend",
                     "data": {
-                        "time": 12345,
-                        "penalty": 2
+                        "time": -1,
+                        "penalty": 0,
+                        "delegate": false
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Test long inspection (15s)",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "inspect",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "Sleep",
+                    "data": 15000
+                },
+                {
+                    "type": "SolveTime"
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "VerifySnapshot",
+                    "data": [
+                        "inspection_time > 15000"
+                    ]
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": 2,
+                        "delegate": false
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Test long inspection (DNF)",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "inspect",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "Sleep",
+                    "data": 17000
+                },
+                {
+                    "type": "SolveTime"
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                },
+                {
+                    "type": "VerifySnapshot",
+                    "data": [
+                        "inspection_time > 17000",
+                        "solve_time is some"
+                    ]
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": -1,
+                        "delegate": false
                     }
                 }
             ]
@@ -150,7 +278,7 @@
                     "data": 3004425529
                 },
                 {
-                    "type": "SolveTimeRng"
+                    "type": "SolveTime"
                 },
                 {
                     "type": "Button",
@@ -161,7 +289,10 @@
                     }
                 },
                 {
-                    "type": "VerifyDelegateSent"
+                    "type": "VerifySend",
+                    "data": {
+                        "delegate": true
+                    }
                 },
                 {
                     "type": "DelegateResolve",
@@ -179,9 +310,11 @@
                     "data": 3004425529
                 },
                 {
-                    "type": "VerifySolveTime",
+                    "type": "VerifySend",
                     "data": {
-                        "penalty": 2
+                        "time": -1,
+                        "penalty": 2,
+                        "delegate": false
                     }
                 }
             ]
@@ -191,7 +324,7 @@
             "sleepBetween": 500,
             "steps": [
                 {
-                    "type": "SolveTimeRng"
+                    "type": "SolveTime"
                 },
                 {
                     "type": "ScanCard",
@@ -234,9 +367,11 @@
                     "data": 69420
                 },
                 {
-                    "type": "VerifySolveTime",
+                    "type": "VerifySend",
                     "data": {
-                        "penalty": 6
+                        "time": -1,
+                        "penalty": 6,
+                        "delegate": false
                     }
                 }
             ]

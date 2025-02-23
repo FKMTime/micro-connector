@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use unix_utils::{
     request::UnixRequestData,
     response::{CompetitionStatusResp, PossibleGroup, UnixResponse},
+    SnapshotData,
 };
 
 #[derive(Clone)]
@@ -22,6 +23,7 @@ pub struct HilState {
 #[derive(Clone)]
 pub struct HilDevice {
     pub id: u32,
+    pub last_snapshot: Option<SnapshotData>,
     pub back_packet: Option<UnixRequestData>,
     pub next_step_time: u64,
 
@@ -80,6 +82,8 @@ pub enum TestStep {
     Sleep(u64),
     ScanCard(u64),
     ResetState,
+
+    /// Simulate timer time (random)
     SolveTime,
     Button {
         name: String,
@@ -92,12 +96,20 @@ pub enum TestStep {
         value: Option<u64>,
     },
 
-    // verifiers
-    VerifySolveTime {
-        time: Option<u64>,
-        penalty: i64,
-        inspection: Option<bool>,
+    VerifySend {
+        /// If none, this wont be checked,
+        /// if -1 this will check against random generated timer time,
+        /// if any other value this will check exact value
+        time: Option<i64>,
+
+        /// If none, this wont be checked,
+        /// If any value this will check exact value
+        penalty: Option<i64>,
+
+        /// If true this will check if delegate request was sent
+        delegate: bool,
     },
-    VerifyDelegateSent,
-    // TODO: VerifySnapshotState (with options like in delegate)
+
+    /// List of dsl "queries"
+    VerifySnapshot(Vec<String>),
 }
