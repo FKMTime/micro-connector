@@ -510,6 +510,479 @@
                     
                 }
             ]
+        },
+        {
+            "name": "Test delegate call before timer starts",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "delegate",
+                        "time": 3200,
+                        "ack": false
+                    }
+                    
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "delegate": true
+                    }
+                    
+                },
+                {
+                    "type": "DelegateResolve",
+                    "data": {
+                        "shouldScanCards": true,
+                        "penalty": 4,
+                        "value": null
+                    }
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                    
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": 4,
+                        "delegate": false
+                    }
+                    
+                }
+            ]
+        },
+        {
+            "name": "Test group selection wraparound",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 1264825046
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty", 
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty", 
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "VerifySnapshot",
+                    "data": [
+                        "group_selected_idx == 0",
+                        "possible_groups == 2"
+                    ]
+                    
+                },
+                {
+                    "type": "SolveTime"
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 1264825046
+                    
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": 0,
+                        "delegate": false
+                    }
+                    
+                }
+            ]
+        },
+        {
+            "name": "Test short delegate press ignored",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                    
+                },
+                {
+                    "type": "SolveTime"
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "delegate",
+                        "time": 2000,
+                        "ack": false
+                    }
+                    
+                },
+                {
+                    "type": "VerifySnapshot",
+                    "data": [
+                        "solve_time is some",
+                        "time_confirmed == false"
+                    ]
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                    
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": 0,
+                        "delegate": false
+                    }
+                    
+                }
+            ]
+        },
+        {
+            "name": "Test delegate during running timer ignored",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                    
+                },
+                {
+                    "type": "SolveTime"
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "delegate",
+                        "time": 3200,
+                        "ack": false
+                    }
+                    
+                },
+                {
+                    "type": "Sleep",
+                    "data": 1000
+                    
+                },
+                {
+                    "type": "VerifySnapshot",
+                    "data": [
+                        "solve_time is some",
+                        "time_confirmed == false"
+                    ]
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                    
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": 0,
+                        "delegate": false
+                    }
+                    
+                }
+            ]
+        },
+        {
+            "name": "Test multiple group competitor scans after timer",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "SolveTime"
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 1264825046
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "inspect", 
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "submit",
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "VerifySnapshot",
+                    "data": [
+                        "group_selected_idx == 0",
+                        "penalty == 2"
+                    ]
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 1264825046
+                    
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": 2,
+                        "delegate": false
+                    }
+                    
+                }
+            ]
+        },
+        {
+            "name": "Test inspection and delegate after timer",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "inspect",
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "Sleep",
+                    "data": 3000
+                    
+                },
+                {
+                    "type": "SolveTime"
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "delegate",
+                        "time": 3200,
+                        "ack": false
+                    }
+                    
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "delegate": true
+                    }
+                    
+                },
+                {
+                    "type": "DelegateResolve",
+                    "data": {
+                        "shouldScanCards": true,
+                        "penalty": 6,
+                        "value": 12345
+                    }
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                    
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": 12345,
+                        "penalty": 6,
+                        "delegate": false
+                    }
+                    
+                }
+            ]
+        },
+        {
+            "name": "Test penalty override by delegate",
+            "sleepBetween": 500,
+            "steps": [
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                    
+                },
+                {
+                    "type": "SolveTime"
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 150
+                    }
+                    
+                },
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "delegate",
+                        "time": 3200,
+                        "ack": false
+                    }
+                    
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "delegate": true
+                    }
+                    
+                },
+                {
+                    "type": "DelegateResolve",
+                    "data": {
+                        "shouldScanCards": true,
+                        "penalty": 10,
+                        "value": null
+                    }
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 69420
+                    
+                },
+                {
+                    "type": "ScanCard",
+                    "data": 3004425529
+                    
+                },
+                {
+                    "type": "VerifySend",
+                    "data": {
+                        "time": -1,
+                        "penalty": 10,
+                        "delegate": false
+                    }
+                    
+                }
+            ]
         }
     ]
 }
