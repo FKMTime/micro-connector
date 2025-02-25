@@ -32,9 +32,7 @@ pub struct HilDevice {
     pub wait_for_ack: bool,
 
     pub last_test: usize,
-
     pub last_solve_time: u64,
-    pub remove_after: bool,
 
     pub completed_count: usize,
 }

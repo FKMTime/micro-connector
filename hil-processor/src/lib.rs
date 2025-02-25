@@ -65,7 +65,6 @@ impl HilDevice {
             last_test: usize::MAX,
 
             last_solve_time: 0,
-            remove_after: false,
             completed_count: 0,
         }
     }
@@ -160,319 +159,254 @@ impl HilState {
 
     pub fn process(&mut self) -> Result<Vec<UnixResponse>> {
         if self.should_send_status {
-            self.devices = self
-                .devices
-                .iter()
-                .filter(|d| !d.remove_after)
-                .cloned()
-                .collect();
-
             self.send_status_resp();
             self.should_send_status = false;
         }
 
-        let mut devices_clone = self.devices.clone();
-        for device in &mut devices_clone {
-            if device.wait_for_ack {
-                let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
-                if timeout_reached {
-                    error!(self, "TIMEOUT REACHED! 1 ({})", device.id);
-                    device.remove_after = true;
-                    self.should_send_status = true;
-                    self.send_device_custom_message(
-                        device.id,
-                        format!("HIL Error ACK"),
-                        format!(
-                            "T:{} S:{}",
-                            device.current_test.unwrap_or(0),
-                            device.current_step
-                        ),
-                    );
-                }
+        for i in (0..self.devices.len()).rev() {
+            let mut device = self.devices[i].clone();
+            let dev_res = self.process_device(&mut device);
+            if let Err(e) = dev_res {
+                error!(self, "process_device error: {e:?}");
 
-                continue;
-            }
-
-            if device.next_step_time > (self.get_ms)() {
-                continue;
-            }
-
-            // get new test (currently first one)
-            if device.current_test.is_none() {
-                let mut next_idx: usize = rand::rng().random_range(0..self.tests.tests.len());
-                if next_idx == device.last_test {
-                    next_idx += 1;
-                    if next_idx >= self.tests.tests.len() {
-                        next_idx = 0;
-                    }
-                }
-
-                info!(
-                    self,
-                    "Startin new test({}): {}", device.id, self.tests.tests[next_idx].name
-                );
-
-                device.current_test = Some(next_idx);
-                device.current_step = 0;
-                device.next_step_time = (self.get_ms)();
-                device.last_test = next_idx;
-            }
-
-            let Some(current_step) = &self.tests.tests[device.current_test.unwrap_or(0)]
-                .steps
-                .get(device.current_step)
-                .cloned()
-            else {
-                self.completed_count += 1;
-                device.completed_count += 1;
-                info!(
-                    self,
-                    "Test end! ({}) [{}] [{}]",
-                    device.id,
-                    device.completed_count,
-                    self.completed_count
-                );
-
-                device.current_test = None;
-                continue;
-            };
-
-            trace!(
-                self,
-                " > Running step: {current_step:?} (esp_id: {})",
-                device.id
-            );
-
-            match current_step {
-                TestStep::Sleep(ms) => {
-                    device.current_step += 1;
-                    device.next_step_time = (self.get_ms)() + ms;
-                    continue; // to skip sleep_between after
-                }
-                TestStep::ResetState => {
-                    self.send_test_packet(device.id, TestPacketData::ResetState);
-
-                    device.wait_for_ack = true;
-                    device.current_step += 1;
-                    device.next_step_time = (self.get_ms)();
-                }
-                TestStep::SolveTime => {
-                    let random_time: u64 = rand::rng().random_range(501..14132);
-
-                    self.send_test_packet(device.id, TestPacketData::StackmatTime(random_time));
-
-                    device.wait_for_ack = true;
-                    device.last_solve_time = random_time;
-                    device.current_step += 1;
-                    device.next_step_time = (self.get_ms)() + random_time;
-                }
-                TestStep::ScanCard(card_id) => {
-                    self.send_test_packet(device.id, TestPacketData::ScanCard(*card_id));
-
-                    device.wait_for_ack = true;
-                    device.current_step += 1;
-                    device.next_step_time = (self.get_ms)();
-                }
-                TestStep::Button { name, time, ack } => {
-                    let pin = self.tests.buttons.get(name);
-                    if let Some(&pin) = pin {
-                        self.send_test_packet(
-                            device.id,
-                            TestPacketData::ButtonPress {
-                                pin,
-                                press_time: *time,
-                            },
-                        );
-
-                        if *ack != Some(false) {
-                            device.wait_for_ack = true;
-                        }
-
-                        device.current_step += 1;
-                        device.next_step_time = (self.get_ms)() + *time;
-                    } else {
-                        error!(self, "Wrong button name");
-                        device.remove_after = true;
-                        self.should_send_status = true;
-                    }
-                }
-                TestStep::VerifySend {
-                    time: time_to_check,
-                    penalty: penalty_to_check,
-                    delegate: was_delegate,
-                } => {
-                    let Some(ref back_packet) = device.back_packet else {
-                        let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
-                        if timeout_reached {
-                            error!(self, "TIMEOUT REACHED 2! ({})", device.id);
-                            device.remove_after = true;
-                            self.should_send_status = true;
-                            self.send_device_custom_message(
-                                device.id,
-                                format!("HIL Error VST"),
-                                format!(
-                                    "T:{} S:{}",
-                                    device.current_test.unwrap_or(0),
-                                    device.current_step
-                                ),
-                            );
-                        }
-
-                        continue;
-                    };
-
-                    if let UnixRequestData::EnterAttempt {
-                        value,
-                        penalty,
-                        is_delegate,
-                        ..
-                    } = back_packet
-                    {
-                        if let Some(mut time_to_check) = time_to_check {
-                            if time_to_check == -1 {
-                                time_to_check = device.last_solve_time as i64;
-                            }
-
-                            time_to_check /= 10;
-                            if *value != time_to_check as u64 {
-                                error!(
-                                    self,
-                                    "Wrong time value! Real: {value} Expected: {time_to_check}"
-                                );
-                                device.remove_after = true;
-                                self.should_send_status = true;
-                                self.send_device_custom_message(
-                                    device.id,
-                                    format!("HIL Error TIME"),
-                                    format!(
-                                        "T:{} S:{} {value}/{time_to_check}",
-                                        device.current_test.unwrap_or(0),
-                                        device.current_step
-                                    ),
-                                );
-                            }
-                        }
-
-                        if let Some(penalty_to_check) = penalty_to_check {
-                            if *penalty != *penalty_to_check {
-                                error!(
-                                self,
-                                "Wrong penalty value! Real: {penalty} Expected: {penalty_to_check}"
-                            );
-                                device.remove_after = true;
-                                self.should_send_status = true;
-                                self.send_device_custom_message(
-                                    device.id,
-                                    format!("HIL Error PEN"),
-                                    format!(
-                                        "T:{} S:{} {penalty}/{penalty_to_check}",
-                                        device.current_test.unwrap_or(0),
-                                        device.current_step
-                                    ),
-                                );
-                            }
-                        }
-
-                        if *is_delegate != *was_delegate {
-                            error!(
-                                self,
-                                "Wrong is_delegate value! Real: {is_delegate} Expected: false"
-                            );
-                            device.remove_after = true;
-                            self.should_send_status = true;
-                            self.send_device_custom_message(
-                                device.id,
-                                format!("HIL Error DEL"),
-                                format!(
-                                    "T:{} S:{}",
-                                    device.current_test.unwrap_or(0),
-                                    device.current_step
-                                ),
-                            );
-                        }
-                    } else {
-                        error!(self, "Wrong packet, cant verify solve time!");
-                        device.remove_after = true;
-                        self.should_send_status = true;
-                    }
-
-                    device.current_step += 1;
-                    device.back_packet = None;
-                }
-                TestStep::DelegateResolve {
-                    should_scan_cards,
-                    penalty,
-                    value,
-                } => {
-                    if let Some(time) = value {
-                        device.last_solve_time = *time;
-                    }
-
-                    self.send_resp(
-                        UnixResponseData::IncidentResolved {
-                            esp_id: device.id,
-                            should_scan_cards: *should_scan_cards,
-                            attempt: unix_utils::response::IncidentAttempt {
-                                session_id: "".to_string(),
-                                penalty: *penalty,
-                                value: value.map(|v| v / 10),
-                            },
-                        },
-                        None,
-                        false,
-                    );
-
-                    device.current_step += 1;
-                }
-                TestStep::VerifySnapshot(queries) => {
-                    for query in queries {
-                        if snapshot::snapshot_dsl_check(&self, device, &query) != Ok(true) {
-                            error!(self, "HIL query failed: {query}");
-                            device.remove_after = true;
-                            self.should_send_status = true;
-                            self.send_device_custom_message(
-                                device.id,
-                                format!("HIL Error QUERY"),
-                                format!("{query}",),
-                            );
-
-                            continue;
-                        }
-                    }
-
-                    device.current_step += 1;
-                    device.next_step_time = (self.get_ms)();
-                }
-                #[allow(unreachable_patterns)]
-                _ => {
-                    error!(self, "Step not matched! {current_step:?}");
-                }
-            }
-
-            device.next_step_time +=
-                self.tests.tests[device.current_test.unwrap_or(0)].sleep_between;
-
-            // timeout = 5s
-            let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
-            if timeout_reached {
-                error!(self, "TIMEOUT REACHED 4! ({})", device.id);
-                device.remove_after = true;
-                self.should_send_status = true;
+                let device = &self.devices[i];
                 self.send_device_custom_message(
                     device.id,
-                    format!("HIL Error MISC"),
                     format!(
-                        "T:{} S:{}",
+                        "HIL Error {}/{}",
                         device.current_test.unwrap_or(0),
                         device.current_step
                     ),
+                    format!("{e:?}",),
                 );
-                continue;
+
+                self.devices.remove(i);
+                self.should_send_status = true;
+            } else {
+                self.devices[i] = device;
             }
         }
 
-        self.devices = devices_clone;
         Ok(self.packet_queue.drain(..).collect())
+    }
+
+    fn process_device(&mut self, device: &mut HilDevice) -> Result<(), ()> {
+        if device.wait_for_ack {
+            let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
+            if timeout_reached {
+                return Err(());
+            }
+
+            return Ok(());
+        }
+
+        if device.next_step_time > (self.get_ms)() {
+            return Ok(());
+        }
+
+        if device.current_test.is_none() {
+            let mut next_idx: usize = rand::rng().random_range(0..self.tests.tests.len());
+            if next_idx == device.last_test {
+                next_idx += 1;
+                if next_idx >= self.tests.tests.len() {
+                    next_idx = 0;
+                }
+            }
+
+            info!(
+                self,
+                "Startin new test({}): {}", device.id, self.tests.tests[next_idx].name
+            );
+
+            device.current_test = Some(next_idx);
+            device.current_step = 0;
+            device.next_step_time = (self.get_ms)();
+            device.last_test = next_idx;
+        }
+
+        let Some(current_step) = &self.tests.tests[device.current_test.unwrap_or(0)]
+            .steps
+            .get(device.current_step)
+            .cloned()
+        else {
+            self.completed_count += 1;
+            device.completed_count += 1;
+            info!(
+                self,
+                "Test end! ({}) [{}] [{}]", device.id, device.completed_count, self.completed_count
+            );
+
+            device.current_test = None;
+            return Ok(());
+        };
+
+        trace!(
+            self,
+            " > Running step: {current_step:?} (esp_id: {})",
+            device.id
+        );
+
+        match current_step {
+            TestStep::Sleep(ms) => {
+                device.current_step += 1;
+                device.next_step_time = (self.get_ms)() + ms;
+                return Ok(());
+            }
+            TestStep::ResetState => {
+                self.send_test_packet(device.id, TestPacketData::ResetState);
+
+                device.wait_for_ack = true;
+                device.current_step += 1;
+                device.next_step_time = (self.get_ms)();
+            }
+            TestStep::SolveTime => {
+                let random_time: u64 = rand::rng().random_range(501..14132);
+
+                self.send_test_packet(device.id, TestPacketData::StackmatTime(random_time));
+
+                device.wait_for_ack = true;
+                device.last_solve_time = random_time;
+                device.current_step += 1;
+                device.next_step_time = (self.get_ms)() + random_time;
+            }
+            TestStep::ScanCard(card_id) => {
+                self.send_test_packet(device.id, TestPacketData::ScanCard(*card_id));
+
+                device.wait_for_ack = true;
+                device.current_step += 1;
+                device.next_step_time = (self.get_ms)();
+            }
+            TestStep::Button { name, time, ack } => {
+                let pin = self.tests.buttons.get(name);
+                if let Some(&pin) = pin {
+                    self.send_test_packet(
+                        device.id,
+                        TestPacketData::ButtonPress {
+                            pin,
+                            press_time: *time,
+                        },
+                    );
+
+                    if *ack != Some(false) {
+                        device.wait_for_ack = true;
+                    }
+
+                    device.current_step += 1;
+                    device.next_step_time = (self.get_ms)() + *time;
+                } else {
+                    error!(self, "Wrong button name");
+                    return Err(());
+                }
+            }
+            TestStep::VerifySend {
+                time: time_to_check,
+                penalty: penalty_to_check,
+                delegate: was_delegate,
+            } => {
+                let Some(ref back_packet) = device.back_packet else {
+                    let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
+                    if timeout_reached {
+                        return Err(());
+                    }
+
+                    return Ok(());
+                };
+
+                if let UnixRequestData::EnterAttempt {
+                    value,
+                    penalty,
+                    is_delegate,
+                    ..
+                } = back_packet
+                {
+                    if let Some(mut time_to_check) = time_to_check {
+                        if time_to_check == -1 {
+                            time_to_check = device.last_solve_time as i64;
+                        }
+
+                        time_to_check /= 10;
+                        if *value != time_to_check as u64 {
+                            error!(
+                                self,
+                                "Wrong time value! Real: {value} Expected: {time_to_check}"
+                            );
+
+                            return Err(());
+                        }
+                    }
+
+                    if let Some(penalty_to_check) = penalty_to_check {
+                        if *penalty != *penalty_to_check {
+                            error!(
+                                self,
+                                "Wrong penalty value! Real: {penalty} Expected: {penalty_to_check}"
+                            );
+
+                            return Err(());
+                        }
+                    }
+
+                    if *is_delegate != *was_delegate {
+                        error!(
+                            self,
+                            "Wrong is_delegate value! Real: {is_delegate} Expected: false"
+                        );
+
+                        return Err(());
+                    }
+                } else {
+                    error!(self, "Wrong packet, cant verify solve time!");
+                    return Err(());
+                }
+
+                device.current_step += 1;
+                device.back_packet = None;
+            }
+            TestStep::DelegateResolve {
+                should_scan_cards,
+                penalty,
+                value,
+            } => {
+                if let Some(time) = value {
+                    device.last_solve_time = *time;
+                }
+
+                self.send_resp(
+                    UnixResponseData::IncidentResolved {
+                        esp_id: device.id,
+                        should_scan_cards: *should_scan_cards,
+                        attempt: unix_utils::response::IncidentAttempt {
+                            session_id: "".to_string(),
+                            penalty: *penalty,
+                            value: value.map(|v| v / 10),
+                        },
+                    },
+                    None,
+                    false,
+                );
+
+                device.current_step += 1;
+            }
+            TestStep::VerifySnapshot(queries) => {
+                for query in queries {
+                    if snapshot::snapshot_dsl_check(&self, device, &query) != Ok(true) {
+                        error!(self, "HIL query failed: {query}");
+                        return Err(());
+                    }
+                }
+
+                device.current_step += 1;
+                device.next_step_time = (self.get_ms)();
+            }
+            #[allow(unreachable_patterns)]
+            _ => {
+                error!(self, "Step not matched! {current_step:?}");
+                return Err(());
+            }
+        }
+
+        device.next_step_time += self.tests.tests[device.current_test.unwrap_or(0)].sleep_between;
+        Ok(())
     }
 
     fn send_device_custom_message(&mut self, esp_id: u32, line1: String, line2: String) {
