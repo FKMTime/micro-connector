@@ -388,6 +388,7 @@ impl HilState {
                 );
 
                 device.current_step += 1;
+                device.next_step_time = (self.get_ms)() + 500;
             }
             TestStep::VerifySnapshot(queries) => {
                 for query in queries {
