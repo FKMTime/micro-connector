@@ -167,9 +167,11 @@ impl HilState {
             let mut device = self.devices[i].clone();
             let dev_res = self.process_device(&mut device);
             if let Err(e) = dev_res {
-                error!(self, "process_device error: {e:?}");
-
                 let device = &self.devices[i];
+
+                error!(self, "process_device error: {e:?}");
+                error!(self, "{:#?}", device.last_snapshot);
+
                 self.send_device_custom_message(
                     device.id,
                     format!(
@@ -274,7 +276,7 @@ impl HilState {
 
                 device.wait_for_ack = true;
                 device.current_step += 1;
-                device.next_step_time = (self.get_ms)();
+                device.next_step_time = (self.get_ms)() + 250;
             }
             TestStep::Button { name, time, ack } => {
                 let pin = self.tests.buttons.get(name);
