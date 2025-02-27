@@ -1,6 +1,7 @@
 use crate::structs::TestStep;
 use anyhow::Result;
 use rand::Rng as _;
+use structs::HilError;
 use unix_utils::{
     request::{UnixRequest, UnixRequestData},
     response::{CompetitionStatusResp, UnixResponse, UnixResponseData},
@@ -192,11 +193,11 @@ impl HilState {
         Ok(self.packet_queue.drain(..).collect())
     }
 
-    fn process_device(&mut self, device: &mut HilDevice) -> Result<(), ()> {
+    fn process_device(&mut self, device: &mut HilDevice) -> Result<(), HilError> {
         if device.wait_for_ack {
             let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
             if timeout_reached {
-                return Err(());
+                return Err(HilError::TimeoutAck);
             }
 
             return Ok(());
@@ -296,8 +297,7 @@ impl HilState {
                     device.current_step += 1;
                     device.next_step_time = (self.get_ms)() + *time;
                 } else {
-                    error!(self, "Wrong button name");
-                    return Err(());
+                    return Err(HilError::WrongButtonName);
                 }
             }
             TestStep::VerifySend {
@@ -308,7 +308,7 @@ impl HilState {
                 let Some(ref back_packet) = device.back_packet else {
                     let timeout_reached = (self.get_ms)() >= device.next_step_time + 5000;
                     if timeout_reached {
-                        return Err(());
+                        return Err(HilError::BackpacketTimeout);
                     }
 
                     return Ok(());
@@ -333,7 +333,7 @@ impl HilState {
                                 "Wrong time value! Real: {value} Expected: {time_to_check}"
                             );
 
-                            return Err(());
+                            return Err(HilError::ValueNotExpected);
                         }
                     }
 
@@ -344,7 +344,7 @@ impl HilState {
                                 "Wrong penalty value! Real: {penalty} Expected: {penalty_to_check}"
                             );
 
-                            return Err(());
+                            return Err(HilError::ValueNotExpected);
                         }
                     }
 
@@ -354,11 +354,11 @@ impl HilState {
                             "Wrong is_delegate value! Real: {is_delegate} Expected: false"
                         );
 
-                        return Err(());
+                        return Err(HilError::ValueNotExpected);
                     }
                 } else {
                     error!(self, "Wrong packet, cant verify solve time!");
-                    return Err(());
+                    return Err(HilError::BackpacketWrong);
                 }
 
                 device.current_step += 1;
@@ -394,7 +394,7 @@ impl HilState {
                 for query in queries {
                     if snapshot::snapshot_dsl_check(&self, device, &query) != Ok(true) {
                         error!(self, "HIL query failed: {query}");
-                        return Err(());
+                        return Err(HilError::SnapshotDsl(query.to_owned()));
                     }
                 }
 
@@ -404,7 +404,7 @@ impl HilState {
             #[allow(unreachable_patterns)]
             _ => {
                 error!(self, "Step not matched! {current_step:?}");
-                return Err(());
+                return Err(HilError::StepNotMatched);
             }
         }
 

@@ -111,3 +111,14 @@ pub enum TestStep {
     /// List of dsl "queries"
     VerifySnapshot(Vec<String>),
 }
+
+#[derive(Clone, Debug)]
+pub enum HilError {
+    TimeoutAck,
+    WrongButtonName,
+    BackpacketTimeout,
+    BackpacketWrong,
+    SnapshotDsl(String),
+    StepNotMatched,
+    ValueNotExpected,
+}
