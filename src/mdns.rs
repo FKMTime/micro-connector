@@ -2,7 +2,7 @@ use anyhow::Result;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 
 pub fn register_mdns(port: &u16) -> Result<()> {
-    let network_interfaces = local_ip_address::list_afinet_netifas().unwrap();
+    let network_interfaces = local_ip_address::list_afinet_netifas().expect("afinet list failed");
 
     for (_, ip) in network_interfaces.iter() {
         if ip.is_loopback() || ip.is_multicast() || ip.is_unspecified() || ip.is_ipv6() {

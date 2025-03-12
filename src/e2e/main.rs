@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let socket_path = std::env::var("SOCKET_PATH").unwrap_or("/tmp/sock/socket.sock".to_string());
-    let socket_dir = Path::new(&socket_path).parent().unwrap();
+    let socket_dir = Path::new(&socket_path).parent().expect("No SOCKET_PATH parent");
     _ = tokio::fs::create_dir_all(socket_dir).await;
     _ = tokio::fs::remove_file(&socket_path).await;
 
@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
             get_ms: || {
                 return SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
+                    .expect("")
                     .as_millis() as u64;
             },
             status: Default::default(),

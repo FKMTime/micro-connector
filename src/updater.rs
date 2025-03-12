@@ -89,24 +89,19 @@ pub async fn should_update(
         let entry = entry?;
         let metadata = FirmwareMetadata::from_dir_entry(&entry).await;
         let Ok(metadata) = metadata else {
-            tracing::error!("metadata error: {:?}", metadata.unwrap_err());
+            tracing::error!("metadata error: {:?}", metadata.expect_err(""));
             continue;
         };
 
-        let (hw, firmware, version) = (
-            core::str::from_utf8(&metadata.hardware)
-                .unwrap()
-                .trim_end_matches('\0'),
-            core::str::from_utf8(&metadata.firmware)
-                .unwrap()
-                .trim_end_matches('\0'),
-            Version::from_str(
-                core::str::from_utf8(&metadata.version)
-                    .unwrap()
-                    .trim_end_matches('\0'),
-            ),
-        );
+        let (Ok(hw), Ok(firmware), Ok(version)) = (
+            core::str::from_utf8(&metadata.hardware).map(|x| x.trim_end_matches('\0')),
+            core::str::from_utf8(&metadata.firmware).map(|x| x.trim_end_matches('\0')),
+            core::str::from_utf8(&metadata.version).map(|x| x.trim_end_matches('\0')),
+        ) else {
+            continue;
+        };
 
+        let version = Version::from_str(version);
         if hw != esp_connect_info.hw || firmware != esp_connect_info.firmware {
             continue;
         }

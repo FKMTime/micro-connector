@@ -76,7 +76,7 @@ pub fn init(log_func: js_sys::Function, initial_status: Option<String>) -> WasmS
     );
 
     let mut state = HilState {
-        tests: serde_json::from_str(TESTS_JSON).unwrap(),
+        tests: serde_json::from_str(TESTS_JSON).expect("Wrong tests json"),
         devices: Vec::new(),
         completed_count: 0,
         should_send_status: true,

@@ -319,25 +319,21 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let Ok(metadata) = metadata else {
                 tracing::error!(
                     "ForceUpdate File metadata read error! {:?}",
-                    metadata.unwrap_err()
+                    metadata.expect_err("")
                 );
                 return Ok(());
             };
 
-            let (hardware, firmware, version) = (
-                core::str::from_utf8(&metadata.hardware)
-                    .unwrap()
-                    .trim_end_matches('\0'),
-                core::str::from_utf8(&metadata.firmware)
-                    .unwrap()
-                    .trim_end_matches('\0'),
-                crate::updater::Version::from_str(
-                    core::str::from_utf8(&metadata.version)
-                        .unwrap()
-                        .trim_end_matches('\0'),
-                ),
-            );
+            let (Ok(hardware), Ok(firmware), Ok(version)) = (
+                core::str::from_utf8(&metadata.hardware).map(|x| x.trim_end_matches('\0')),
+                core::str::from_utf8(&metadata.firmware).map(|x| x.trim_end_matches('\0')),
+                core::str::from_utf8(&metadata.version).map(|x| x.trim_end_matches('\0')),
+            ) else {
+                tracing::error!("Wrong firmware metadata utf8.");
+                return Ok(());
+            };
 
+            let version = crate::updater::Version::from_str(version);
             state
                 .force_update(
                     hardware.to_string(),

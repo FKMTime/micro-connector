@@ -32,9 +32,9 @@ impl<'a> Visit for StringVisitor<'a> {
         self.fields.insert(name.to_string(), val);
 
         if name == "message" {
-            write!(self.string, "{value:?} ").unwrap();
+            write!(self.string, "{value:?} ").expect("");
         } else if name != "file" {
-            write!(self.string, "{} = {:?}; ", field.name(), value).unwrap();
+            write!(self.string, "{} = {:?}; ", field.name(), value).expect("");
         }
     }
 }
@@ -94,12 +94,12 @@ impl MinimalTracer {
             for filter in env_value.split(',') {
                 let mut target = Some(filter);
                 let mut level = None;
-                if let Some(equals_index) = target.unwrap().find('=') {
+                if let Some(equals_index) = target.expect("Target none?").find('=') {
                     let (first, second) = filter.split_at(equals_index);
                     target = Some(first);
                     level = string_to_level(&second[1..])
                 }
-                let target_level = string_to_level(target.unwrap());
+                let target_level = string_to_level(target.expect("Target none?"));
 
                 if let Some(target_level) = target_level {
                     level = Some(target_level);
