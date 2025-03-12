@@ -85,6 +85,8 @@ pub fn init(log_func: js_sys::Function, initial_status: Option<String>) -> WasmS
         get_ms: || js_sys::Date::now() as u64,
         packet_queue: Vec::new(),
         log_fn: log_fn.clone(),
+
+        error_log: Vec::new(),
     };
     state.process_initial_status_devices();
 

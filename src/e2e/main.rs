@@ -43,8 +43,12 @@ async fn main() -> Result<()> {
             completed_count: 0,
             packet_queue: Vec::new(),
             log_fn: |tag, msg| {
-                println!("[{tag}] {msg}");
+                if tag != "TRACE" {
+                    println!("[{tag}] {msg}");
+                }
             },
+
+            error_log: Vec::new(),
         };
 
         if let Ok(out) = state.process() {

@@ -18,6 +18,15 @@ pub struct HilState {
 
     pub get_ms: fn() -> u64,
     pub log_fn: fn(&str, String),
+
+    pub error_log: Vec<HilErrorLoc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HilErrorLoc {
+    pub test: usize,
+    pub step: usize,
+    pub error: HilError,
 }
 
 #[derive(Clone)]
@@ -35,6 +44,7 @@ pub struct HilDevice {
     pub last_solve_time: u64,
 
     pub completed_count: usize,
+    pub errored: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

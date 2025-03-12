@@ -67,6 +67,7 @@ impl HilDevice {
 
             last_solve_time: 0,
             completed_count: 0,
+            errored: false,
         }
     }
 }
@@ -183,8 +184,21 @@ impl HilState {
                     format!("{e:?}",),
                 );
 
+                let device = &mut self.devices[i];
+                device.errored = true;
+                device.current_test = None;
+                device.next_step_time = (self.get_ms)() + 60000;
+
+                self.error_log.push(structs::HilErrorLoc {
+                    test: device.current_test.unwrap_or(0),
+                    step: device.current_step,
+                    error: e,
+                });
+
+                /*
                 self.devices.remove(i);
                 self.should_send_status = true;
+                */
             } else {
                 self.devices[i] = device;
             }
@@ -208,6 +222,19 @@ impl HilState {
         }
 
         if device.current_test.is_none() {
+            if device.errored {
+                self.send_resp(
+                    UnixResponseData::TestPacket {
+                        esp_id: device.id,
+                        data: TestPacketData::HardStateReset,
+                    },
+                    None,
+                    false,
+                );
+
+                device.errored = false;
+            }
+
             let mut next_idx: usize = rand::rng().random_range(0..self.tests.tests.len());
             if next_idx == device.last_test {
                 next_idx += 1;
@@ -223,8 +250,10 @@ impl HilState {
 
             device.current_test = Some(next_idx);
             device.current_step = 0;
-            device.next_step_time = (self.get_ms)();
+            device.next_step_time = (self.get_ms)() + 500;
             device.last_test = next_idx;
+
+            return Ok(());
         }
 
         let Some(current_step) = &self.tests.tests[device.current_test.unwrap_or(0)]
