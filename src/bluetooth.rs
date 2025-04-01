@@ -1,6 +1,7 @@
 use anyhow::Result;
 use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::Manager;
+use serde::Deserialize;
 
 //const FKM_UUID: uuid::Uuid = uuid::uuid!("f254a578-ef88-4372-b5f5-5ecf87e65884");
 const SET_WIFI_UUID: uuid::Uuid = uuid::uuid!("bcd7e573-b0b2-4775-83c0-acbf3aaf210c");
@@ -74,6 +75,21 @@ async fn bluetooth_task() -> Result<()> {
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct AutoSetupSettings {
+    pub ssid: String,
+    pub psk: String,
+    pub data: Option<ConnSettings>,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(dead_code)]
+struct ConnSettings {
+    pub mdns: bool,
+    pub ws_url: Option<String>,
+}
+
 async fn setup_bt_device(device: btleplug::platform::Peripheral) -> Result<()> {
     if !device.is_connected().await? {
         tracing::trace!("Connecting to device");
@@ -99,6 +115,20 @@ async fn setup_bt_device(device: btleplug::platform::Peripheral) -> Result<()> {
     } else {
         std::env::var("AUTOSETUP_SETTINGS")?
     };
+
+    let res = serde_json::from_str::<AutoSetupSettings>(&auto_setup_settings);
+    match res {
+        Ok(ass) => {
+            if ass.ssid.len() == 0 {
+                tracing::trace!("Wifi ssid null... Skipping!");
+                return Ok(());
+            }
+        }
+        Err(e) => {
+            tracing::error!("Wifi auto setup settings parse error: {e:?}");
+            return Ok(());
+        }
+    }
 
     let set_wifi_data = format!("{auto_setup_settings}\0");
     let set_wifi_data = set_wifi_data.as_bytes();
