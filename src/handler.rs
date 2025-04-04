@@ -89,7 +89,7 @@ pub async fn handle_client(
             }
             msg = socket.recv() => {
                 let msg = msg.ok_or_else(|| anyhow::anyhow!("Frame option is null"))??;
-                let res = on_ws_msg(&mut socket, msg, esp_connect_info, &mut hb_received).await;
+                let res = on_ws_msg(&mut socket, msg, esp_connect_info, &mut hb_received, &state).await;
 
                 match res {
                     Ok(true) => break,
@@ -157,6 +157,7 @@ async fn on_ws_msg(
     msg: Message,
     esp_connect_info: &EspConnectInfo,
     hb_received: &mut bool,
+    state: &SharedAppState,
 ) -> Result<bool> {
     match msg {
         Message::Close(_) => {
@@ -170,7 +171,7 @@ async fn on_ws_msg(
             tracing::trace!("WS payload recv [{}]: {payload}", esp_connect_info.id);
 
             let response: TimerPacket = serde_json::from_str(&payload)?;
-            let res = on_timer_response(socket, response, esp_connect_info).await;
+            let res = on_timer_response(socket, response, esp_connect_info, state).await;
             if let Err(e) = res {
                 error!("on_timer_response error: {e:?}");
             }
@@ -188,6 +189,7 @@ async fn on_timer_response(
     socket: &mut WebSocket,
     response: TimerPacket,
     esp_connect_info: &EspConnectInfo,
+    state: &SharedAppState,
 ) -> Result<()> {
     let esp_id = esp_connect_info.id;
 
@@ -307,14 +309,23 @@ async fn on_timer_response(
             }
         }
         TimerPacketInner::Battery { level, voltage: _ } => {
-            _ = crate::socket::api::send_battery_status(esp_id, level).await;
+            let inner_state = state.inner.read().await;
+            if inner_state.devices_settings.contains_key(&esp_id) {
+                _ = crate::socket::api::send_battery_status(esp_id, level).await;
+            }
         }
         TimerPacketInner::Add { firmware } => {
-            _ = crate::socket::api::add_device(esp_id, &firmware).await;
-            trace!("Add device: {}", esp_id);
+            let inner_state = state.inner.read().await;
+            if !inner_state.devices_settings.contains_key(&esp_id) {
+                _ = crate::socket::api::add_device(esp_id, &firmware).await;
+                trace!("Add device: {}", esp_id);
+            }
         }
         TimerPacketInner::TestAck(snapshot) => {
-            _ = crate::socket::api::send_test_ack(esp_id, snapshot).await;
+            let inner_state = state.inner.read().await;
+            if inner_state.devices_settings.contains_key(&esp_id) {
+                _ = crate::socket::api::send_test_ack(esp_id, snapshot).await;
+            }
         }
         _ => {
             trace!("Not implemented timer response received: {:?}", response);
