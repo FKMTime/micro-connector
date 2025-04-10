@@ -18,14 +18,10 @@ pub static UNIX_SOCKET: socket::Socket = socket::Socket::const_new();
 async fn main() -> Result<()> {
     _ = dotenvy::dotenv();
 
-    let logs_path = std::env::var("DEVICE_LOGS").unwrap_or("/tmp/fkm-logs".to_string());
+    let logs_path = env_or_default("DEVICE_LOGS", "/tmp/fkm-logs");
     log_subscriber::MinimalTracer::register(PathBuf::from(logs_path))?;
 
-    let port: u16 = std::env::var("PORT")
-        .unwrap_or_else(|_| "8080".to_string())
-        .parse()?;
-
-    let firmware_dir = std::env::var("FIRMWARE_DIR").expect("FIRMWARE_DIR not set");
+    let firmware_dir = env_or_default("FIRMWARE_DIR", "/tmp/fkm-build");
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
     if !firmware_dir.exists() {
         tokio::fs::create_dir_all(&firmware_dir).await?;
@@ -37,6 +33,7 @@ async fn main() -> Result<()> {
     let state = structs::SharedAppState::new(dev_mode).await;
 
     let socket_path = env_or_default("SOCKET_PATH", "/tmp/socket.sock");
+    let port: u16 = env_or_default("PORT", "8080").parse()?;
     UNIX_SOCKET.init(&socket_path, state.clone()).await?;
 
     if std::env::var("NO_MDNS").is_err() {
