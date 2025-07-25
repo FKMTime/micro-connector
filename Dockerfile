@@ -10,7 +10,7 @@ RUN apk add --no-cache \
     build-base
 
 # Download and setup aarch64 cross-compiler
-RUN wget --inet4-only https://musl.cc/aarch64-linux-musl-cross.tgz \
+RUN wget https://github.com/FKMTime/deps/raw/refs/heads/main/aarch64-linux-musl-cross.tgz \
     && tar -xf aarch64-linux-musl-cross.tgz \
     && mv aarch64-linux-musl-cross /usr/local/ \
     && rm aarch64-linux-musl-cross.tgz
