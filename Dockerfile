@@ -9,14 +9,13 @@ RUN apk add --no-cache \
     musl-dev \
     build-base
 
-# Download and setup aarch64 cross-compiler
-RUN wget https://musl.cc/aarch64-linux-musl-cross.tgz \
-    && tar -xf aarch64-linux-musl-cross.tgz \
-    && mv aarch64-linux-musl-cross /usr/local/ \
-    && rm aarch64-linux-musl-cross.tgz
+RUN wget https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-2024.05-1.tar.xz \
+    && tar -xf aarch64--musl--stable-2024.05-1.tar.xz \
+    && mv aarch64--musl--stable-2024.05-1 /usr/local/ \
+    && rm aarch64--musl--stable-2024.05-1.tar.xz
 
 # Add cross-compiler to PATH
-ENV PATH=/usr/local/aarch64-linux-musl-cross/bin:$PATH
+ENV PATH=/usr/local/aarch64--musl--stable-2024.05-1/bin:$PATH
 
 # Add Rust targets
 RUN rustup target add x86_64-unknown-linux-musl
@@ -48,7 +47,7 @@ RUN echo "fn dsa() {}" > ./hil-processor/src/lib.rs
 
 # Initial builds for dependency caching
 RUN cargo build -r --target x86_64-unknown-linux-musl --config target.x86_64-unknown-linux-musl.linker=\"x86_64-alpine-linux-musl-gcc\"
-RUN cargo build -r --target aarch64-unknown-linux-musl --config target.aarch64-unknown-linux-musl.linker=\"aarch64-linux-musl-gcc\"
+RUN cargo build -r --target aarch64-unknown-linux-musl --config target.aarch64-unknown-linux-musl.linker=\"aarch64-buildroot-linux-musl-gcc\"
 
 # Clean up artifacts that need to be rebuilt
 RUN rm -f target/*/release/deps/unix_utils* target/*/release/deps/libunix_utils* target/*/release/deps/hil_processor* target/*/release/deps/libhil_processor* target/*/release/deps/backend* target/*/release/deps/e2e*
