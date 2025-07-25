@@ -15,25 +15,27 @@ path = "src/e2e/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.95"
-axum = { version = "0.8.1", features = ["ws", "query"] }
-btleplug = "0.11.7"
-chrono = "0.4.39"
+anyhow = "1.0.98"
+axum = { version = "0.8.4", features = ["ws", "query"] }
+btleplug = "0.11.8"
+chrono = "0.4.41"
 dotenvy = "0.15.7"
-local-ip-address = "0.6.3"
-mdns-sd = "0.13.2"
-reqwest = { version = "0.12.12", features = ["json", "rustls-tls"], default-features = false }
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.138"
-tokio = { version = "1.43.0", features = ["full"] }
-tower-http = { version = "0.6.2", features = ["trace"] }
+local-ip-address = "0.6.5"
+mdns-sd = "0.13.11"
+reqwest = { version = "0.12.22", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.141"
+tokio = { version = "1.46.1", features = ["full"] }
+tower-http = { version = "0.6.6", features = ["trace"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["json", "env-filter"] }
-uuid = "1.12.1"
-dbus = { version = "0.9.7", features = ["vendored"] }
-rand = "0.9.0"
+uuid = "1.17.0"
+rand = "0.9.2"
 unix-utils = { path = "./unix-utils" }
-crc32fast = "1.4.2"
+crc32fast = "1.5.0"
 base64 = "0.22.1"
 unidecode = "0.3.0"
 hil-processor = { path = "./hil-processor" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus = { version = "0.9.7", features = ["vendored"] }
