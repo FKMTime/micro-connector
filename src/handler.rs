@@ -198,6 +198,16 @@ async fn on_timer_response(
             card_id,
             attendance_device,
         } => {
+            if !state
+                .inner
+                .read()
+                .await
+                .devices_settings
+                .contains_key(&esp_id)
+            {
+                return Err(anyhow::anyhow!("Device not added"));
+            }
+
             let attendance_device = attendance_device.unwrap_or(false);
             if attendance_device {
                 _ = crate::socket::api::mark_attendance(esp_id, card_id).await;
@@ -255,8 +265,17 @@ async fn on_timer_response(
             inspection_time,
             group_id,
         } => {
-            trace!("Solve: {solve_time} ({penalty}) {competitor_id} {esp_id} {timestamp} {session_id} {delegate} {group_id}");
+            if !state
+                .inner
+                .read()
+                .await
+                .devices_settings
+                .contains_key(&esp_id)
+            {
+                return Err(anyhow::anyhow!("Device not added"));
+            }
 
+            trace!("Solve: {solve_time} ({penalty}) {competitor_id} {esp_id} {timestamp} {session_id} {delegate} {group_id}");
             let res = crate::socket::api::send_solve_entry(
                 solve_time,
                 penalty,
