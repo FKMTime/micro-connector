@@ -9,6 +9,7 @@ use axum::{extract::WebSocketUpgrade, routing::get};
 use axum_server::tls_rustls::RustlsConfig;
 use rcgen::CertifiedKey;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::version::TLS13;
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -66,7 +67,7 @@ pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
         let crt = cert_from_str(&cert.pem())?;
         let key = key_from_str(&signing_key.serialize_pem())?;
 
-        let mut config = rustls::server::ServerConfig::builder()
+        let mut config = rustls::server::ServerConfig::builder_with_protocol_versions(&[&TLS13])
             .with_no_client_auth()
             .with_single_cert(crt, key)?;
         config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
