@@ -248,19 +248,22 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             inner_state.should_update = status.should_update;
             inner_state.locales = translations;
             inner_state.default_locale = status.default_locale;
-            for &device in &status.devices {
-                let room_settings = crate::structs::CompetitionDeviceSettings {};
+            for device in &status.devices {
+                let device_settings = crate::structs::DeviceSettings {
+                    sign_key: device.sign_key,
+                };
+
                 let old = inner_state
                     .devices_settings
-                    .insert(device, room_settings.clone());
+                    .insert(device.esp_id, device_settings.clone());
 
-                if old.as_ref() != Some(&room_settings) {
+                if old.as_ref() != Some(&device_settings) {
                     changed = true;
                 }
             }
 
             for (k, _) in inner_state.devices_settings.clone() {
-                if !status.devices.contains(&k) {
+                if !status.devices.iter().any(|d| d.esp_id == k) {
                     inner_state.devices_settings.remove(&k);
                     changed = true;
                 }

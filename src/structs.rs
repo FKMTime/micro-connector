@@ -84,6 +84,7 @@ pub enum TimerPacketInner {
     },
     Add {
         firmware: String,
+        sign_key: u32,
     },
     EpochTime {
         current_epoch: u64,
@@ -112,13 +113,15 @@ pub struct SharedAppState {
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub should_update: bool,
-    pub devices_settings: HashMap<u32, CompetitionDeviceSettings>,
+    pub devices_settings: HashMap<u32, DeviceSettings>,
     pub locales: Vec<TranslationLocale>,
     pub default_locale: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompetitionDeviceSettings {}
+pub struct DeviceSettings {
+    pub sign_key: Option<u32>,
+}
 
 impl SharedAppState {
     pub async fn new(dev_mode: bool) -> Self {

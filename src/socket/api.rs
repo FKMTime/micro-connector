@@ -131,10 +131,11 @@ pub async fn send_battery_status(esp_id: u32, battery: Option<f64>) -> Result<()
     res
 }
 
-pub async fn add_device(esp_id: u32, firmware_type: &str) -> Result<(), UnixError> {
+pub async fn add_device(esp_id: u32, sign_key: u32, firmware_type: &str) -> Result<(), UnixError> {
     let res = crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::RequestToConnectDevice {
             esp_id,
+            sign_key,
             r#type: firmware_type.to_string(),
         })
         .await

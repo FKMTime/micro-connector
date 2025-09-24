@@ -87,9 +87,16 @@ pub struct TranslationRecord {
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionStatusResp {
     pub should_update: bool,
-    pub devices: Vec<u32>,
+    pub devices: Vec<CompetitionStatusDevice>,
     pub translations: Vec<TranslationLocale>,
     pub default_locale: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompetitionStatusDevice {
+    pub esp_id: u32,
+    pub sign_key: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

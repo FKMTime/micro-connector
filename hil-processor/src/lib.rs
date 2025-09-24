@@ -467,7 +467,14 @@ impl HilState {
         self.send_resp(
             UnixResponseData::ServerStatus(CompetitionStatusResp {
                 should_update: self.status.should_update,
-                devices: self.devices.iter().map(|d| d.id).collect(),
+                devices: self
+                    .devices
+                    .iter()
+                    .map(|d| unix_utils::response::CompetitionStatusDevice {
+                        esp_id: d.id,
+                        sign_key: None,
+                    })
+                    .collect(),
                 translations: self.status.translations.clone(),
                 default_locale: self.status.default_locale.clone(),
             }),
@@ -487,8 +494,8 @@ impl HilState {
     }
 
     pub fn process_initial_status_devices(&mut self) {
-        for &dev_id in &self.status.devices {
-            let device = HilDevice::new(dev_id);
+        for dev in &self.status.devices {
+            let device = HilDevice::new(dev.esp_id);
             self.devices.push(device);
         }
     }

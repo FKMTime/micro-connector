@@ -333,10 +333,10 @@ async fn on_timer_response(
                 _ = crate::socket::api::send_battery_status(esp_id, level).await;
             }
         }
-        TimerPacketInner::Add { firmware } => {
+        TimerPacketInner::Add { firmware, sign_key } => {
             let inner_state = state.inner.read().await;
             if !inner_state.devices_settings.contains_key(&esp_id) {
-                _ = crate::socket::api::add_device(esp_id, &firmware).await;
+                _ = crate::socket::api::add_device(esp_id, sign_key, &firmware).await;
                 trace!("Add device: {}", esp_id);
             }
         }
