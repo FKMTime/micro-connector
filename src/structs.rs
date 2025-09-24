@@ -54,7 +54,7 @@ pub enum TimerPacketInner {
     },
     CustomMessage {
         line1: String,
-        line2: String
+        line2: String,
     },
     CardInfoRequest {
         card_id: u64,
@@ -130,7 +130,7 @@ impl SharedAppState {
                 should_update: false,
                 devices_settings: HashMap::new(),
                 locales: Vec::new(),
-                default_locale: "".to_string(),
+                default_locale: "en".to_string(),
             })),
             bc,
         }

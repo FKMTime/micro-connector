@@ -131,7 +131,7 @@ mod tests {
                 should_update: false,
                 devices: Vec::new(),
                 translations: Vec::new(),
-                default_locale: "".to_string(),
+                default_locale: "en".to_string(),
             },
             get_ms: || 0,
             devices: Vec::new(),
