@@ -211,6 +211,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let packet = TimerPacket {
                 tag: None,
                 data: TimerPacketInner::CustomMessage { line1, line2 },
+                sign_key: None,
             };
 
             let inner = crate::UNIX_SOCKET.get_inner().await?;
@@ -285,6 +286,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                     solve_time: attempt.value.map(|x| x * 10),
                     penalty: attempt.penalty,
                 },
+                sign_key: None,
             };
 
             let inner = crate::UNIX_SOCKET.get_inner().await?;
@@ -304,6 +306,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                     TimerPacket {
                         tag: None,
                         data: TimerPacketInner::TestPacket(data),
+                        sign_key: None,
                     },
                 )
                 .await?;

@@ -120,6 +120,7 @@ async fn send_device_status(
                 locales: state.locales.clone(),
                 default_locale: state.default_locale.clone(),
             },
+            sign_key: None,
         }
     } else {
         TimerPacket {
@@ -129,6 +130,7 @@ async fn send_device_status(
                 locales: state.locales.clone(),
                 default_locale: state.default_locale.clone(),
             },
+            sign_key: None,
         }
     };
 
@@ -145,6 +147,7 @@ async fn send_epoch_time(socket: &mut WebSocket) -> Result<()> {
                 .duration_since(std::time::UNIX_EPOCH)?
                 .as_secs(),
         },
+        sign_key: None,
     };
 
     let resp = serde_json::to_string(&packet)?;
@@ -198,14 +201,19 @@ async fn on_timer_response(
             card_id,
             attendance_device,
         } => {
-            if !state
+            let Some(device_settings) = state
                 .inner
                 .read()
                 .await
                 .devices_settings
-                .contains_key(&esp_id)
-            {
+                .get(&esp_id)
+                .cloned()
+            else {
                 return Err(anyhow::anyhow!("Device not added"));
+            };
+
+            if device_settings.sign_key.is_some() && device_settings.sign_key != response.sign_key {
+                return Err(anyhow::anyhow!("Wrong sign key!"));
             }
 
             let attendance_device = attendance_device.unwrap_or(false);
@@ -214,6 +222,7 @@ async fn on_timer_response(
                 let resp = serde_json::to_string(&TimerPacket {
                     tag: response.tag,
                     data: TimerPacketInner::AttendanceMarked,
+                    sign_key: None,
                 })?;
                 socket.send(Message::Text(resp.into())).await?;
 
@@ -238,6 +247,7 @@ async fn on_timer_response(
                                 can_compete: info.can_compete,
                                 possible_groups: info.possible_groups,
                             },
+                            sign_key: None,
                         };
 
                         response
@@ -248,6 +258,7 @@ async fn on_timer_response(
                             error: e.message,
                             should_reset_time: e.should_reset_time,
                         },
+                        sign_key: None,
                     },
                 };
 
@@ -265,14 +276,19 @@ async fn on_timer_response(
             inspection_time,
             group_id,
         } => {
-            if !state
+            let Some(device_settings) = state
                 .inner
                 .read()
                 .await
                 .devices_settings
-                .contains_key(&esp_id)
-            {
+                .get(&esp_id)
+                .cloned()
+            else {
                 return Err(anyhow::anyhow!("Device not added"));
+            };
+
+            if device_settings.sign_key.is_some() && device_settings.sign_key != response.sign_key {
+                return Err(anyhow::anyhow!("Wrong sign key!"));
             }
 
             trace!("Solve: {solve_time} ({penalty}) {competitor_id} {esp_id} {timestamp} {session_id} {delegate} {group_id}");
@@ -302,6 +318,7 @@ async fn on_timer_response(
                             session_id,
                             competitor_id,
                         },
+                        sign_key: None,
                     }
                 }
                 Err(e) => TimerPacket {
@@ -310,6 +327,7 @@ async fn on_timer_response(
                         error: e.message,
                         should_reset_time: e.should_reset_time,
                     },
+                    sign_key: None,
                 },
             };
 

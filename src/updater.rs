@@ -149,6 +149,7 @@ pub async fn update_client(
             crc,
             firmware: latest_firmware.firmware,
         },
+        sign_key: None,
     };
 
     socket
