@@ -36,6 +36,10 @@ crc32fast = "1.5.0"
 base64 = "0.22.1"
 unidecode = "0.3.0"
 hil-processor = { path = "./hil-processor" }
+axum-server = { version = "0.7.2", features = ["tls-rustls"] }
+rustls = { version = "0.23.32", features = ["ring"], default-features = false }
+rcgen = "0.14.4"
+rustls-pemfile = "2.2.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus = { version = "0.9.9", features = ["vendored"] }

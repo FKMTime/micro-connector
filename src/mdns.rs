@@ -19,8 +19,11 @@ pub fn register_mdns(port: &u16) -> Result<()> {
         let instance_name = "stackmat_backend";
         let ip = ip.to_string();
         let host_name = "stackmat.local.";
-        let properties = [("ws", format!("ws://{ip}:{port}"))];
-        //let properties = [("ws", format!("wss://echo.filipton.space/test"))];
+        let properties = if std::env::var("TLS").is_ok() {
+            [("ws", format!("wss://{ip}:{port}"))]
+        } else {
+            [("ws", format!("ws://{ip}:{port}"))]
+        };
 
         let my_service = ServiceInfo::new(
             service_type,

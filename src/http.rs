@@ -6,7 +6,12 @@ use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 use axum::Router;
 use axum::{extract::WebSocketUpgrade, routing::get};
+use axum_server::tls_rustls::RustlsConfig;
+use rcgen::CertifiedKey;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::Deserialize;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tracing::{error, info};
@@ -28,9 +33,20 @@ pub struct EspConnectInfo {
     pub hw: String,
 }
 
+fn cert_from_str(cert: &str) -> Result<Vec<CertificateDer<'static>>> {
+    rustls_pemfile::certs(&mut cert.as_bytes())
+        .collect::<std::io::Result<_>>()
+        .map_err(anyhow::Error::from)
+}
+
+fn key_from_str(key: &str) -> Result<PrivateKeyDer<'static>> {
+    rustls_pemfile::private_key(&mut key.as_bytes())?
+        .ok_or_else(|| anyhow::anyhow!("Private ket returned None"))
+}
+
 pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
-    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
-    info!("Server started, listening on 0.0.0.0:{port}");
+    let addr: SocketAddr = format!("0.0.0.0:{port}").parse()?;
+    info!("Server started, listening on {addr}");
 
     let app = Router::new()
         .route("/", get(ws_handler))
@@ -40,7 +56,29 @@ pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
         )
         .with_state(state);
 
-    axum::serve(listener, app.into_make_service()).await?;
+    if std::env::var("TLS").is_ok() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("Ring default provider install error");
+
+        let CertifiedKey { cert, signing_key } =
+            rcgen::generate_simple_self_signed(vec!["micro-connector.local".to_string()])?;
+        let crt = cert_from_str(&cert.pem())?;
+        let key = key_from_str(&signing_key.serialize_pem())?;
+
+        let mut config = rustls::server::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(crt, key)?;
+        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+        let config = RustlsConfig::from_config(Arc::new(config));
+        axum_server::bind_rustls(addr, config)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        let listener = TcpListener::bind(addr).await?;
+        axum::serve(listener, app.into_make_service()).await?;
+    }
     Ok(())
 }
 
