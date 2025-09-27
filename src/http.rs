@@ -1,15 +1,18 @@
 use crate::handler::handle_client;
 use crate::structs::SharedAppState;
+use aes::cipher::generic_array::GenericArray;
+use aes::cipher::{BlockEncrypt, KeyInit};
+use aes::Aes128;
 use anyhow::Result;
 use axum::extract::ws::WebSocket;
 use axum::extract::{Query, State};
+use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use axum::Router;
 use axum::{extract::WebSocketUpgrade, routing::get};
 use axum_server::tls_rustls::RustlsConfig;
 use rcgen::CertifiedKey;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use rustls::version::TLS13;
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -19,6 +22,10 @@ use tracing::{error, info};
 
 fn default_firmware() -> String {
     "no-firmware".to_string()
+}
+
+fn default_random() -> u64 {
+    0
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,6 +39,9 @@ pub struct EspConnectInfo {
     pub firmware: String,
 
     pub hw: String,
+
+    #[serde(default = "default_random")]
+    pub random: u64,
 }
 
 fn cert_from_str(cert: &str) -> Result<Vec<CertificateDer<'static>>> {
@@ -67,7 +77,7 @@ pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
         let crt = cert_from_str(&cert.pem())?;
         let key = key_from_str(&signing_key.serialize_pem())?;
 
-        let mut config = rustls::server::ServerConfig::builder_with_protocol_versions(&[&TLS13])
+        let mut config = rustls::server::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(crt, key)?;
         config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
@@ -88,7 +98,39 @@ async fn ws_handler(
     Query(esp_connect_info): Query<EspConnectInfo>,
     State(state): State<SharedAppState>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info, state))
+    let mut headers = HeaderMap::new();
+    if let Some(device_settings) = state
+        .inner
+        .read()
+        .await
+        .devices_settings
+        .get(&esp_connect_info.id)
+    {
+        if let Some(sign_key) = device_settings.sign_key {
+            let mut key = [0; 16];
+            key[..4].copy_from_slice(&sign_key.to_be_bytes());
+            let key = GenericArray::from(key);
+
+            let mut block = [0; 16];
+            block[..8].copy_from_slice(&esp_connect_info.random.to_be_bytes());
+            let mut block = GenericArray::from(block);
+
+            let cipher = Aes128::new(&key);
+            cipher.encrypt_block(&mut block);
+            headers.insert(
+                "RandomSigned",
+                u128::from_be_bytes(block.into())
+                    .to_string()
+                    .parse()
+                    .expect(""),
+            );
+        }
+    }
+
+    (
+        headers,
+        ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info, state)),
+    )
 }
 
 async fn handle_socket(socket: WebSocket, esp_connect_info: EspConnectInfo, state: SharedAppState) {

@@ -1,7 +1,7 @@
 [package]
 name = "backend"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 default-run = "backend"
 
 [[bin]]
@@ -40,6 +40,7 @@ axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 rustls = { version = "0.23.32", features = ["ring"], default-features = false }
 rcgen = "0.14.4"
 rustls-pemfile = "2.2.0"
+aes = "0.8.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus = { version = "0.9.9", features = ["vendored"] }

@@ -12,9 +12,6 @@ pub struct TimerPacket {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<u64>,
     pub data: TimerPacketInner,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sign_key: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -37,6 +34,7 @@ pub enum TimerPacketInner {
         delegate: bool,
         inspection_time: i64,
         group_id: String,
+        sign_key: u32,
     },
     SolveConfirm {
         competitor_id: u64,
@@ -64,6 +62,8 @@ pub enum TimerPacketInner {
 
         #[serde(skip_serializing_if = "Option::is_none")]
         attendance_device: Option<bool>,
+
+        sign_key: u32,
     },
     CardInfoResponse {
         card_id: u64,
