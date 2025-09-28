@@ -1,14 +1,14 @@
 use crate::handler::handle_client;
 use crate::structs::SharedAppState;
+use aes::Aes128;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockEncrypt, KeyInit};
-use aes::Aes128;
 use anyhow::Result;
+use axum::Router;
 use axum::extract::ws::WebSocket;
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
-use axum::Router;
 use axum::{extract::WebSocketUpgrade, routing::get};
 use axum_server::tls_rustls::RustlsConfig;
 use rcgen::CertifiedKey;
@@ -67,7 +67,10 @@ pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
         )
         .with_state(state);
 
-    if std::env::var("TLS").is_ok() {
+    if std::env::var("NO_TLS").is_ok() {
+        let listener = TcpListener::bind(addr).await?;
+        axum::serve(listener, app.into_make_service()).await?;
+    } else {
         rustls::crypto::ring::default_provider()
             .install_default()
             .expect("Ring default provider install error");
@@ -86,9 +89,6 @@ pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
         axum_server::bind_rustls(addr, config)
             .serve(app.into_make_service())
             .await?;
-    } else {
-        let listener = TcpListener::bind(addr).await?;
-        axum::serve(listener, app.into_make_service()).await?;
     }
     Ok(())
 }
