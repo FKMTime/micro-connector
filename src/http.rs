@@ -99,13 +99,9 @@ async fn ws_handler(
     State(state): State<SharedAppState>,
 ) -> impl IntoResponse {
     let mut headers = HeaderMap::new();
-    if let Some(device_settings) = state
-        .inner
-        .read()
-        .await
-        .devices_settings
-        .get(&esp_connect_info.id)
-    {
+
+    let inner = state.inner.read().await;
+    if let Some(device_settings) = inner.devices_settings.get(&esp_connect_info.id) {
         if let Some(sign_key) = device_settings.sign_key {
             let mut key = [0; 16];
             key[..4].copy_from_slice(&sign_key.to_be_bytes());
@@ -113,6 +109,7 @@ async fn ws_handler(
 
             let mut block = [0; 16];
             block[..8].copy_from_slice(&esp_connect_info.random.to_be_bytes());
+            block[8..12].copy_from_slice(&inner.fkm_token.to_be_bytes());
             let mut block = GenericArray::from(block);
 
             let cipher = Aes128::new(&key);
@@ -126,6 +123,7 @@ async fn ws_handler(
             );
         }
     }
+    drop(inner);
 
     (
         headers,

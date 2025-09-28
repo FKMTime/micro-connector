@@ -8,12 +8,12 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
-    sync::{mpsc::UnboundedReceiver, OnceCell, RwLock},
+    sync::{OnceCell, RwLock, mpsc::UnboundedReceiver},
 };
 use unix_utils::{
+    UnixError,
     request::{UnixRequest, UnixRequestData},
     response::{TranslationLocale, TranslationRecord, UnixResponse, UnixResponseData},
-    UnixError,
 };
 
 pub mod api;
@@ -223,6 +223,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let inner = crate::UNIX_SOCKET.get_inner().await?;
             let inner = inner.read().await;
             let mut inner_state = inner.state.inner.write().await;
+            inner_state.fkm_token = status.fkm_token;
 
             // remove all unicode weirdness
             let translations: Vec<TranslationLocale> = status

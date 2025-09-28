@@ -477,6 +477,7 @@ impl HilState {
                     .collect(),
                 translations: self.status.translations.clone(),
                 default_locale: self.status.default_locale.clone(),
+                fkm_token: 0,
             }),
             None,
             false,

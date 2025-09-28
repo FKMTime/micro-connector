@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use unix_utils::{
-    response::{PossibleGroup, TranslationLocale},
     SnapshotData, TestPacketData,
+    response::{PossibleGroup, TranslationLocale},
 };
 
 use crate::updater::Firmware;
@@ -119,6 +119,7 @@ pub struct AppState {
     pub devices_settings: HashMap<u32, DeviceSettings>,
     pub locales: Vec<TranslationLocale>,
     pub default_locale: String,
+    pub fkm_token: i32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -137,6 +138,7 @@ impl SharedAppState {
                 devices_settings: HashMap::new(),
                 locales: Vec::new(),
                 default_locale: "en".to_string(),
+                fkm_token: 0,
             })),
             bc,
         }

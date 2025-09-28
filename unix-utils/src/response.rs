@@ -90,6 +90,7 @@ pub struct CompetitionStatusResp {
     pub devices: Vec<CompetitionStatusDevice>,
     pub translations: Vec<TranslationLocale>,
     pub default_locale: String,
+    pub fkm_token: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -129,6 +130,7 @@ impl Default for CompetitionStatusResp {
             devices: Vec::new(),
             translations: Vec::new(),
             default_locale: "en".to_string(),
+            fkm_token: 0,
         }
     }
 }
