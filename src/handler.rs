@@ -119,6 +119,7 @@ async fn send_device_status(
                 added: true,
                 locales: state.locales.clone(),
                 default_locale: state.default_locale.clone(),
+                fkm_token: state.fkm_token
             },
         }
     } else {
@@ -128,6 +129,7 @@ async fn send_device_status(
                 added: false,
                 locales: state.locales.clone(),
                 default_locale: state.default_locale.clone(),
+                fkm_token: 0,
             },
         }
     };

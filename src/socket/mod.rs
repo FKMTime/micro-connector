@@ -223,7 +223,12 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let inner = crate::UNIX_SOCKET.get_inner().await?;
             let inner = inner.read().await;
             let mut inner_state = inner.state.inner.write().await;
-            inner_state.fkm_token = status.fkm_token;
+
+            let mut changed = false;
+            if inner_state.fkm_token != status.fkm_token {
+                inner_state.fkm_token = status.fkm_token;
+                changed = true;
+            }
 
             // remove all unicode weirdness
             let translations: Vec<TranslationLocale> = status
@@ -242,7 +247,8 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                 })
                 .collect();
 
-            let mut changed = inner_state.should_update != status.should_update
+            let mut changed = changed
+                || inner_state.should_update != status.should_update
                 || inner_state.locales != translations
                 || inner_state.default_locale != status.default_locale;
 
