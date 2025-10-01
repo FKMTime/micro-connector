@@ -91,6 +91,7 @@ pub struct CompetitionStatusResp {
     pub translations: Vec<TranslationLocale>,
     pub default_locale: String,
     pub fkm_token: i32,
+    pub secure_rfid: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -131,6 +132,7 @@ impl Default for CompetitionStatusResp {
             translations: Vec::new(),
             default_locale: "en".to_string(),
             fkm_token: 0,
+            secure_rfid: false,
         }
     }
 }

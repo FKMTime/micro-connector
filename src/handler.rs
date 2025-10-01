@@ -119,7 +119,8 @@ async fn send_device_status(
                 added: true,
                 locales: state.locales.clone(),
                 default_locale: state.default_locale.clone(),
-                fkm_token: state.fkm_token
+                fkm_token: state.fkm_token,
+                secure_rfid: state.secure_rfid,
             },
         }
     } else {
@@ -130,6 +131,7 @@ async fn send_device_status(
                 locales: state.locales.clone(),
                 default_locale: state.default_locale.clone(),
                 fkm_token: 0,
+                secure_rfid: false,
             },
         }
     };

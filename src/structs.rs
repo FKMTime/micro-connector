@@ -78,6 +78,7 @@ pub enum TimerPacketInner {
         locales: Vec<TranslationLocale>,
         default_locale: String,
         fkm_token: i32,
+        secure_rfid: bool,
     },
     Logs {
         logs: Vec<String>,
@@ -121,6 +122,7 @@ pub struct AppState {
     pub locales: Vec<TranslationLocale>,
     pub default_locale: String,
     pub fkm_token: i32,
+    pub secure_rfid: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -140,6 +142,7 @@ impl SharedAppState {
                 locales: Vec::new(),
                 default_locale: "en".to_string(),
                 fkm_token: 0,
+                secure_rfid: false,
             })),
             bc,
         }
