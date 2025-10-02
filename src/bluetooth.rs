@@ -1,3 +1,4 @@
+use crate::structs::SharedAppState;
 use anyhow::Result;
 use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::Manager;
@@ -6,7 +7,7 @@ use serde::Deserialize;
 //const FKM_UUID: uuid::Uuid = uuid::uuid!("f254a578-ef88-4372-b5f5-5ecf87e65884");
 const SET_WIFI_UUID: uuid::Uuid = uuid::uuid!("bcd7e573-b0b2-4775-83c0-acbf3aaf210c");
 
-pub async fn start_bluetooth_task() -> Result<()> {
+pub async fn start_bluetooth_task(state: SharedAppState) -> Result<()> {
     let manager = Manager::new().await?;
     if manager.adapters().await.is_err() {
         tracing::error!("No bluetooth adapter found!");
@@ -15,7 +16,7 @@ pub async fn start_bluetooth_task() -> Result<()> {
 
     tokio::task::spawn(async move {
         loop {
-            if let Err(e) = bluetooth_task().await {
+            if let Err(e) = bluetooth_task(&state).await {
                 tracing::error!("Bluetooth task failed: {:?}", e);
             }
 
@@ -26,7 +27,7 @@ pub async fn start_bluetooth_task() -> Result<()> {
     Ok(())
 }
 
-async fn bluetooth_task() -> Result<()> {
+async fn bluetooth_task(state: &SharedAppState) -> Result<()> {
     let manager = Manager::new().await?;
     manager.adapters().await?;
 
@@ -39,6 +40,9 @@ async fn bluetooth_task() -> Result<()> {
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        if !state.inner.read().await.auto_setup {
+            continue;
+        }
 
         let filter = ScanFilter { services: vec![] };
         adapter.start_scan(filter).await?;

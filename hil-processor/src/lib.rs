@@ -479,6 +479,7 @@ impl HilState {
                 default_locale: self.status.default_locale.clone(),
                 fkm_token: 0,
                 secure_rfid: false,
+                auto_setup: true,
             }),
             None,
             false,

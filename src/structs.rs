@@ -123,6 +123,7 @@ pub struct AppState {
     pub default_locale: String,
     pub fkm_token: i32,
     pub secure_rfid: bool,
+    pub auto_setup: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -143,6 +144,7 @@ impl SharedAppState {
                 default_locale: "en".to_string(),
                 fkm_token: 0,
                 secure_rfid: false,
+                auto_setup: false,
             })),
             bc,
         }
