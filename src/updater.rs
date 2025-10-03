@@ -2,7 +2,7 @@ use crate::{
     http::EspConnectInfo,
     structs::{SharedAppState, TimerPacket, TimerPacketInner},
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use axum::extract::ws::{Message, WebSocket};
 use std::{fs::DirEntry, path::PathBuf};
 use tracing::{debug, error, info};
@@ -40,7 +40,7 @@ impl FirmwareMetadata {
         Self::from_file(file_name, &file_data).await
     }
 
-    pub async fn from_file(file_name: &str, data: &Vec<u8>) -> Result<Self> {
+    pub async fn from_file(file_name: &str, data: &[u8]) -> Result<Self> {
         let metadata_bytes = &data[data.len() - METADATA_SIZE..];
         let metadata: FirmwareMetadata =
             unsafe { core::ptr::read(metadata_bytes.as_ptr() as *const FirmwareMetadata) };
@@ -160,9 +160,9 @@ pub async fn update_client(
     // wait for esp to respond
     tokio::time::timeout(std::time::Duration::from_secs(10), socket.recv())
         .await
-        .or_else(|_| {
+        .map_err(|_| {
             error!("Timeout while updating");
-            Err(anyhow::anyhow!("Timeout while updating"))
+            anyhow::anyhow!("Timeout while updating")
         })?;
 
     let mut firmware_chunks = latest_firmware.data.chunks(UPDATE_CHUNK_SIZE);
@@ -171,7 +171,7 @@ pub async fn update_client(
         let msg = Message::Binary(chunk.to_vec().into());
         socket.send(msg).await?;
 
-        if firmware_chunks.len() % 10 == 0 {
+        if firmware_chunks.len().is_multiple_of(10) {
             debug!(
                 "[{}] {}/{} chunks left",
                 esp_connect_info.id,
@@ -182,24 +182,21 @@ pub async fn update_client(
 
         if firmware_chunks.len() == 0 {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await; // Wait for esp to process
-                                                                         // (important)
+            // (important)
 
             break;
         }
 
         let frame = tokio::time::timeout(std::time::Duration::from_secs(10), socket.recv())
             .await
-            .or_else(|_| {
+            .map_err(|_| {
                 error!("Timeout while updating");
-                Err(anyhow::anyhow!("Timeout while updating"))
+                anyhow::anyhow!("Timeout while updating")
             })?;
 
         let frame = frame.ok_or_else(|| anyhow::anyhow!("Frame option is none"))??;
-        match frame {
-            Message::Close(_) => {
-                return Ok(false);
-            }
-            _ => {}
+        if let Message::Close(_) = frame {
+            return Ok(false);
         }
     }
 
@@ -241,9 +238,9 @@ impl Version {
 
         // Only compare if version variants are the same!
         if matches!(ver, Version::Stable(..)) && matches!(self, Version::Stable(..)) {
-            return Self::compare_stable(&self.get_str(), &ver.get_str());
+            Self::compare_stable(&self.get_str(), &ver.get_str())
         } else if matches!(ver, Version::Dev(..)) && matches!(self, Version::Dev(..)) {
-            return ver.get_nmb() > self.get_nmb();
+            ver.get_nmb() > self.get_nmb()
         } else {
             true
         }
@@ -326,7 +323,7 @@ impl Version {
 impl std::fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            &Version::Stable(ref str) => f.write_fmt(format_args!("Version::Stable({})", str)),
+            Version::Stable(str) => f.write_fmt(format_args!("Version::Stable({})", str)),
             &Version::Dev(nmb) => f.write_fmt(format_args!("Version::Dev({})", nmb)),
             &Version::Other => f.write_str("Version::Other"),
         }

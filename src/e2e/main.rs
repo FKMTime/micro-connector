@@ -15,7 +15,9 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let socket_path = std::env::var("SOCKET_PATH").unwrap_or("/tmp/sock/socket.sock".to_string());
-    let socket_dir = Path::new(&socket_path).parent().expect("No SOCKET_PATH parent");
+    let socket_dir = Path::new(&socket_path)
+        .parent()
+        .expect("No SOCKET_PATH parent");
     _ = tokio::fs::create_dir_all(socket_dir).await;
     _ = tokio::fs::remove_file(&socket_path).await;
 
@@ -30,13 +32,13 @@ async fn main() -> Result<()> {
         let (mut stream, _) = listener.accept().await?;
         let mut state = hil_processor::HilState {
             devices: Vec::new(),
-            tests: tests_root,
+            tests: tests_root.clone(),
             should_send_status: true,
             get_ms: || {
-                return SystemTime::now()
+                SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .expect("")
-                    .as_millis() as u64;
+                    .as_millis() as u64
             },
             status: Default::default(),
 
@@ -65,10 +67,13 @@ async fn main() -> Result<()> {
             )
             .await;
 
-            let packet: Option<UnixRequest> = if let Ok(Ok(bytes)) = res {
-                serde_json::from_slice(&bytes[..])?
-            } else {
-                None
+            let packet: Option<UnixRequest> = match res {
+                Ok(Ok(bytes)) => serde_json::from_slice(&bytes[..])?,
+                Ok(Err(e)) => {
+                    tracing::error!("read_until_null returned error: {e:?}");
+                    break;
+                }
+                Err(_) => None,
             };
 
             _ = state.feed(packet);

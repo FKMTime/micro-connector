@@ -1,8 +1,8 @@
 use anyhow::Result;
 use unix_utils::{
+    SnapshotData, UnixError,
     request::UnixRequestData,
     response::{PossibleGroup, UnixResponseData},
-    SnapshotData, UnixError,
 };
 
 #[derive(Debug)]
@@ -57,15 +57,13 @@ pub async fn get_competitor_info(card_id: u64, esp_id: u32) -> Result<Competitor
 
 // For now, dont parse response (but its there)
 pub async fn mark_attendance(esp_id: u32, card_id: u64) -> Result<(), UnixError> {
-    let res = crate::UNIX_SOCKET
+    crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::CreateAttendance {
             card_id: card_id.to_string(),
             esp_id,
         })
         .await
-        .map(|_| ());
-
-    res
+        .map(|_| ())
 }
 
 pub async fn send_test_ack(esp_id: u32, snapshot: SnapshotData) -> Result<(), UnixError> {
@@ -73,6 +71,7 @@ pub async fn send_test_ack(esp_id: u32, snapshot: SnapshotData) -> Result<(), Un
     crate::UNIX_SOCKET.send_async_request(data).await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn send_solve_entry(
     time: u64,
     penalty: i64,
@@ -87,7 +86,7 @@ pub async fn send_solve_entry(
 ) -> Result<(), UnixError> {
     let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)
         .ok_or_else(|| UnixError {
-            message: format!("Error parsing timestamp"),
+            message: "Error parsing timestamp".to_string(),
             should_reset_time: false,
         })?
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
@@ -106,12 +105,10 @@ pub async fn send_solve_entry(
         group_id: group_id.to_string(),
     };
 
-    let res = crate::UNIX_SOCKET
+    crate::UNIX_SOCKET
         .send_tagged_request(data)
         .await
-        .map(|_| ());
-
-    res
+        .map(|_| ())
 }
 
 pub async fn send_battery_status(esp_id: u32, battery: Option<f64>) -> Result<(), UnixError> {
@@ -120,28 +117,25 @@ pub async fn send_battery_status(esp_id: u32, battery: Option<f64>) -> Result<()
     };
 
     let battery: u8 = battery.round() as u8;
-    let res = crate::UNIX_SOCKET
+
+    crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::UpdateBatteryPercentage {
             esp_id,
             battery_percentage: battery,
         })
         .await
-        .map(|_| ());
-
-    res
+        .map(|_| ())
 }
 
 pub async fn add_device(esp_id: u32, sign_key: u32, firmware_type: &str) -> Result<(), UnixError> {
-    let res = crate::UNIX_SOCKET
+    crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::RequestToConnectDevice {
             esp_id,
             sign_key,
             r#type: firmware_type.to_string(),
         })
         .await
-        .map(|_| ());
-
-    res
+        .map(|_| ())
 }
 
 pub async fn get_auto_setup_settings() -> Result<String> {

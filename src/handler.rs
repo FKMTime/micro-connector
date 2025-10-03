@@ -18,17 +18,16 @@ pub async fn handle_client(
 
     {
         let state_inner = state.inner.read().await;
-        if state_inner.should_update {
-            if let Some(firmware) = super::updater::should_update(&state, esp_connect_info).await? {
+        if state_inner.should_update
+            && let Some(firmware) = super::updater::should_update(&state, esp_connect_info).await? {
                 tracing::info!(
                     file = format!("device_{}", esp_connect_info.id),
                     "Starting update."
                 );
-                super::updater::update_client(&mut socket, &esp_connect_info, firmware).await?;
+                super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
 
                 return Ok(());
             }
-        }
     }
 
     send_epoch_time(&mut socket).await?;
@@ -241,7 +240,9 @@ async fn on_timer_response(
                         };
 
                         trace!("Card info: {} {} {:?}", card_id, esp_id, info);
-                        let response = TimerPacket {
+                        
+
+                        TimerPacket {
                             tag: response.tag,
                             data: TimerPacketInner::CardInfoResponse {
                                 card_id,
@@ -250,9 +251,7 @@ async fn on_timer_response(
                                 can_compete: info.can_compete,
                                 possible_groups: info.possible_groups,
                             },
-                        };
-
-                        response
+                        }
                     }
                     Err(e) => TimerPacket {
                         tag: response.tag,

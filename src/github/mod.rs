@@ -22,8 +22,7 @@ pub async fn get_releases(client: &reqwest::Client) -> Result<Vec<structs::Relea
             let text = res.text().await?;
 
             let json: Vec<structs::GithubRelease> = serde_json::from_str(&text)?;
-            json.iter()
-                .next()
+            json.first()
                 .ok_or_else(|| anyhow::anyhow!("No releases found!"))?
                 .to_owned()
         };

@@ -147,11 +147,10 @@ impl Subscriber for MinimalTracer {
                         matches = false;
                     }
                 }
-                if let Some(target) = &filter.target {
-                    if !metadata.target().starts_with(target) {
+                if let Some(target) = &filter.target
+                    && !metadata.target().starts_with(target) {
                         matches = false;
                     }
-                }
                 if matches {
                     return true;
                 }
@@ -181,7 +180,7 @@ impl Subscriber for MinimalTracer {
         event.record(&mut visitor);
 
         let time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
-        let color = level_to_color(&level);
+        let color = level_to_color(level);
 
         let file_field = visitor.fields.get("file");
         if let Some(file_field) = file_field {

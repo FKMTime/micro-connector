@@ -123,7 +123,7 @@ async fn setup_bt_device(device: btleplug::platform::Peripheral) -> Result<()> {
     let res = serde_json::from_str::<AutoSetupSettings>(&auto_setup_settings);
     match res {
         Ok(ass) => {
-            if ass.ssid.len() == 0 {
+            if ass.ssid.is_empty() {
                 tracing::trace!("Wifi ssid null... Skipping!");
                 return Ok(());
             }

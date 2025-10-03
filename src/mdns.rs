@@ -28,7 +28,7 @@ pub fn register_mdns(port: &u16) -> Result<()> {
         let my_service = ServiceInfo::new(
             service_type,
             instance_name,
-            &host_name,
+            host_name,
             ip,
             *port,
             &properties[..],

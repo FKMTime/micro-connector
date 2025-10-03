@@ -101,8 +101,8 @@ async fn ws_handler(
     let mut headers = HeaderMap::new();
 
     let inner = state.inner.read().await;
-    if let Some(device_settings) = inner.devices_settings.get(&esp_connect_info.id) {
-        if let Some(sign_key) = device_settings.sign_key {
+    if let Some(device_settings) = inner.devices_settings.get(&esp_connect_info.id)
+        && let Some(sign_key) = device_settings.sign_key {
             let mut key = [0; 16];
             key[..4].copy_from_slice(&sign_key.to_be_bytes());
             let key = GenericArray::from(key);
@@ -122,7 +122,6 @@ async fn ws_handler(
                     .expect(""),
             );
         }
-    }
     drop(inner);
 
     (

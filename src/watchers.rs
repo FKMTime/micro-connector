@@ -41,7 +41,7 @@ pub async fn spawn_watchers(state: SharedAppState) -> Result<()> {
 
 async fn dev_build_watcher(
     state: &SharedAppState,
-    firmware_dir: &PathBuf,
+    firmware_dir: &Path,
     last_modified: &mut u128,
 ) -> Result<()> {
     if !state.dev_mode {
@@ -75,22 +75,22 @@ async fn dev_build_watcher(
     Ok(())
 }
 
-async fn github_releases_watcher(state: &SharedAppState, firmware_dir: &PathBuf) -> Result<()> {
+async fn github_releases_watcher(state: &SharedAppState, firmware_dir: &Path) -> Result<()> {
     let client = reqwest::Client::builder().user_agent("Fkm/2.0").build()?;
     let files = crate::github::get_releases(&client).await?;
 
     for file in files {
         let release_path = firmware_dir.join(&file.name);
         let tmp_path = PathBuf::from("/tmp").join(&file.name);
-        if let Ok(exists) = tokio::fs::try_exists(&release_path).await {
-            if !exists {
-                let resp = client.get(&file.download_url).send().await?;
-                tokio::fs::write(&tmp_path, resp.bytes().await?).await?;
-                move_file(&tmp_path, &release_path).await?;
+        if let Ok(exists) = tokio::fs::try_exists(&release_path).await
+            && !exists
+        {
+            let resp = client.get(&file.download_url).send().await?;
+            tokio::fs::write(&tmp_path, resp.bytes().await?).await?;
+            move_file(&tmp_path, &release_path).await?;
 
-                tracing::info!("Downloaded new release: {}", file.name);
-                _ = state.build_broadcast().await;
-            }
+            tracing::info!("Downloaded new release: {}", file.name);
+            _ = state.build_broadcast().await;
         }
     }
 
