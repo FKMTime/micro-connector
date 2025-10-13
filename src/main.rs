@@ -41,7 +41,10 @@ async fn main() -> Result<()> {
     }
 
     if std::env::var("NO_BT").is_err() {
-        bluetooth::start_bluetooth_task(state.clone()).await?;
+        let res = bluetooth::start_bluetooth_task(state.clone()).await;
+        if let Err(e) = res {
+            tracing::error!("Cannot spawn bluetooth task: {e:?}");
+        }
     }
 
     watchers::spawn_watchers(state.clone()).await?;
