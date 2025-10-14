@@ -9,10 +9,6 @@ pub fn register_mdns(port: &u16) -> Result<()> {
             continue;
         }
 
-        if ip.to_string().starts_with("172.") {
-            continue;
-        }
-
         let mdns = ServiceDaemon::new()?;
 
         let service_type = "_stackmat._tcp.local.";
