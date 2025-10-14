@@ -231,6 +231,11 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                 changed = true;
             }
 
+            if inner_state.secure_rfid != status.secure_rfid {
+                inner_state.secure_rfid = status.secure_rfid;
+                changed = true;
+            }
+
             // remove all unicode weirdness
             let translations: Vec<TranslationLocale> = status
                 .translations
