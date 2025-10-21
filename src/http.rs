@@ -102,26 +102,27 @@ async fn ws_handler(
 
     let inner = state.inner.read().await;
     if let Some(device_settings) = inner.devices_settings.get(&esp_connect_info.id)
-        && let Some(sign_key) = device_settings.sign_key {
-            let mut key = [0; 16];
-            key[..4].copy_from_slice(&sign_key.to_be_bytes());
-            let key = GenericArray::from(key);
+        && let Some(sign_key) = device_settings.sign_key
+    {
+        let mut key = [0; 16];
+        key[..4].copy_from_slice(&sign_key.to_be_bytes());
+        let key = GenericArray::from(key);
 
-            let mut block = [0; 16];
-            block[..8].copy_from_slice(&esp_connect_info.random.to_be_bytes());
-            block[8..12].copy_from_slice(&inner.fkm_token.to_be_bytes());
-            let mut block = GenericArray::from(block);
+        let mut block = [0; 16];
+        block[..8].copy_from_slice(&esp_connect_info.random.to_be_bytes());
+        block[8..12].copy_from_slice(&inner.fkm_token.to_be_bytes());
+        let mut block = GenericArray::from(block);
 
-            let cipher = Aes128::new(&key);
-            cipher.encrypt_block(&mut block);
-            headers.insert(
-                "RandomSigned",
-                u128::from_be_bytes(block.into())
-                    .to_string()
-                    .parse()
-                    .expect(""),
-            );
-        }
+        let cipher = Aes128::new(&key);
+        cipher.encrypt_block(&mut block);
+        headers.insert(
+            "RandomSigned",
+            u128::from_be_bytes(block.into())
+                .to_string()
+                .parse()
+                .expect(""),
+        );
+    }
     drop(inner);
 
     (

@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::{fmt, sync::atomic::AtomicUsize, write};
 use tracing::{
-    field::{Field, Visit},
     Id, Level, Subscriber,
+    field::{Field, Visit},
 };
 
 pub struct StringVisitor<'a> {
@@ -148,9 +148,10 @@ impl Subscriber for MinimalTracer {
                     }
                 }
                 if let Some(target) = &filter.target
-                    && !metadata.target().starts_with(target) {
-                        matches = false;
-                    }
+                    && !metadata.target().starts_with(target)
+                {
+                    matches = false;
+                }
                 if matches {
                     return true;
                 }
