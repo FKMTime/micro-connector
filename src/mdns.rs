@@ -1,9 +1,19 @@
 use anyhow::Result;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
+use serde::Serialize;
+use std::time::Duration;
 
-pub fn register_mdns(port: &u16) -> Result<()> {
+pub async fn register_mdns(port: &u16) -> Result<()> {
+    let mdns_api = std::env::var("MDNS_ADAPTER_API").unwrap_or("http://localhost:3127".to_string());
+    let client = reqwest::Client::new();
+    if let Ok(res) = client.get(&mdns_api).send().await
+        && res.status().is_success()
+    {
+        tokio::task::spawn(mdns_adapter_api(client, mdns_api, *port));
+        return Ok(());
+    }
+
     let network_interfaces = local_ip_address::list_afinet_netifas().expect("afinet list failed");
-
     for (_, ip) in network_interfaces.iter() {
         if ip.is_loopback() || ip.is_multicast() || ip.is_unspecified() || ip.is_ipv6() {
             continue;
@@ -33,4 +43,47 @@ pub fn register_mdns(port: &u16) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, Serialize)]
+pub struct RegisterMdnsApi {
+    pub all_interfaces: bool,
+    pub properties: Vec<(String, String)>,
+    pub service_type: String,
+    pub instance_name: String,
+    pub ip: Option<String>,
+    pub port: u16,
+    pub host_name: String,
+}
+async fn mdns_adapter_api(client: reqwest::Client, api_url: String, port: u16) -> Result<()> {
+    tracing::info!("Using MDNS Adapter api!");
+    let mut data = RegisterMdnsApi {
+        all_interfaces: true,
+        properties: Vec::new(),
+        service_type: "_stackmat._tcp.local.".to_string(),
+        instance_name: "stackmat_backend".to_string(),
+        ip: None,
+        port,
+        host_name: "stackmat.local.".to_string(),
+    };
+    if std::env::var("NO_TLS").is_ok() {
+        data.properties
+            .push(("ws".to_string(), format!("ws://{{IF_IP}}:{port}")));
+    } else {
+        data.properties
+            .push(("ws".to_string(), format!("wss://{{IF_IP}}:{port}")));
+    }
+
+    let data_json = serde_json::to_string(&data)?;
+    tracing::debug!("Data json: {data_json}");
+    loop {
+        _ = client
+            .post(&api_url)
+            .body(data_json.clone())
+            .header("Content-Type", "application/json")
+            .send()
+            .await;
+
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    }
 }

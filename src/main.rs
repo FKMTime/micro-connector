@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
     UNIX_SOCKET.init(&socket_path, state.clone()).await?;
 
     if std::env::var("NO_MDNS").is_err() {
-        mdns::register_mdns(&port)?;
+        mdns::register_mdns(&port).await?;
     }
 
     if std::env::var("NO_BT").is_err() {
