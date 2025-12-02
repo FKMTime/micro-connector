@@ -3,6 +3,10 @@ use mdns_sd::{ServiceDaemon, ServiceInfo};
 use serde::Serialize;
 use std::time::Duration;
 
+const SERVICE_TYPE: &str = "_fkmtime._tcp.local.";
+const INSTANCE_NAME: &str = "fkmtime_microconnector";
+const HOST_NAME: &str = "fkmtime.local.";
+
 pub async fn register_mdns(port: &u16) -> Result<()> {
     let mdns_api = std::env::var("MDNS_ADAPTER_API").unwrap_or("http://localhost:3127".to_string());
     let client = reqwest::Client::new();
@@ -21,10 +25,7 @@ pub async fn register_mdns(port: &u16) -> Result<()> {
 
         let mdns = ServiceDaemon::new()?;
 
-        let service_type = "_stackmat._tcp.local.";
-        let instance_name = "stackmat_backend";
         let ip = ip.to_string();
-        let host_name = "stackmat.local.";
         let properties = if std::env::var("NO_TLS").is_ok() {
             [("ws", format!("ws://{ip}:{port}"))]
         } else {
@@ -32,9 +33,9 @@ pub async fn register_mdns(port: &u16) -> Result<()> {
         };
 
         let my_service = ServiceInfo::new(
-            service_type,
-            instance_name,
-            host_name,
+            SERVICE_TYPE,
+            INSTANCE_NAME,
+            HOST_NAME,
             ip,
             *port,
             &properties[..],
@@ -60,11 +61,11 @@ async fn mdns_adapter_api(client: reqwest::Client, api_url: String, port: u16) -
     let mut data = RegisterMdnsApi {
         all_interfaces: true,
         properties: Vec::new(),
-        service_type: "_stackmat._tcp.local.".to_string(),
-        instance_name: "stackmat_backend".to_string(),
+        service_type: SERVICE_TYPE.to_string(),
+        instance_name: INSTANCE_NAME.to_string(),
         ip: None,
         port,
-        host_name: "stackmat.local.".to_string(),
+        host_name: HOST_NAME.to_string(),
     };
     if std::env::var("NO_TLS").is_ok() {
         data.properties
