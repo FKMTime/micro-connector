@@ -1,14 +1,22 @@
 use anyhow::Result;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use serde::Serialize;
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 
 const SERVICE_TYPE: &str = "_fkmtime._tcp.local.";
 const INSTANCE_NAME: &str = "fkmtime_microconnector";
 const HOST_NAME: &str = "fkmtime.local.";
 
 pub async fn register_mdns(port: &u16) -> Result<()> {
-    let mdns_api = std::env::var("MDNS_ADAPTER_API").unwrap_or("http://localhost:3127".to_string());
+    let mdns_api = std::env::var("MDNS_ADAPTER_API").unwrap_or_else(|_| {
+        if is_running_in_docker() {
+            "http://host.docker.internal:3127"
+        } else {
+            "http://localhost:3127"
+        }
+        .to_string()
+    });
+
     let client = reqwest::Client::new();
     if let Ok(res) = client.get(&mdns_api).send().await
         && res.status().is_success()
@@ -44,6 +52,20 @@ pub async fn register_mdns(port: &u16) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn is_running_in_docker() -> bool {
+    if Path::new("/.dockerenv").exists() {
+        return true;
+    }
+
+    if let Ok(contents) = std::fs::read_to_string("/proc/self/cgroup")
+        && contents.contains("docker")
+    {
+        return true;
+    }
+
+    false
 }
 
 #[derive(Debug, Serialize)]
