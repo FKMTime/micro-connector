@@ -223,9 +223,13 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let inner = crate::UNIX_SOCKET.get_inner().await?;
             let inner = inner.read().await;
             let mut inner_state = inner.state.inner.write().await;
-            inner_state.auto_setup = status.auto_setup;
 
             let mut changed = false;
+            if inner_state.auto_setup != status.auto_setup {
+                inner_state.auto_setup = status.auto_setup;
+                changed = true;
+            }
+
             if inner_state.fkm_token != status.fkm_token {
                 inner_state.fkm_token = status.fkm_token;
                 changed = true;
