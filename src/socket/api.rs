@@ -18,10 +18,15 @@ pub struct CompetitorInfo {
     pub possible_groups: Vec<PossibleGroup>,
 }
 
-pub async fn get_competitor_info(card_id: u64, esp_id: u32) -> Result<CompetitorInfo, UnixError> {
+pub async fn get_competitor_info(
+    card_id: u64,
+    esp_id: u32,
+    is_competitor: bool,
+) -> Result<CompetitorInfo, UnixError> {
     let res = crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::PersonInfo {
             card_id: card_id.to_string(),
+            is_competitor,
             esp_id,
         })
         .await?;

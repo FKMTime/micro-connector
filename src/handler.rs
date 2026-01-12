@@ -202,6 +202,7 @@ async fn on_timer_response(
     match response.data {
         TimerPacketInner::CardInfoRequest {
             card_id,
+            is_competitor,
             attendance_device,
             sign_key,
         } => {
@@ -234,35 +235,40 @@ async fn on_timer_response(
                 return Ok(());
             }
 
-            let response =
-                match crate::socket::api::get_competitor_info(card_id, esp_connect_info.id).await {
-                    Ok(info) => {
-                        let registrant_display = match info.registrant_id {
-                            Some(x) => format!(" ({x})"),
-                            None => String::new(),
-                        };
+            let response = match crate::socket::api::get_competitor_info(
+                card_id,
+                esp_connect_info.id,
+                is_competitor,
+            )
+            .await
+            {
+                Ok(info) => {
+                    let registrant_display = match info.registrant_id {
+                        Some(x) => format!(" ({x})"),
+                        None => String::new(),
+                    };
 
-                        trace!("Card info: {} {} {:?}", card_id, esp_id, info);
+                    trace!("Card info: {} {} {:?}", card_id, esp_id, info);
 
-                        TimerPacket {
-                            tag: response.tag,
-                            data: TimerPacketInner::CardInfoResponse {
-                                card_id,
-                                country_iso2: info.country_iso2.unwrap_or_default(),
-                                display: format!("{}{}", info.name, registrant_display),
-                                can_compete: info.can_compete,
-                                possible_groups: info.possible_groups,
-                            },
-                        }
-                    }
-                    Err(e) => TimerPacket {
+                    TimerPacket {
                         tag: response.tag,
-                        data: TimerPacketInner::ApiError {
-                            error: e.message,
-                            should_reset_time: e.should_reset_time,
+                        data: TimerPacketInner::CardInfoResponse {
+                            card_id,
+                            country_iso2: info.country_iso2.unwrap_or_default(),
+                            display: format!("{}{}", info.name, registrant_display),
+                            can_compete: info.can_compete,
+                            possible_groups: info.possible_groups,
                         },
+                    }
+                }
+                Err(e) => TimerPacket {
+                    tag: response.tag,
+                    data: TimerPacketInner::ApiError {
+                        error: e.message,
+                        should_reset_time: e.should_reset_time,
                     },
-                };
+                },
+            };
 
             let response = serde_json::to_string(&response)?;
             socket.send(Message::Text(response.into())).await?;

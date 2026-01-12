@@ -100,6 +100,7 @@ impl HilState {
                 }
                 UnixRequestData::PersonInfo {
                     ref card_id,
+                    is_competitor: _,
                     esp_id: _,
                 } => {
                     let card_id: u64 = card_id.parse()?;
