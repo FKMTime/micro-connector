@@ -320,6 +320,20 @@ async fn on_timer_response(
             .await;
 
             let resp = match res {
+                Ok(unix_utils::response::UnixResponseData::EnterAttemptResp { message }) => {
+                    if delegate {
+                        return Ok(());
+                    }
+
+                    TimerPacket {
+                        tag: response.tag,
+                        data: TimerPacketInner::SolveConfirm {
+                            session_id,
+                            competitor_id,
+                            message,
+                        },
+                    }
+                }
                 Ok(_) => {
                     if delegate {
                         return Ok(());
@@ -330,6 +344,7 @@ async fn on_timer_response(
                         data: TimerPacketInner::SolveConfirm {
                             session_id,
                             competitor_id,
+                            message: "None".to_string(),
                         },
                     }
                 }

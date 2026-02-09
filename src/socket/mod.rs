@@ -274,7 +274,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                     .devices_settings
                     .insert(device.esp_id, device_settings.clone());
 
-                if old.as_ref() != Some(&device_settings) {
+                if old != Some(device_settings) {
                     changed = true;
                 }
             }

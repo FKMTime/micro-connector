@@ -88,7 +88,7 @@ pub async fn send_solve_entry(
     session_id: &str,
     inspection_time: i64,
     group_id: &str,
-) -> Result<(), UnixError> {
+) -> Result<UnixResponseData, UnixError> {
     let solved_at = chrono::DateTime::from_timestamp_millis(solved_at as i64 * 1000)
         .ok_or_else(|| UnixError {
             message: "Error parsing timestamp".to_string(),
@@ -110,10 +110,7 @@ pub async fn send_solve_entry(
         group_id: group_id.to_string(),
     };
 
-    crate::UNIX_SOCKET
-        .send_tagged_request(data)
-        .await
-        .map(|_| ())
+    crate::UNIX_SOCKET.send_tagged_request(data).await
 }
 
 pub async fn send_battery_status(esp_id: u32, battery: Option<f64>) -> Result<(), UnixError> {

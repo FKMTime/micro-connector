@@ -31,6 +31,9 @@ pub struct AutoSetupData {
 pub enum UnixResponseData {
     AutoSetupSettingsResp(AutoSetupSettings),
     ServerStatus(CompetitionStatusResp),
+    EnterAttemptResp {
+        message: String,
+    },
     PersonInfoResp {
         id: String,
         registrant_id: Option<i64>,

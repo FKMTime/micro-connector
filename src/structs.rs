@@ -39,6 +39,7 @@ pub enum TimerPacketInner {
     SolveConfirm {
         competitor_id: u64,
         session_id: String,
+        message: String,
     },
     DelegateResponse {
         should_scan_cards: bool,
