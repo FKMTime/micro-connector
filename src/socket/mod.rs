@@ -224,22 +224,6 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let inner = inner.read().await;
             let mut inner_state = inner.state.inner.write().await;
 
-            let mut changed = false;
-            if inner_state.auto_setup != status.auto_setup {
-                inner_state.auto_setup = status.auto_setup;
-                changed = true;
-            }
-
-            if inner_state.fkm_token != status.fkm_token {
-                inner_state.fkm_token = status.fkm_token;
-                changed = true;
-            }
-
-            if inner_state.secure_rfid != status.secure_rfid {
-                inner_state.secure_rfid = status.secure_rfid;
-                changed = true;
-            }
-
             // remove all unicode weirdness
             let translations: Vec<TranslationLocale> = status
                 .translations
@@ -257,14 +241,20 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                 })
                 .collect();
 
-            let mut changed = changed
-                || inner_state.should_update != status.should_update
+            let mut changed = inner_state.should_update != status.should_update
                 || inner_state.locales != translations
-                || inner_state.default_locale != status.default_locale;
+                || inner_state.default_locale != status.default_locale
+                || inner_state.auto_setup != status.auto_setup
+                || inner_state.fkm_token != status.fkm_token
+                || inner_state.secure_rfid != status.secure_rfid;
 
             inner_state.should_update = status.should_update;
             inner_state.locales = translations;
             inner_state.default_locale = status.default_locale;
+            inner_state.auto_setup = status.auto_setup;
+            inner_state.fkm_token = status.fkm_token;
+            inner_state.secure_rfid = status.secure_rfid;
+
             for device in &status.devices {
                 let device_settings = crate::structs::DeviceSettings {
                     sign_key: device.sign_key,
