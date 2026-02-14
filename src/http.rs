@@ -141,7 +141,7 @@ async fn handle_socket(socket: WebSocket, esp_connect_info: EspConnectInfo, stat
 
     info!("Client disconnected: {esp_connect_info:?}");
     tracing::info!(
-        file = format!("device_{}", esp_connect_info.id),
+        file = format!("device_{:X}", esp_connect_info.id),
         "============= Client disconnected! ============="
     );
 }
