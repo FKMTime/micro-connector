@@ -32,7 +32,7 @@ pub async fn register_mdns(port: &u16) -> Result<()> {
 
         let my_service = ServiceInfo::new(
             SERVICE_TYPE,
-            INSTANCE_NAME,
+            &format!("{INSTANCE_NAME}/{ip}"),
             HOST_NAME,
             &ip,
             *port,

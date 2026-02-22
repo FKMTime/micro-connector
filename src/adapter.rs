@@ -45,7 +45,7 @@ pub async fn register_mdns(client: reqwest::Client, api_url: String, port: u16) 
         all_interfaces: true,
         properties: Vec::new(),
         service_type: crate::mdns::SERVICE_TYPE.to_string(),
-        instance_name: crate::mdns::INSTANCE_NAME.to_string(),
+        instance_name: format!("{}/{{IF_IP}}", crate::mdns::INSTANCE_NAME),
         ip: None,
         port,
         host_name: crate::mdns::HOST_NAME.to_string(),
