@@ -1,6 +1,6 @@
 use crate::structs::TestStep;
 use anyhow::Result;
-use rand::Rng as _;
+use rand::RngExt;
 use structs::HilError;
 use unix_utils::{
     request::{UnixRequest, UnixRequestData},

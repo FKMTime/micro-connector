@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::{os::unix::fs::PermissionsExt, path::PathBuf};
 
+mod adapter;
 mod bluetooth;
 mod github;
 mod handler;

@@ -1,3 +1,4 @@
+use crate::adapter::BleAdapter;
 use crate::structs::SharedAppState;
 use anyhow::Result;
 use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
@@ -8,6 +9,25 @@ use serde::Deserialize;
 const SET_WIFI_UUID: uuid::Uuid = uuid::uuid!("bcd7e573-b0b2-4775-83c0-acbf3aaf210c");
 
 pub async fn start_bluetooth_task(state: SharedAppState) -> Result<()> {
+    let adapter_api = crate::adapter::adapter_api_url();
+    let client = reqwest::Client::new();
+    if let Ok(res) = client.get(&adapter_api).send().await
+        && res.status().is_success()
+    {
+        tokio::task::spawn(async move {
+            let mut ble_adapter = BleAdapter::new(client, adapter_api);
+            loop {
+                if let Err(e) = adapter_bluetooth_task(&state, &mut ble_adapter).await {
+                    tracing::error!("Adapter Bluetooth task failed: {:?}", e);
+                }
+
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
+        });
+
+        return Ok(());
+    }
+
     let manager = Manager::new().await?;
     if manager.adapters().await.is_err() {
         tracing::error!("No bluetooth adapter found!");
@@ -76,6 +96,61 @@ async fn bluetooth_task(state: &SharedAppState) -> Result<()> {
         }
 
         adapter.stop_scan().await?;
+    }
+}
+
+async fn adapter_bluetooth_task(state: &SharedAppState, adapter: &mut BleAdapter) -> Result<()> {
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        if !state.inner.read().await.auto_setup {
+            continue;
+        }
+
+        let Ok(scan_devices) = adapter.scan(std::time::Duration::from_secs(5)).await else {
+            continue;
+        };
+
+        for device in scan_devices {
+            let is_fkm = device.local_name.starts_with("FKM-");
+            if !is_fkm {
+                continue;
+            }
+
+            tracing::info!("Found FKM device with name: \"{}\"!", device.local_name);
+
+            tracing::trace!("Getting wifi settings");
+            let auto_setup_settings =
+                if let Ok(ass) = crate::socket::api::get_auto_setup_settings().await {
+                    ass
+                } else {
+                    std::env::var("AUTOSETUP_SETTINGS")?
+                };
+
+            let res = serde_json::from_str::<AutoSetupSettings>(&auto_setup_settings);
+            match res {
+                Ok(ass) => {
+                    if ass.ssid.is_empty() {
+                        tracing::trace!("Wifi ssid null... Skipping!");
+                        return Ok(());
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Wifi auto setup settings parse error: {e:?}");
+                    return Ok(());
+                }
+            }
+
+            let set_wifi_data = format!("{auto_setup_settings}\0");
+            let set_wifi_data = set_wifi_data.as_bytes();
+            tracing::trace!("Got wifi settings");
+
+            let res = adapter
+                .write_to_device(device.device_id, SET_WIFI_UUID, set_wifi_data)
+                .await;
+            if let Err(e) = res {
+                tracing::error!("Failed to setup BT device: {:?}", e);
+            }
+        }
     }
 }
 
