@@ -39,17 +39,6 @@ pub async fn register_mdns(port: &u16) -> Result<()> {
             &properties[..],
         )?;
         mdns.register(my_service)?;
-
-        // backwards compatible with old fws
-        let my_service = ServiceInfo::new(
-            &SERVICE_TYPE.replace("fkmtime", "stackmat"),
-            &INSTANCE_NAME.replace("fkmtime", "stackmat"),
-            &HOST_NAME.replace("fkmtime", "stackmat"),
-            ip,
-            *port,
-            &properties[..],
-        )?;
-        mdns.register(my_service)?;
     }
 
     Ok(())
