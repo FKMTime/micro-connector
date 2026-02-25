@@ -43,7 +43,7 @@ pub async fn handle_client(
         tokio::select! {
             _ = hb_interval.tick() => {
                 if !hb_received {
-                    error!("Closing connection due to no heartbeat ({})", esp_connect_info.id);
+                    error!("Closing connection due to no heartbeat ({:X})", esp_connect_info.id);
                     tracing::error!(file = format!("device_{:X}", esp_connect_info.id), "============= Closing connection (due to no heartbeat) =============");
                     break;
                 }
@@ -174,7 +174,7 @@ async fn on_ws_msg(
             *hb_received = true;
         }
         Message::Text(payload) => {
-            tracing::trace!("WS payload recv [{}]: {payload}", esp_connect_info.id);
+            tracing::trace!("WS payload recv [{:X}]: {payload}", esp_connect_info.id);
 
             let response: TimerPacket = serde_json::from_str(&payload)?;
             let res = on_timer_response(socket, response, esp_connect_info, state).await;
@@ -248,7 +248,7 @@ async fn on_timer_response(
                         None => String::new(),
                     };
 
-                    trace!("Card info: {} {} {:?}", card_id, esp_id, info);
+                    trace!("Card info: {} {:X} {:?}", card_id, esp_id, info);
 
                     TimerPacket {
                         tag: response.tag,
@@ -303,7 +303,7 @@ async fn on_timer_response(
             }
 
             trace!(
-                "Solve: {solve_time} ({penalty}) {competitor_id} {esp_id} {timestamp} {session_id} {delegate} {group_id}"
+                "Solve: {solve_time} ({penalty}) {competitor_id} {esp_id:X} {timestamp} {session_id} {delegate} {group_id}"
             );
             let res = crate::socket::api::send_solve_entry(
                 solve_time,
@@ -381,7 +381,7 @@ async fn on_timer_response(
             let inner_state = state.inner.read().await;
             if !inner_state.devices_settings.contains_key(&esp_id) {
                 _ = crate::socket::api::add_device(esp_id, sign_key, &firmware).await;
-                trace!("Add device: {}", esp_id);
+                trace!("Add device: {:X}", esp_id);
             }
         }
         TimerPacketInner::TestAck(snapshot) => {

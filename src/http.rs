@@ -44,6 +44,16 @@ pub struct EspConnectInfo {
     pub random: u64,
 }
 
+impl core::fmt::Display for EspConnectInfo {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "EspConnectInfo {{ id: {:08X}, version: \"{}\", firmware: \"{}\", hw: \"{}\", random: {} }}",
+            self.id, self.version, self.firmware, self.hw, self.random
+        )
+    }
+}
+
 fn cert_from_str(cert: &str) -> Result<Vec<CertificateDer<'static>>> {
     rustls_pemfile::certs(&mut cert.as_bytes())
         .collect::<std::io::Result<_>>()
@@ -132,14 +142,14 @@ async fn ws_handler(
 }
 
 async fn handle_socket(socket: WebSocket, esp_connect_info: EspConnectInfo, state: SharedAppState) {
-    info!("Client connected: {esp_connect_info:?}");
+    info!("Client connected: {esp_connect_info}");
 
     let res = handle_client(socket, &esp_connect_info, state).await;
     if let Err(e) = res {
         error!("Handle client error: {e}");
     }
 
-    info!("Client disconnected: {esp_connect_info:?}");
+    info!("Client disconnected: {esp_connect_info}");
     tracing::info!(
         file = format!("device_{:X}", esp_connect_info.id),
         "============= Client disconnected! ============="

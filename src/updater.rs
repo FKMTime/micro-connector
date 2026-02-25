@@ -76,6 +76,16 @@ pub async fn should_update(
     state: &SharedAppState,
     esp_connect_info: &EspConnectInfo,
 ) -> Result<Option<Firmware>> {
+    if !state
+        .inner
+        .read()
+        .await
+        .devices_settings
+        .contains_key(&esp_connect_info.id)
+    {
+        return Ok(None);
+    }
+
     let firmware_dir = std::env::var("FIRMWARE_DIR")?;
     let firmware_dir = std::path::PathBuf::from(firmware_dir);
 
@@ -133,7 +143,8 @@ pub async fn update_client(
     latest_firmware: Firmware,
 ) -> Result<bool> {
     info!(
-        "[{}] Updating client from version: {} to version {}",
+        "[{:X}/{}] Updating client from version: {} to version {}",
+        esp_connect_info.id,
         esp_connect_info.firmware,
         Version::from_str(&esp_connect_info.version),
         latest_firmware.version
@@ -173,7 +184,7 @@ pub async fn update_client(
 
         if firmware_chunks.len().is_multiple_of(10) {
             debug!(
-                "[{}] {}/{} chunks left",
+                "[{:X}] {}/{} chunks left",
                 esp_connect_info.id,
                 firmware_chunks.len(),
                 latest_firmware.data.len() / UPDATE_CHUNK_SIZE
@@ -190,7 +201,7 @@ pub async fn update_client(
         let frame = tokio::time::timeout(std::time::Duration::from_secs(10), socket.recv())
             .await
             .map_err(|_| {
-                error!("Timeout while updating");
+                error!("Timeout while updating {:X}", esp_connect_info.id);
                 anyhow::anyhow!("Timeout while updating")
             })?;
 

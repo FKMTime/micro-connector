@@ -246,7 +246,8 @@ impl HilState {
 
             info!(
                 self,
-                "Startin new test({}): {}", device.id, self.tests.tests[next_idx].name
+                "Startin new test({:X}): {}",
+                device.id, self.tests.tests[next_idx].name
             );
 
             device.current_test = Some(next_idx);
@@ -266,7 +267,8 @@ impl HilState {
             device.completed_count += 1;
             info!(
                 self,
-                "Test end! ({}) [{}] [{}]", device.id, device.completed_count, self.completed_count
+                "Test end! ({:X}) [{}] [{}]",
+                device.id, device.completed_count, self.completed_count
             );
 
             device.current_test = None;
@@ -275,7 +277,7 @@ impl HilState {
 
         trace!(
             self,
-            " > Running step: {current_step:?} (esp_id: {})",
+            " > Running step: {current_step:?} (esp_id: {:X})",
             device.id
         );
 
