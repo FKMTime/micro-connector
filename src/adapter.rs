@@ -136,6 +136,8 @@ impl BleAdapter {
             .body(data_json.clone())
             .header("Content-Type", "application/json")
             .send()
+            .await?
+            .text()
             .await?;
 
         Ok(())
