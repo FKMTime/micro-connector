@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 default = ["console_error_panic_hook"]
 
 [dependencies]
-wasm-bindgen = "0.2.111"
+wasm-bindgen = "0.2.114"
 hil-processor = { path = "../hil-processor" }
 unix-utils = { path = "../unix-utils" }
 
@@ -20,13 +20,13 @@ unix-utils = { path = "../unix-utils" }
 # all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
 # code size when deploying.
 console_error_panic_hook = { version = "0.1.7", optional = true }
-js-sys = "0.3.88"
+js-sys = "0.3.91"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-getrandom = { version = "0.4.1", features = ["wasm_js"] }
+getrandom = { version = "0.4.2", features = ["wasm_js"] }
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3.61"
+wasm-bindgen-test = "0.3.64"
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.
