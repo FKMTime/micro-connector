@@ -32,6 +32,7 @@ pub struct HilErrorLoc {
 #[derive(Clone)]
 pub struct HilDevice {
     pub id: u32,
+    pub sign_key: Option<u32>,
     pub last_snapshot: Option<SnapshotData>,
     pub back_packet: Option<UnixRequestData>,
     pub next_step_time: u64,

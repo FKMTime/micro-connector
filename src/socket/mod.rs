@@ -276,6 +276,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                 }
             }
 
+            drop(inner_state);
             if changed {
                 _ = inner.state.device_settings_broadcast().await;
             }

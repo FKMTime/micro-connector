@@ -53,9 +53,10 @@ macro_rules! trace {
 }
 
 impl HilDevice {
-    pub fn new(id: u32) -> HilDevice {
+    pub fn new(id: u32, sign_key: Option<u32>) -> HilDevice {
         HilDevice {
             id,
+            sign_key,
             last_snapshot: None,
             current_test: None,
             back_packet: None,
@@ -78,13 +79,15 @@ impl HilState {
             trace!(self, "Feed: {packet:?}");
 
             match packet.data {
-                UnixRequestData::RequestToConnectDevice { esp_id, .. } => {
+                UnixRequestData::RequestToConnectDevice {
+                    esp_id, sign_key, ..
+                } => {
                     let dev = self.devices.iter().find(|d| d.id == esp_id);
                     if dev.is_some() {
                         return Ok(());
                     }
 
-                    let device = HilDevice::new(esp_id);
+                    let device = HilDevice::new(esp_id, Some(sign_key));
                     self.devices.push(device);
 
                     self.send_status_resp();
@@ -246,8 +249,7 @@ impl HilState {
 
             info!(
                 self,
-                "Startin new test({:X}): {}",
-                device.id, self.tests.tests[next_idx].name
+                "Startin new test({:X}): {}", device.id, self.tests.tests[next_idx].name
             );
 
             device.current_test = Some(next_idx);
@@ -268,7 +270,9 @@ impl HilState {
             info!(
                 self,
                 "Test end! ({:X}) [{}] [{}]",
-                device.id, device.completed_count, self.completed_count
+                device.id,
+                device.completed_count,
+                self.completed_count
             );
 
             device.current_test = None;
@@ -475,7 +479,7 @@ impl HilState {
                     .iter()
                     .map(|d| unix_utils::response::CompetitionStatusDevice {
                         esp_id: d.id,
-                        sign_key: None,
+                        sign_key: d.sign_key,
                     })
                     .collect(),
                 translations: self.status.translations.clone(),
@@ -501,7 +505,7 @@ impl HilState {
 
     pub fn process_initial_status_devices(&mut self) {
         for dev in &self.status.devices {
-            let device = HilDevice::new(dev.esp_id);
+            let device = HilDevice::new(dev.esp_id, dev.sign_key);
             self.devices.push(device);
         }
     }

@@ -138,6 +138,7 @@ async fn send_device_status(
         }
     };
 
+    drop(state);
     let response = serde_json::to_string(&settings_frame)?;
     socket.send(Message::Text(response.into())).await?;
     Ok(())
@@ -380,6 +381,7 @@ async fn on_timer_response(
         TimerPacketInner::Add { firmware, sign_key } => {
             let inner_state = state.inner.read().await;
             if !inner_state.devices_settings.contains_key(&esp_id) {
+                drop(inner_state);
                 _ = crate::socket::api::add_device(esp_id, sign_key, &firmware).await;
                 trace!("Add device: {:X}", esp_id);
             }
@@ -387,6 +389,7 @@ async fn on_timer_response(
         TimerPacketInner::TestAck(snapshot) => {
             let inner_state = state.inner.read().await;
             if inner_state.devices_settings.contains_key(&esp_id) {
+                drop(inner_state);
                 _ = crate::socket::api::send_test_ack(esp_id, snapshot).await;
             }
         }

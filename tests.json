@@ -2528,6 +2528,11 @@
                     "type": "ScanCard",
                     "data": 3004425529
                 },
+
+                {
+                    "type": "Sleep",
+                    "data": 550
+                },
                 
                 {
                     "type": "ScanCard",
@@ -2676,7 +2681,7 @@
                     "type": "VerifySend",
                     "data": {
                         "time": -1,
-                        "penalty": 4,
+                        "penalty": 2,
                         "delegate": false
                     }
                 }
@@ -3008,7 +3013,7 @@
                     "type": "VerifySend",
                     "data": {
                         "time": -1,
-                        "penalty": -1,
+                        "penalty": 0,
                         "delegate": false
                     }
                 }
@@ -3258,6 +3263,11 @@
                 {
                     "type": "ScanCard",
                     "data": 69420
+                },
+
+                {
+                    "type": "Sleep",
+                    "data": 550
                 },
                 
                 {
