@@ -2681,7 +2681,7 @@
                     "type": "VerifySend",
                     "data": {
                         "time": -1,
-                        "penalty": 2,
+                        "penalty": 4,
                         "delegate": false
                     }
                 }
@@ -2989,6 +2989,14 @@
                 
                 {
                     "type": "SolveTime"
+                },
+
+                {
+                    "type": "Button",
+                    "data": {
+                        "name": "penalty",
+                        "time": 150
+                    }
                 },
                 
                 {

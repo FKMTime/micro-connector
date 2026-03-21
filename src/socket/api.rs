@@ -129,6 +129,13 @@ pub async fn send_battery_status(esp_id: u32, battery: Option<f64>) -> Result<()
         .map(|_| ())
 }
 
+pub async fn send_current_time(esp_id: u32, time: u64) -> Result<(), UnixError> {
+    crate::UNIX_SOCKET
+        .send_tagged_request(UnixRequestData::CurrentTimeInfo { esp_id, time })
+        .await
+        .map(|_| ())
+}
+
 pub async fn add_device(esp_id: u32, sign_key: u32, firmware_type: &str) -> Result<(), UnixError> {
     crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::RequestToConnectDevice {

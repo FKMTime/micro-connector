@@ -94,6 +94,7 @@ pub enum TestStep {
 
     /// Simulate timer time (random)
     SolveTime,
+    ResetTimer,
     Button {
         name: String,
         time: u64,

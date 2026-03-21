@@ -84,6 +84,7 @@ pub enum TimerPacketInner {
         auto_setup: bool,
     },
     Logs {
+        current_time: Option<u64>,
         logs: Vec<String>,
     },
     Battery {

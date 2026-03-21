@@ -48,6 +48,10 @@ pub enum UnixRequestData {
         #[serde(rename = "type")]
         r#type: String,
     },
+    CurrentTimeInfo {
+        esp_id: u32,
+        time: u64,
+    },
     TestAck {
         esp_id: u32,
         snapshot: SnapshotData,

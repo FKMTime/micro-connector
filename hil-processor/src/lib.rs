@@ -265,6 +265,15 @@ impl HilState {
             .get(device.current_step)
             .cloned()
         else {
+            self.send_resp(
+                UnixResponseData::TestPacket {
+                    esp_id: device.id,
+                    data: TestPacketData::StackmatReset,
+                },
+                None,
+                false,
+            );
+
             self.completed_count += 1;
             device.completed_count += 1;
             info!(
@@ -307,6 +316,13 @@ impl HilState {
                 device.last_solve_time = random_time;
                 device.current_step += 1;
                 device.next_step_time = (self.get_ms)() + random_time;
+            }
+            TestStep::ResetTimer => {
+                self.send_test_packet(device.id, TestPacketData::StackmatReset);
+
+                device.wait_for_ack = true;
+                device.current_step += 1;
+                device.next_step_time = (self.get_ms)();
             }
             TestStep::ScanCard(card_id) => {
                 self.send_test_packet(device.id, TestPacketData::ScanCard(*card_id));

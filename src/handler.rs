@@ -361,7 +361,7 @@ async fn on_timer_response(
             let response = serde_json::to_string(&resp)?;
             socket.send(Message::Text(response.into())).await?;
         }
-        TimerPacketInner::Logs { logs } => {
+        TimerPacketInner::Logs { current_time, logs } => {
             for log in logs.iter().rev() {
                 for line in log.lines() {
                     if line.is_empty() {
@@ -370,6 +370,10 @@ async fn on_timer_response(
 
                     tracing::info!(file = format!("device_{esp_id:X}"), "{line}");
                 }
+            }
+
+            if let Some(time) = current_time {
+                _ = crate::socket::api::send_current_time(esp_id, time).await;
             }
         }
         TimerPacketInner::Battery { level, voltage: _ } => {
