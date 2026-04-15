@@ -26,6 +26,11 @@ pub struct FirmwareMetadata {
     pub build_time: u64,
 }
 const METADATA_SIZE: usize = core::mem::size_of::<FirmwareMetadata>();
+const VERSION_OFFSET: usize = 0;
+const FIRMWARE_OFFSET: usize = 32;
+const HARDWARE_OFFSET: usize = 48;
+const BUILD_TIME_OFFSET: usize = 64;
+const BUILD_TIME_END: usize = BUILD_TIME_OFFSET + 8;
 
 impl FirmwareMetadata {
     pub async fn from_dir_entry(entry: &DirEntry) -> Result<Self> {
@@ -41,16 +46,38 @@ impl FirmwareMetadata {
     }
 
     pub async fn from_file(file_name: &str, data: &[u8]) -> Result<Self> {
-        let metadata_bytes = &data[data.len() - METADATA_SIZE..];
-        let metadata: FirmwareMetadata =
-            unsafe { core::ptr::read(metadata_bytes.as_ptr() as *const FirmwareMetadata) };
+        if data.len() >= METADATA_SIZE {
+            let metadata_bytes = &data[data.len() - METADATA_SIZE..];
 
-        let metadata_parse_success = core::str::from_utf8(&metadata.version).is_ok()
-            && core::str::from_utf8(&metadata.firmware).is_ok()
-            && core::str::from_utf8(&metadata.hardware).is_ok();
+            let mut version = [0u8; 32];
+            let mut firmware = [0u8; 16];
+            let mut hardware = [0u8; 16];
+            version.copy_from_slice(&metadata_bytes[VERSION_OFFSET..FIRMWARE_OFFSET]);
+            firmware.copy_from_slice(&metadata_bytes[FIRMWARE_OFFSET..HARDWARE_OFFSET]);
+            hardware.copy_from_slice(&metadata_bytes[HARDWARE_OFFSET..BUILD_TIME_OFFSET]);
+            let build_time = u64::from_le_bytes(
+                <[u8; 8]>::try_from(&metadata_bytes[BUILD_TIME_OFFSET..BUILD_TIME_END]).unwrap(),
+            );
 
-        if metadata_parse_success {
-            return Ok(metadata);
+            let metadata = FirmwareMetadata {
+                version,
+                firmware,
+                hardware,
+                build_time,
+            };
+
+            /*
+            let metadata: FirmwareMetadata =
+                unsafe { core::ptr::read(metadata_bytes.as_ptr() as *const FirmwareMetadata) };
+            */
+
+            let metadata_parse_success = core::str::from_utf8(&metadata.version).is_ok()
+                && core::str::from_utf8(&metadata.firmware).is_ok()
+                && core::str::from_utf8(&metadata.hardware).is_ok();
+
+            if metadata_parse_success {
+                return Ok(metadata);
+            }
         }
 
         let name_split: Vec<&str> = file_name.split('_').collect();

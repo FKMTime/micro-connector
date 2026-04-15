@@ -373,7 +373,10 @@ async fn on_timer_response(
             }
 
             if let Some(time) = current_time {
-                _ = crate::socket::api::send_current_time(esp_id, time).await;
+                let inner_state = state.inner.read().await;
+                if inner_state.devices_settings.contains_key(&esp_id) {
+                    _ = crate::socket::api::send_current_time(esp_id, time).await;
+                }
             }
         }
         TimerPacketInner::Battery { level, voltage: _ } => {

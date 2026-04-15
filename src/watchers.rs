@@ -80,8 +80,21 @@ async fn github_releases_watcher(state: &SharedAppState, firmware_dir: &Path) ->
     let files = crate::github::get_releases(&client).await?;
 
     for file in files {
-        let release_path = firmware_dir.join(&file.name);
-        let tmp_path = PathBuf::from("/tmp").join(&file.name);
+        let safe_name = std::path::Path::new(&file.name)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .filter(|n| *n == file.name && !file.name.contains(['/', '\\']));
+        let Some(safe_name) = safe_name else {
+            tracing::warn!(
+                "Skipping firmware asset with suspicious name: {}",
+                file.name
+            );
+            continue;
+        };
+
+        let release_path = firmware_dir.join(safe_name);
+        let tmp_path = PathBuf::from("/tmp").join(safe_name);
+
         if let Ok(exists) = tokio::fs::try_exists(&release_path).await
             && !exists
         {
