@@ -188,13 +188,13 @@ async fn on_ws_msg(
         Message::Binary(buf) => {
             if buf[0] == b'L' {
                 //logs packet
-                let current_time = if buf[1..5] != [0; 4] {
-                    Some(u64::from_be_bytes(buf[1..5].try_into()?))
+                let current_time = if buf[1..9] != [0; 8] {
+                    Some(u64::from_be_bytes(buf[1..9].try_into()?))
                 } else {
                     None
                 };
 
-                let mut offset = 5;
+                let mut offset = 9;
                 let esp_id = esp_connect_info.id;
                 while offset < buf.len() {
                     let line_len = u16::from_be_bytes([buf[offset], buf[offset + 1]]) as usize;
