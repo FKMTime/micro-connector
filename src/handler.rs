@@ -185,6 +185,42 @@ async fn on_ws_msg(
 
             *hb_received = true;
         }
+        Message::Binary(buf) => {
+            if buf[0] == b'L' {
+                //logs packet
+                let current_time = if buf[1..5] != [0; 4] {
+                    Some(u64::from_be_bytes(buf[1..5].try_into()?))
+                } else {
+                    None
+                };
+
+                let mut offset = 5;
+                let esp_id = esp_connect_info.id;
+                while offset < buf.len() {
+                    let line_len = u16::from_be_bytes([buf[offset], buf[offset + 1]]) as usize;
+                    if line_len + offset > buf.len() {
+                        tracing::error!(file = format!("device_{esp_id:X}"), "Logs read error!");
+                        break;
+                    }
+
+                    let line = core::str::from_utf8(&buf[offset + 2..offset + 2 + line_len])?;
+                    if !line.is_empty() {
+                        tracing::info!(file = format!("device_{esp_id:X}"), "{line}");
+                    }
+
+                    offset += 2 + line_len;
+                }
+
+                if let Some(time) = current_time {
+                    let inner_state = state.inner.read().await;
+                    if inner_state.devices_settings.contains_key(&esp_id) {
+                        _ = crate::socket::api::send_current_time(esp_id, time).await;
+                    }
+                }
+            }
+
+            *hb_received = true;
+        }
 
         _ => {}
     }
