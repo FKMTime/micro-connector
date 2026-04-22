@@ -186,16 +186,20 @@ async fn on_ws_msg(
             *hb_received = true;
         }
         Message::Binary(buf) => {
+            let esp_id = esp_connect_info.id;
             if buf[0] == b'L' {
                 //logs packet
-                let current_time = if buf[1..9] != [0; 8] {
-                    Some(u64::from_be_bytes(buf[1..9].try_into()?))
+                let current_time = if buf[2..10] != [0; 8] {
+                    Some(u64::from_be_bytes(buf[2..10].try_into()?))
                 } else {
                     None
                 };
 
-                let mut offset = 9;
-                let esp_id = esp_connect_info.id;
+                if buf[1] == 0x01 {
+                    tracing::warn!(file = format!("device_{esp_id:X}"), "LOGS TRUNCATED!");
+                }
+
+                let mut offset = 10;
                 while offset < buf.len() {
                     let line_len = u16::from_be_bytes([buf[offset], buf[offset + 1]]) as usize;
                     if line_len + offset > buf.len() {
@@ -205,7 +209,17 @@ async fn on_ws_msg(
 
                     let line = core::str::from_utf8(&buf[offset + 2..offset + 2 + line_len])?;
                     if !line.is_empty() {
-                        tracing::info!(file = format!("device_{esp_id:X}"), "{line}");
+                        const RESET: &str = "\u{001B}[0m";
+                        let color = match line.as_bytes().first() {
+                            Some(b'E') => "\u{001B}[31m",
+                            Some(b'W') => "\u{001B}[33m",
+                            Some(b'I') => "\u{001B}[32m",
+                            Some(b'D') => "\u{001B}[34m",
+                            Some(b'T') => "\u{001B}[35m",
+                            _ => "",
+                        };
+
+                        tracing::info!(file = format!("device_{esp_id:X}"), "{color}{line}{RESET}");
                     }
 
                     offset += 2 + line_len;
