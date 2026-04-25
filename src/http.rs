@@ -1,8 +1,7 @@
 use crate::handler::handle_client;
 use crate::structs::SharedAppState;
 use aes::Aes128;
-use aes::cipher::generic_array::GenericArray;
-use aes::cipher::{BlockEncrypt, KeyInit};
+use aes::cipher::{Array, BlockCipherEncrypt, KeyInit};
 use anyhow::Result;
 use axum::Router;
 use axum::extract::ws::WebSocket;
@@ -116,12 +115,12 @@ async fn ws_handler(
     {
         let mut key = [0; 16];
         key[..4].copy_from_slice(&sign_key.to_be_bytes());
-        let key = GenericArray::from(key);
+        let key = Array::from(key);
 
         let mut block = [0; 16];
         block[..8].copy_from_slice(&esp_connect_info.random.to_be_bytes());
         block[8..12].copy_from_slice(&inner.fkm_token.to_be_bytes());
-        let mut block = GenericArray::from(block);
+        let mut block = Array::from(block);
 
         let cipher = Aes128::new(&key);
         cipher.encrypt_block(&mut block);
