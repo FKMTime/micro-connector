@@ -187,7 +187,7 @@ async fn on_ws_msg(
         }
         Message::Binary(buf) => {
             let esp_id = esp_connect_info.id;
-            if buf[0] == b'L' {
+            if buf.len() > 10 && buf[0] == b'L' {
                 //logs packet
                 let current_time = if buf[2..10] != [0; 8] {
                     Some(u64::from_be_bytes(buf[2..10].try_into()?))
