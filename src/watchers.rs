@@ -1,6 +1,7 @@
 use crate::structs::SharedAppState;
 use anyhow::Result;
 use std::{
+    ffi::OsStr,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -94,6 +95,9 @@ async fn github_releases_watcher(state: &SharedAppState, firmware_dir: &Path) ->
 
         let release_path = firmware_dir.join(safe_name);
         let tmp_path = PathBuf::from("/tmp").join(safe_name);
+        if release_path.extension() != Some(OsStr::new("bin")) {
+            continue;
+        }
 
         if let Ok(exists) = tokio::fs::try_exists(&release_path).await
             && !exists
