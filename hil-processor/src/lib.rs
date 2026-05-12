@@ -503,6 +503,7 @@ impl HilState {
                 fkm_token: 0,
                 secure_rfid: false,
                 auto_setup: true,
+                sound_enabled: true,
             }),
             None,
             false,

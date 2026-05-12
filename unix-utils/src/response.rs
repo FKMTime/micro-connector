@@ -96,6 +96,7 @@ pub struct CompetitionStatusResp {
     pub fkm_token: i32,
     pub secure_rfid: bool,
     pub auto_setup: bool,
+    pub sound_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -138,6 +139,7 @@ impl Default for CompetitionStatusResp {
             fkm_token: 0,
             secure_rfid: false,
             auto_setup: false,
+            sound_enabled: true,
         }
     }
 }

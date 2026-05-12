@@ -122,6 +122,7 @@ async fn send_device_status(
                 fkm_token: state.fkm_token,
                 secure_rfid: state.secure_rfid,
                 auto_setup: state.auto_setup,
+                sound_enabled: state.sound_enabled,
             },
         }
     } else {
@@ -134,6 +135,7 @@ async fn send_device_status(
                 fkm_token: 0,
                 secure_rfid: false,
                 auto_setup: false,
+                sound_enabled: state.sound_enabled,
             },
         }
     };

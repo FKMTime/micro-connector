@@ -82,6 +82,7 @@ pub enum TimerPacketInner {
         fkm_token: i32,
         secure_rfid: bool,
         auto_setup: bool,
+        sound_enabled: bool,
     },
     Logs {
         current_time: Option<u64>,
@@ -128,6 +129,7 @@ pub struct AppState {
     pub fkm_token: i32,
     pub secure_rfid: bool,
     pub auto_setup: bool,
+    pub sound_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -149,6 +151,7 @@ impl SharedAppState {
                 fkm_token: 0,
                 secure_rfid: false,
                 auto_setup: false,
+                sound_enabled: true,
             })),
             bc,
         }
