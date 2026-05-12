@@ -246,7 +246,8 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                 || inner_state.default_locale != status.default_locale
                 || inner_state.auto_setup != status.auto_setup
                 || inner_state.fkm_token != status.fkm_token
-                || inner_state.secure_rfid != status.secure_rfid;
+                || inner_state.secure_rfid != status.secure_rfid
+                || inner_state.sound_enabled != status.sound_enabled;
 
             inner_state.should_update = status.should_update;
             inner_state.locales = translations;
@@ -254,6 +255,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             inner_state.auto_setup = status.auto_setup;
             inner_state.fkm_token = status.fkm_token;
             inner_state.secure_rfid = status.secure_rfid;
+            inner_state.sound_enabled = status.sound_enabled;
 
             for device in &status.devices {
                 let device_settings = crate::structs::DeviceSettings {
