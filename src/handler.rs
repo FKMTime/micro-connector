@@ -172,6 +172,13 @@ async fn on_ws_msg(
         Message::Close(frame) => {
             if let Some(frame) = frame {
                 info!(
+                    "Closing connection ({}) Reason: {} ({:X})",
+                    frame.code,
+                    frame.reason.to_string(),
+                    esp_connect_info.id
+                );
+                info!(
+                    file = format!("device_{:X}", esp_connect_info.id),
                     "Closing connection ({}) Reason: {}",
                     frame.code,
                     frame.reason.to_string()
