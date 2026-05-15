@@ -169,8 +169,16 @@ async fn on_ws_msg(
     state: &SharedAppState,
 ) -> Result<bool> {
     match msg {
-        Message::Close(_) => {
-            info!("Closing connection");
+        Message::Close(frame) => {
+            if let Some(frame) = frame {
+                info!(
+                    "Closing connection ({}) Reason: {}",
+                    frame.code,
+                    frame.reason.to_string()
+                );
+            } else {
+                info!("Closing connection");
+            }
             return Ok(true);
         }
         Message::Pong(_) => {
