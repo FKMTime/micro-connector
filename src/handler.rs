@@ -248,6 +248,19 @@ async fn on_ws_msg(
                         _ = crate::socket::api::send_current_time(esp_id, time).await;
                     }
                 }
+            } else if buf.len() > 1 && buf[0] == b'C' {
+                let error_log_buf = &buf[1..];
+                if let Ok(parsed) = crate::error_log::parse_error_log_entries(error_log_buf) {
+                    tracing::info!(
+                        file = format!("device_{esp_id:X}"),
+                        "DUMPED CRASH LOG: {parsed:#?}"
+                    );
+                } else {
+                    tracing::info!(
+                        file = format!("device_{esp_id:X}"),
+                        "CRASH LOG INVALID FORMAT!"
+                    );
+                }
             }
 
             *hb_received = true;

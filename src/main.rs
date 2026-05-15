@@ -3,6 +3,7 @@ use std::{os::unix::fs::PermissionsExt, path::PathBuf};
 
 mod adapter;
 mod bluetooth;
+mod error_log;
 mod github;
 mod handler;
 mod http;

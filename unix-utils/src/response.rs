@@ -70,6 +70,10 @@ pub enum UnixResponseData {
         file_name: String,
         file_data: String,
     },
+    SetDeviceSettings {
+        devices: Vec<u32>,
+        volume: Option<u8>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

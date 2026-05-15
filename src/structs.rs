@@ -99,6 +99,10 @@ pub enum TimerPacketInner {
     EpochTime {
         current_epoch: u64,
     },
+    SetDeviceSettings {
+        volume: Option<u8>,
+    },
+    DumpCrashLog,
 
     // packet for end to end testing
     TestPacket(TestPacketData),

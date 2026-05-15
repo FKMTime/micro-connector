@@ -359,6 +359,19 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                 )
                 .await?;
         }
+        UnixResponseData::SetDeviceSettings { devices, volume } => {
+            for esp_id in devices {
+                state
+                    .send_timer_packet(
+                        esp_id,
+                        TimerPacket {
+                            tag: None,
+                            data: TimerPacketInner::SetDeviceSettings { volume },
+                        },
+                    )
+                    .await?;
+            }
+        }
         _ => {}
     }
 
