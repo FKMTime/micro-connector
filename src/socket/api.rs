@@ -136,11 +136,17 @@ pub async fn send_current_time(esp_id: u32, time: u64) -> Result<(), UnixError> 
         .map(|_| ())
 }
 
-pub async fn add_device(esp_id: u32, sign_key: u32, firmware_type: &str) -> Result<(), UnixError> {
+pub async fn add_device(
+    esp_id: u32,
+    sign_key: u32,
+    hw: &str,
+    firmware_type: &str,
+) -> Result<(), UnixError> {
     crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::RequestToConnectDevice {
             esp_id,
             sign_key,
+            hw: hw.to_string(),
             r#type: firmware_type.to_string(),
         })
         .await

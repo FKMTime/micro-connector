@@ -42,8 +42,8 @@ pub enum UnixRequestData {
     },
     RequestToConnectDevice {
         esp_id: u32,
-
         sign_key: u32,
+        hw: String,
 
         #[serde(rename = "type")]
         r#type: String,

@@ -469,7 +469,13 @@ async fn on_timer_response(
             let inner_state = state.inner.read().await;
             if !inner_state.devices_settings.contains_key(&esp_id) {
                 drop(inner_state);
-                _ = crate::socket::api::add_device(esp_id, sign_key, &firmware).await;
+                _ = crate::socket::api::add_device(
+                    esp_id,
+                    sign_key,
+                    &esp_connect_info.hw,
+                    &firmware,
+                )
+                .await;
                 trace!("Add device: {:X}", esp_id);
             }
         }
