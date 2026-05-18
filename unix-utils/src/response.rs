@@ -114,8 +114,9 @@ pub struct CompetitionStatusDevice {
 #[serde(rename_all = "camelCase")]
 pub struct PossibleGroup {
     pub group_id: String,
+    pub name: String,
     pub use_inspection: bool,
-    pub secondary_text: String,
+    pub secondary_text: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
