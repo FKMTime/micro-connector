@@ -4,12 +4,14 @@
         {
             "groupId": "333-r1",
             "useInspection": true,
-            "secondaryText": "3x3x3 - R1"
+            "secondaryText": "3x3x3 - R1",
+            "name": "3x3x3 - R1"
         },
         {
             "groupId": "333-bf",
             "useInspection": false,
-            "secondaryText": "3x3x3 - BF"
+            "secondaryText": "3x3x3 - BF",
+            "name": "3x3x3 - BF"
         }
     ],
     "cards": {
