@@ -216,15 +216,12 @@ async fn on_ws_msg(
                     tracing::warn!(file = format!("device_{esp_id:X}"), "LOGS TRUNCATED!");
                 }
 
-                let mut offset = 10;
-                while offset < buf.len() {
-                    let line_len = u16::from_be_bytes([buf[offset], buf[offset + 1]]) as usize;
-                    if line_len + offset > buf.len() {
-                        tracing::error!(file = format!("device_{esp_id:X}"), "Logs read error!");
-                        break;
-                    }
+                let (lines, read_error) = parse_log_lines(&buf[10..])?;
+                if read_error {
+                    tracing::error!(file = format!("device_{esp_id:X}"), "Logs read error!");
+                }
 
-                    let line = core::str::from_utf8(&buf[offset + 2..offset + 2 + line_len])?;
+                for line in lines {
                     if !line.is_empty() {
                         const RESET: &str = "\u{001B}[0m";
                         let color = match line.as_bytes().first() {
@@ -238,8 +235,6 @@ async fn on_ws_msg(
 
                         tracing::info!(file = format!("device_{esp_id:X}"), "{color}{line}{RESET}");
                     }
-
-                    offset += 2 + line_len;
                 }
 
                 if let Some(time) = current_time {
@@ -492,4 +487,102 @@ async fn on_timer_response(
     }
 
     Ok(())
+}
+
+/// Parses device log lines from an `L` packet payload (without the 10-byte header).
+/// Returns the parsed lines and a flag indicating malformed/truncated trailing data.
+fn parse_log_lines(buf: &[u8]) -> Result<(Vec<&str>, bool)> {
+    let mut lines = Vec::new();
+    let mut offset = 0;
+    while offset + 2 <= buf.len() {
+        let line_len = u16::from_be_bytes([buf[offset], buf[offset + 1]]) as usize;
+        if offset + 2 + line_len > buf.len() {
+            return Ok((lines, true));
+        }
+
+        lines.push(core::str::from_utf8(&buf[offset + 2..offset + 2 + line_len])?);
+        offset += 2 + line_len;
+    }
+
+    Ok((lines, offset != buf.len()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_log_lines;
+
+    fn packet(lines: &[&str]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        for line in lines {
+            buf.extend_from_slice(&(line.len() as u16).to_be_bytes());
+            buf.extend_from_slice(line.as_bytes());
+        }
+        buf
+    }
+
+    #[test]
+    fn parses_valid_lines() {
+        let buf = packet(&["I hello", "E world", ""]);
+        let (lines, truncated) = parse_log_lines(&buf).unwrap();
+        assert_eq!(lines, ["I hello", "E world", ""]);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn empty_and_tiny_buffers_do_not_panic() {
+        for len in 0..3 {
+            let buf = vec![0xAA; len];
+            let (_, truncated) = parse_log_lines(&buf).unwrap();
+            assert_eq!(truncated, len != 0);
+        }
+    }
+
+    #[test]
+    fn declared_len_past_end() {
+        let mut buf = packet(&["I ok"]);
+        buf.extend_from_slice(&u16::MAX.to_be_bytes()); // claims 65535 bytes, none follow
+        let (lines, truncated) = parse_log_lines(&buf).unwrap();
+        assert_eq!(lines, ["I ok"]);
+        assert!(truncated);
+    }
+
+    #[test]
+    fn declared_len_exactly_at_end_off_by_two() {
+        // regression: line_len + offset == buf.len() used to pass the check,
+        // but the slice [offset+2 .. offset+2+line_len] went out of bounds
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&4u16.to_be_bytes());
+        buf.extend_from_slice(b"ab"); // only 2 of the 4 declared bytes present
+        let (lines, truncated) = parse_log_lines(&buf).unwrap();
+        assert!(lines.is_empty());
+        assert!(truncated);
+    }
+
+    #[test]
+    fn invalid_utf8_errors() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&2u16.to_be_bytes());
+        buf.extend_from_slice(&[0xFF, 0xFF]);
+        assert!(parse_log_lines(&buf).is_err());
+    }
+
+    #[test]
+    fn random_buffers_do_not_panic() {
+        // simple xorshift, no external deps
+        let mut state = 0x9E3779B97F4A7C15u64;
+        for _ in 0..1000 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let len = (state % 64) as usize;
+            let mut buf = Vec::with_capacity(len);
+            for _ in 0..len {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                buf.push(state as u8);
+            }
+            _ = parse_log_lines(&buf); // must not panic
+        }
+    }
 }

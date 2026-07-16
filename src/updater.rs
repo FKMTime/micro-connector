@@ -85,6 +85,10 @@ impl FirmwareMetadata {
             return Err(anyhow!("Wrong file name!"));
         }
 
+        if name_split[0].len() > 16 || name_split[1].len() > 16 || name_split[2].len() > 32 {
+            return Err(anyhow!("File name parts too long!"));
+        }
+
         let mut metadata = FirmwareMetadata {
             version: [0; 32],
             firmware: [0; 16],
@@ -370,6 +374,36 @@ impl std::fmt::Display for Version {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn metadata_filename_fallback_bounds() {
+        use crate::updater::FirmwareMetadata;
+
+        // too-long segments must error, not panic
+        let long = "a".repeat(40);
+        let name = format!("hw_fw_{long}");
+        assert!(
+            FirmwareMetadata::from_file(&name, &[0u8; 10])
+                .await
+                .is_err()
+        );
+
+        let long = "a".repeat(20);
+        let name = format!("hw_{long}_v1.0.0");
+        assert!(
+            FirmwareMetadata::from_file(&name, &[0u8; 10])
+                .await
+                .is_err()
+        );
+
+        // valid fallback name still parses
+        let meta = FirmwareMetadata::from_file("v4_STATION_v3.4.4", &[0u8; 10])
+            .await
+            .unwrap();
+        assert_eq!(&meta.hardware[..2], b"v4");
+        assert_eq!(&meta.firmware[..7], b"STATION");
+        assert_eq!(&meta.version[..6], b"v3.4.4");
+    }
+
     #[test]
     fn check() {
         assert_eq!(
