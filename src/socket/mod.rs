@@ -266,6 +266,10 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                     .devices_settings
                     .insert(device.esp_id, device_settings.clone());
 
+                if inner_state.enrolled_devices.insert(device.esp_id) {
+                    changed = true;
+                }
+
                 if old != Some(device_settings) {
                     changed = true;
                 }
@@ -277,6 +281,10 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                     changed = true;
                 }
             }
+
+            inner_state
+                .enrolled_devices
+                .retain(|k| status.devices.iter().any(|d| d.esp_id == *k));
 
             drop(inner_state);
             if changed {

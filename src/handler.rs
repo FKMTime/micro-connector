@@ -660,9 +660,7 @@ async fn on_timer_response(
             }
 
             let mut inner_state = state.inner.write().await;
-            if !inner_state.devices_settings.contains_key(&esp_id) {
-                // Cache secret locally so this session can act authenticated immediately;
-                // backend ServerStatus will reconcile later.
+            if !inner_state.enrolled_devices.contains(&esp_id) {
                 inner_state.devices_settings.insert(
                     esp_id,
                     crate::structs::DeviceSettings {

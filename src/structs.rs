@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use unix_utils::{
     SnapshotData, TestPacketData,
     response::{PossibleGroup, TranslationLocale},
@@ -138,6 +138,7 @@ pub struct SharedAppState {
 pub struct AppState {
     pub should_update: bool,
     pub devices_settings: HashMap<u32, DeviceSettings>,
+    pub enrolled_devices: HashSet<u32>,
     pub locales: Vec<TranslationLocale>,
     pub default_locale: String,
     pub fkm_token: i32,
@@ -161,6 +162,7 @@ impl SharedAppState {
             inner: std::sync::Arc::new(tokio::sync::RwLock::new(AppState {
                 should_update: false,
                 devices_settings: HashMap::new(),
+                enrolled_devices: HashSet::new(),
                 locales: Vec::new(),
                 default_locale: "en".to_string(),
                 fkm_token: 0,
