@@ -42,7 +42,8 @@ pub enum UnixRequestData {
     },
     RequestToConnectDevice {
         esp_id: u32,
-        sign_key: u32,
+        /// 64-char hex encoding of a 256-bit device secret
+        sign_key: String,
         hw: String,
 
         #[serde(rename = "type")]

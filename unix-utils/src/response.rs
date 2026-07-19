@@ -107,7 +107,8 @@ pub struct CompetitionStatusResp {
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionStatusDevice {
     pub esp_id: u32,
-    pub sign_key: Option<u32>,
+    /// 64-char hex encoding of a 256-bit device secret
+    pub sign_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

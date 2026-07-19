@@ -34,7 +34,6 @@ pub enum TimerPacketInner {
         delegate: bool,
         inspection_time: i64,
         group_id: String,
-        sign_key: u32,
     },
     SolveConfirm {
         competitor_id: u64,
@@ -64,8 +63,6 @@ pub enum TimerPacketInner {
 
         #[serde(skip_serializing_if = "Option::is_none")]
         attendance_device: Option<bool>,
-
-        sign_key: u32,
     },
     CardInfoResponse {
         card_id: u64,
@@ -94,7 +91,20 @@ pub enum TimerPacketInner {
     },
     Add {
         firmware: String,
-        sign_key: u32,
+        /// 64-char hex of 256-bit device secret
+        sign_key: String,
+    },
+    /// Connect-time challenge: connector → device
+    AuthChallenge {
+        nonce: String,
+    },
+    /// Connect-time response: device → connector (HMAC-SHA256 hex)
+    AuthResponse {
+        mac: String,
+    },
+    AuthOk,
+    AuthFail {
+        reason: String,
     },
     EpochTime {
         current_epoch: u64,
@@ -138,7 +148,8 @@ pub struct AppState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeviceSettings {
-    pub sign_key: Option<u32>,
+    /// 64-char hex of 256-bit device secret
+    pub sign_key: Option<String>,
 }
 
 impl SharedAppState {

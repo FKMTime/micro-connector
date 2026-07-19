@@ -53,7 +53,7 @@ macro_rules! trace {
 }
 
 impl HilDevice {
-    pub fn new(id: u32, sign_key: Option<u32>) -> HilDevice {
+    pub fn new(id: u32, sign_key: Option<String>) -> HilDevice {
         HilDevice {
             id,
             sign_key,
@@ -495,7 +495,7 @@ impl HilState {
                     .iter()
                     .map(|d| unix_utils::response::CompetitionStatusDevice {
                         esp_id: d.id,
-                        sign_key: d.sign_key,
+                        sign_key: d.sign_key.clone(),
                     })
                     .collect(),
                 translations: self.status.translations.clone(),
@@ -522,7 +522,7 @@ impl HilState {
 
     pub fn process_initial_status_devices(&mut self) {
         for dev in &self.status.devices {
-            let device = HilDevice::new(dev.esp_id, dev.sign_key);
+            let device = HilDevice::new(dev.esp_id, dev.sign_key.clone());
             self.devices.push(device);
         }
     }

@@ -259,7 +259,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
 
             for device in &status.devices {
                 let device_settings = crate::structs::DeviceSettings {
-                    sign_key: device.sign_key,
+                    sign_key: device.sign_key.clone(),
                 };
 
                 let old = inner_state

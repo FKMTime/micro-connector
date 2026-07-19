@@ -3,8 +3,42 @@ use crate::{
     structs::{SharedAppState, TimerPacket, TimerPacketInner},
 };
 use anyhow::Result;
+use rand::RngExt;
 use axum::extract::ws::{Message, WebSocket};
 use tracing::{error, info, trace};
+
+/// Constant-time compare for equal-length slices.
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+fn parse_device_secret_hex(hex_str: &str) -> Result<[u8; 32]> {
+    let bytes = hex::decode(hex_str.trim())?;
+    if bytes.len() != 32 {
+        anyhow::bail!("device secret must be 32 bytes (64 hex chars), got {}", bytes.len());
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
+/// HMAC-SHA256(secret, "FKM-AUTH-V1" || esp_id_be || nonce_bytes) as 64-char hex lowercase.
+fn compute_auth_mac(secret: &[u8; 32], esp_id: u32, nonce: &[u8]) -> String {
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret);
+    let mut ctx = ring::hmac::Context::with_key(&key);
+    ctx.update(b"FKM-AUTH-V1");
+    ctx.update(&esp_id.to_be_bytes());
+    ctx.update(nonce);
+    let tag = ctx.sign();
+    hex::encode(tag.as_ref())
+}
 
 pub async fn handle_client(
     mut socket: WebSocket,
@@ -16,9 +50,46 @@ pub async fn handle_client(
         "============= Client connected! ============="
     );
 
+    // Enrolled devices must complete connect-time HMAC before any privileged traffic.
+    let mut session_authenticated = false;
+    let enrolled_secret = {
+        let state_inner = state.inner.read().await;
+        state_inner
+            .devices_settings
+            .get(&esp_connect_info.id)
+            .and_then(|s| s.sign_key.clone())
+    };
+    if let Some(secret_hex) = enrolled_secret {
+        match run_connect_auth(&mut socket, esp_connect_info, &secret_hex).await {
+            Ok(true) => {
+                session_authenticated = true;
+                info!(
+                    "Device {:X} authenticated via connect HMAC",
+                    esp_connect_info.id
+                );
+            }
+            Ok(false) => {
+                error!(
+                    "Device {:X} failed connect HMAC — closing",
+                    esp_connect_info.id
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                error!(
+                    "Device {:X} auth handshake error: {e} — closing",
+                    esp_connect_info.id
+                );
+                return Ok(());
+            }
+        }
+    }
+
     {
         let state_inner = state.inner.read().await;
-        if state_inner.should_update
+        // OTA only for authenticated enrolled sessions
+        if session_authenticated
+            && state_inner.should_update
             && let Some(firmware) = super::updater::should_update(&state, esp_connect_info).await?
         {
             tracing::info!(
@@ -26,7 +97,6 @@ pub async fn handle_client(
                 "Starting update."
             );
             super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
-
             return Ok(());
         }
     }
@@ -55,6 +125,9 @@ pub async fn handle_client(
             Ok(res) = bc.recv() => {
                 match res {
                     crate::structs::BroadcastPacket::Build => {
+                        if !session_authenticated {
+                            continue;
+                        }
                         let inner_state = state.inner.read().await;
                         if !inner_state.should_update {
                             continue;
@@ -78,6 +151,9 @@ pub async fn handle_client(
                         send_device_status(&mut socket, esp_connect_info, &state).await?;
                     }
                     crate::structs::BroadcastPacket::ForceUpdate((hw, firmware)) => {
+                        if !session_authenticated {
+                            continue;
+                        }
                         if firmware.firmware == esp_connect_info.firmware && hw == esp_connect_info.hw {
                             let res = super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
                             if res {
@@ -89,7 +165,14 @@ pub async fn handle_client(
             }
             msg = socket.recv() => {
                 let msg = msg.ok_or_else(|| anyhow::anyhow!("Frame option is null"))??;
-                let res = on_ws_msg(&mut socket, msg, esp_connect_info, &mut hb_received, &state).await;
+                let res = on_ws_msg(
+                    &mut socket,
+                    msg,
+                    esp_connect_info,
+                    &mut hb_received,
+                    &state,
+                    &mut session_authenticated,
+                ).await;
 
                 match res {
                     Ok(true) => break,
@@ -103,6 +186,93 @@ pub async fn handle_client(
     }
 
     Ok(())
+}
+
+/// Returns Ok(true) if auth succeeded, Ok(false) if rejected, Err on protocol/IO failure.
+async fn run_connect_auth(
+    socket: &mut WebSocket,
+    esp_connect_info: &EspConnectInfo,
+    secret_hex: &str,
+) -> Result<bool> {
+    let secret = parse_device_secret_hex(secret_hex)?;
+
+    let mut nonce = [0u8; 32];
+    rand::rng().fill(&mut nonce);
+    let nonce_hex = hex::encode(nonce);
+
+    let challenge = TimerPacket {
+        tag: None,
+        data: TimerPacketInner::AuthChallenge {
+            nonce: nonce_hex.clone(),
+        },
+    };
+    socket
+        .send(Message::Text(serde_json::to_string(&challenge)?.into()))
+        .await?;
+
+    // Wait for AuthResponse (ignore pings); timeout 10s
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            let fail = TimerPacket {
+                tag: None,
+                data: TimerPacketInner::AuthFail {
+                    reason: "auth timeout".into(),
+                },
+            };
+            let _ = socket
+                .send(Message::Text(serde_json::to_string(&fail)?.into()))
+                .await;
+            return Ok(false);
+        }
+
+        let msg = tokio::time::timeout(remaining, socket.recv())
+            .await
+            .map_err(|_| anyhow::anyhow!("auth timeout"))?
+            .ok_or_else(|| anyhow::anyhow!("socket closed during auth"))??;
+
+        match msg {
+            Message::Text(payload) => {
+                let packet: TimerPacket = serde_json::from_str(&payload)?;
+                match packet.data {
+                    TimerPacketInner::AuthResponse { mac } => {
+                        let expected = compute_auth_mac(&secret, esp_connect_info.id, &nonce);
+                        let ok = ct_eq(expected.as_bytes(), mac.to_lowercase().as_bytes());
+                        if ok {
+                            let ok_pkt = TimerPacket {
+                                tag: None,
+                                data: TimerPacketInner::AuthOk,
+                            };
+                            socket
+                                .send(Message::Text(serde_json::to_string(&ok_pkt)?.into()))
+                                .await?;
+                            return Ok(true);
+                        } else {
+                            let fail = TimerPacket {
+                                tag: None,
+                                data: TimerPacketInner::AuthFail {
+                                    reason: "bad mac".into(),
+                                },
+                            };
+                            socket
+                                .send(Message::Text(serde_json::to_string(&fail)?.into()))
+                                .await?;
+                            return Ok(false);
+                        }
+                    }
+                    other => {
+                        trace!("Ignoring non-auth packet during handshake: {other:?}");
+                    }
+                }
+            }
+            Message::Ping(p) => {
+                socket.send(Message::Pong(p)).await?;
+            }
+            Message::Close(_) => return Ok(false),
+            _ => {}
+        }
+    }
 }
 
 async fn send_device_status(
@@ -167,6 +337,7 @@ async fn on_ws_msg(
     esp_connect_info: &EspConnectInfo,
     hb_received: &mut bool,
     state: &SharedAppState,
+    session_authenticated: &mut bool,
 ) -> Result<bool> {
     match msg {
         Message::Close(frame) => {
@@ -195,7 +366,14 @@ async fn on_ws_msg(
             tracing::trace!("WS payload recv [{:X}]: {payload}", esp_connect_info.id);
 
             let response: TimerPacket = serde_json::from_str(&payload)?;
-            let res = on_timer_response(socket, response, esp_connect_info, state).await;
+            let res = on_timer_response(
+                socket,
+                response,
+                esp_connect_info,
+                state,
+                session_authenticated,
+            )
+            .await;
             if let Err(e) = res {
                 error!("on_timer_response error: {e:?}");
             }
@@ -203,6 +381,12 @@ async fn on_ws_msg(
             *hb_received = true;
         }
         Message::Binary(buf) => {
+            if !*session_authenticated {
+                // Unauthenticated sessions may not upload logs/crash dumps
+                *hb_received = true;
+                return Ok(false);
+            }
+
             let esp_id = esp_connect_info.id;
             if buf.len() > 10 && buf[0] == b'L' {
                 //logs packet
@@ -272,31 +456,35 @@ async fn on_timer_response(
     response: TimerPacket,
     esp_connect_info: &EspConnectInfo,
     state: &SharedAppState,
+    session_authenticated: &mut bool,
 ) -> Result<()> {
     let esp_id = esp_connect_info.id;
 
     match response.data {
+        // Auth packets only during handshake (handled elsewhere)
+        TimerPacketInner::AuthChallenge { .. }
+        | TimerPacketInner::AuthResponse { .. }
+        | TimerPacketInner::AuthOk
+        | TimerPacketInner::AuthFail { .. } => {
+            trace!("Ignoring auth packet outside handshake");
+        }
+
         TimerPacketInner::CardInfoRequest {
             card_id,
             is_competitor,
             attendance_device,
-            sign_key,
         } => {
-            let Some(device_settings) = state
+            if !*session_authenticated {
+                return Err(anyhow::anyhow!("Session not authenticated"));
+            }
+            if !state
                 .inner
                 .read()
                 .await
                 .devices_settings
-                .get(&esp_id)
-                .cloned()
-            else {
-                return Err(anyhow::anyhow!("Device not added"));
-            };
-
-            if let Some(dev_sign_key) = device_settings.sign_key
-                && dev_sign_key != sign_key
+                .contains_key(&esp_id)
             {
-                return Err(anyhow::anyhow!("Wrong sign key!"));
+                return Err(anyhow::anyhow!("Device not added"));
             }
 
             let attendance_device = attendance_device.unwrap_or(false);
@@ -359,23 +547,18 @@ async fn on_timer_response(
             delegate,
             inspection_time,
             group_id,
-            sign_key,
         } => {
-            let Some(device_settings) = state
+            if !*session_authenticated {
+                return Err(anyhow::anyhow!("Session not authenticated"));
+            }
+            if !state
                 .inner
                 .read()
                 .await
                 .devices_settings
-                .get(&esp_id)
-                .cloned()
-            else {
-                return Err(anyhow::anyhow!("Device not added"));
-            };
-
-            if let Some(dev_sign_key) = device_settings.sign_key
-                && dev_sign_key != sign_key
+                .contains_key(&esp_id)
             {
-                return Err(anyhow::anyhow!("Wrong sign key!"));
+                return Err(anyhow::anyhow!("Device not added"));
             }
 
             trace!(
@@ -437,6 +620,9 @@ async fn on_timer_response(
             socket.send(Message::Text(response.into())).await?;
         }
         TimerPacketInner::Logs { current_time, logs } => {
+            if !*session_authenticated {
+                return Ok(());
+            }
             for log in logs.iter().rev() {
                 for line in log.lines() {
                     if line.is_empty() {
@@ -455,26 +641,50 @@ async fn on_timer_response(
             }
         }
         TimerPacketInner::Battery { level, voltage: _ } => {
+            if !*session_authenticated {
+                return Ok(());
+            }
             let inner_state = state.inner.read().await;
             if inner_state.devices_settings.contains_key(&esp_id) {
                 _ = crate::socket::api::send_battery_status(esp_id, level).await;
             }
         }
-        TimerPacketInner::Add { firmware, sign_key } => {
-            let inner_state = state.inner.read().await;
+        TimerPacketInner::Add {
+            firmware,
+            sign_key,
+        } => {
+            // Add is allowed without prior session auth (device is enrolling).
+            // Validate hex secret format.
+            if parse_device_secret_hex(&sign_key).is_err() {
+                return Err(anyhow::anyhow!("Invalid sign_key format (need 64 hex chars)"));
+            }
+
+            let mut inner_state = state.inner.write().await;
             if !inner_state.devices_settings.contains_key(&esp_id) {
+                // Cache secret locally so this session can act authenticated immediately;
+                // backend ServerStatus will reconcile later.
+                inner_state.devices_settings.insert(
+                    esp_id,
+                    crate::structs::DeviceSettings {
+                        sign_key: Some(sign_key.clone()),
+                    },
+                );
                 drop(inner_state);
                 _ = crate::socket::api::add_device(
                     esp_id,
-                    sign_key,
+                    &sign_key,
                     &esp_connect_info.hw,
                     &firmware,
                 )
                 .await;
+                *session_authenticated = true;
                 trace!("Add device: {:X}", esp_id);
             }
         }
         TimerPacketInner::TestAck(snapshot) => {
+            if !*session_authenticated {
+                return Ok(());
+            }
             let inner_state = state.inner.read().await;
             if inner_state.devices_settings.contains_key(&esp_id) {
                 drop(inner_state);
@@ -500,7 +710,9 @@ fn parse_log_lines(buf: &[u8]) -> Result<(Vec<&str>, bool)> {
             return Ok((lines, true));
         }
 
-        lines.push(core::str::from_utf8(&buf[offset + 2..offset + 2 + line_len])?);
+        lines.push(core::str::from_utf8(
+            &buf[offset + 2..offset + 2 + line_len],
+        )?);
         offset += 2 + line_len;
     }
 

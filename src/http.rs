@@ -1,12 +1,9 @@
 use crate::handler::handle_client;
 use crate::structs::SharedAppState;
-use aes::Aes128;
-use aes::cipher::{Array, BlockCipherEncrypt, KeyInit};
 use anyhow::Result;
 use axum::Router;
 use axum::extract::ws::WebSocket;
 use axum::extract::{Query, State};
-use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use axum::{extract::WebSocketUpgrade, routing::get};
 use axum_server::tls_rustls::RustlsConfig;
@@ -14,17 +11,14 @@ use rcgen::CertifiedKey;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::Deserialize;
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 fn default_firmware() -> String {
     "no-firmware".to_string()
-}
-
-fn default_random() -> u64 {
-    0
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,17 +32,14 @@ pub struct EspConnectInfo {
     pub firmware: String,
 
     pub hw: String,
-
-    #[serde(default = "default_random")]
-    pub random: u64,
 }
 
 impl core::fmt::Display for EspConnectInfo {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "EspConnectInfo {{ id: {:08X}, version: \"{}\", firmware: \"{}\", hw: \"{}\", random: {} }}",
-            self.id, self.version, self.firmware, self.hw, self.random
+            "EspConnectInfo {{ id: {:08X}, version: \"{}\", firmware: \"{}\", hw: \"{}\" }}",
+            self.id, self.version, self.firmware, self.hw
         )
     }
 }
@@ -61,7 +52,55 @@ fn cert_from_str(cert: &str) -> Result<Vec<CertificateDer<'static>>> {
 
 fn key_from_str(key: &str) -> Result<PrivateKeyDer<'static>> {
     rustls_pemfile::private_key(&mut key.as_bytes())?
-        .ok_or_else(|| anyhow::anyhow!("Private ket returned None"))
+        .ok_or_else(|| anyhow::anyhow!("Private key returned None"))
+}
+
+/// Directory for persistent TLS material. Override with TLS_CERT_DIR.
+fn tls_cert_dir() -> PathBuf {
+    std::env::var("TLS_CERT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("./certs"))
+}
+
+fn load_or_generate_tls_material(dir: &Path) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)> {
+    let cert_path = dir.join("cert.pem");
+    let key_path = dir.join("key.pem");
+
+    if cert_path.exists() && key_path.exists() {
+        let cert_pem = std::fs::read_to_string(&cert_path)?;
+        let key_pem = std::fs::read_to_string(&key_path)?;
+        info!("Loaded TLS cert from {}", cert_path.display());
+        return Ok((cert_from_str(&cert_pem)?, key_from_str(&key_pem)?));
+    }
+
+    std::fs::create_dir_all(dir)?;
+    let CertifiedKey { cert, signing_key } =
+        rcgen::generate_simple_self_signed(vec!["micro-connector.local".to_string()])?;
+    let cert_pem = cert.pem();
+    let key_pem = signing_key.serialize_pem();
+    std::fs::write(&cert_path, &cert_pem)?;
+    std::fs::write(&key_path, &key_pem)?;
+    // Best-effort restrictive perms on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
+        let _ = std::fs::set_permissions(&cert_path, std::fs::Permissions::from_mode(0o644));
+    }
+    info!("Generated new TLS cert at {}", cert_path.display());
+
+    // Log fingerprint for operator / device pin debugging
+    if let Ok(certs) = cert_from_str(&cert_pem)
+        && let Some(c) = certs.first()
+    {
+        let dig = ring::digest::digest(&ring::digest::SHA256, c.as_ref());
+        info!(
+            "TLS cert SHA-256 fingerprint: {}",
+            hex::encode(dig.as_ref())
+        );
+    }
+
+    Ok((cert_from_str(&cert_pem)?, key_from_str(&key_pem)?))
 }
 
 pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
@@ -77,6 +116,9 @@ pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
         .with_state(state);
 
     if std::env::var("NO_TLS").is_ok() {
+        warn!(
+            "NO_TLS is set — stations cannot pin a certificate. Use only for local e2e/debug."
+        );
         let listener = TcpListener::bind(addr).await?;
         axum::serve(listener, app.into_make_service()).await?;
     } else {
@@ -84,10 +126,8 @@ pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
             .install_default()
             .expect("Ring default provider install error");
 
-        let CertifiedKey { cert, signing_key } =
-            rcgen::generate_simple_self_signed(vec!["micro-connector.local".to_string()])?;
-        let crt = cert_from_str(&cert.pem())?;
-        let key = key_from_str(&signing_key.serialize_pem())?;
+        let dir = tls_cert_dir();
+        let (crt, key) = load_or_generate_tls_material(&dir)?;
 
         let mut config = rustls::server::ServerConfig::builder()
             .with_no_client_auth()
@@ -107,37 +147,8 @@ async fn ws_handler(
     Query(esp_connect_info): Query<EspConnectInfo>,
     State(state): State<SharedAppState>,
 ) -> impl IntoResponse {
-    let mut headers = HeaderMap::new();
-
-    let inner = state.inner.read().await;
-    if let Some(device_settings) = inner.devices_settings.get(&esp_connect_info.id)
-        && let Some(sign_key) = device_settings.sign_key
-    {
-        let mut key = [0; 16];
-        key[..4].copy_from_slice(&sign_key.to_be_bytes());
-        let key = Array::from(key);
-
-        let mut block = [0; 16];
-        block[..8].copy_from_slice(&esp_connect_info.random.to_be_bytes());
-        block[8..12].copy_from_slice(&inner.fkm_token.to_be_bytes());
-        let mut block = Array::from(block);
-
-        let cipher = Aes128::new(&key);
-        cipher.encrypt_block(&mut block);
-        headers.insert(
-            "RandomSigned",
-            u128::from_be_bytes(block.into())
-                .to_string()
-                .parse()
-                .expect(""),
-        );
-    }
-    drop(inner);
-
-    (
-        headers,
-        ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info, state)),
-    )
+    // No RandomSigned header — trust is TLS pin + connect-time HMAC.
+    ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info, state))
 }
 
 async fn handle_socket(socket: WebSocket, esp_connect_info: EspConnectInfo, state: SharedAppState) {
