@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1.7
+#
+# Dev image for micro-connector: a Rust toolchain with cargo-watch installed.
+#
+# The source code is NOT baked into this image — it is bind-mounted at runtime
+# (see ../docker-compose.dev.yml), and the container runs `cargo watch`. So
+# when you edit the mounted source, cargo-watch recompiles and restarts the
+# backend *inside the running container* — the image is never rebuilt.
+#
+# The cargo build cache lives in a persistent named volume (CARGO_TARGET_DIR),
+# so the first run compiles all dependencies once and later restarts/rebuilds
+# are fast.
+#
+FROM rust:alpine
+
+# Build deps needed by the crate tree (dbus/btleplug need pkg-config + dbus).
+RUN apk add --no-cache pkgconfig dbus-dev gcc musl-dev build-base
+
+# cargo-watch drives the rebuild-on-change loop inside the container.
+RUN cargo install cargo-watch
+
+WORKDIR /app
+
+# docker-compose.dev.yml mounts the source at /app and the build cache at
+# /target, and sets the command to `cargo watch -x run`.
+CMD ["cargo", "watch", "-x", "run"]

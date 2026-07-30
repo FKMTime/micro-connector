@@ -3,8 +3,8 @@ use crate::{
     structs::{SharedAppState, TimerPacket, TimerPacketInner},
 };
 use anyhow::Result;
-use rand::RngExt;
 use axum::extract::ws::{Message, WebSocket};
+use rand::RngExt;
 use tracing::{error, info, trace};
 
 /// Constant-time compare for equal-length slices.
@@ -22,7 +22,10 @@ fn ct_eq(a: &[u8], b: &[u8]) -> bool {
 fn parse_device_secret_hex(hex_str: &str) -> Result<[u8; 32]> {
     let bytes = hex::decode(hex_str.trim())?;
     if bytes.len() != 32 {
-        anyhow::bail!("device secret must be 32 bytes (64 hex chars), got {}", bytes.len());
+        anyhow::bail!(
+            "device secret must be 32 bytes (64 hex chars), got {}",
+            bytes.len()
+        );
     }
     let mut out = [0u8; 32];
     out.copy_from_slice(&bytes);
@@ -70,10 +73,9 @@ pub async fn handle_client(
             }
             Ok(false) => {
                 error!(
-                    "Device {:X} failed connect HMAC — closing",
+                    "Device {:X} failed connect HMAC — keeping session unauthenticated",
                     esp_connect_info.id
                 );
-                return Ok(());
             }
             Err(e) => {
                 error!(
@@ -102,7 +104,7 @@ pub async fn handle_client(
     }
 
     send_epoch_time(&mut socket).await?;
-    send_device_status(&mut socket, esp_connect_info, &state).await?;
+    send_device_status(&mut socket, esp_connect_info, &state, session_authenticated).await?;
     let mut bc = state.get_bc().await;
 
     let interval_time = std::time::Duration::from_secs(5);
@@ -148,7 +150,13 @@ pub async fn handle_client(
                         }
                     },
                     crate::structs::BroadcastPacket::UpdateDeviceSettings => {
-                        send_device_status(&mut socket, esp_connect_info, &state).await?;
+                        send_device_status(
+                            &mut socket,
+                            esp_connect_info,
+                            &state,
+                            session_authenticated,
+                        )
+                        .await?;
                     }
                     crate::structs::BroadcastPacket::ForceUpdate((hw, firmware)) => {
                         if !session_authenticated {
@@ -218,7 +226,7 @@ async fn run_connect_auth(
             let fail = TimerPacket {
                 tag: None,
                 data: TimerPacketInner::AuthFail {
-                    reason: "auth timeout".into(),
+                    reason: "re-add device".into(),
                 },
             };
             let _ = socket
@@ -227,10 +235,22 @@ async fn run_connect_auth(
             return Ok(false);
         }
 
-        let msg = tokio::time::timeout(remaining, socket.recv())
-            .await
-            .map_err(|_| anyhow::anyhow!("auth timeout"))?
-            .ok_or_else(|| anyhow::anyhow!("socket closed during auth"))??;
+        let msg = match tokio::time::timeout(remaining, socket.recv()).await {
+            Ok(recv_res) => recv_res,
+            Err(_) => {
+                let fail = TimerPacket {
+                    tag: None,
+                    data: TimerPacketInner::AuthFail {
+                        reason: "re-add device".into(),
+                    },
+                };
+                let _ = socket
+                    .send(Message::Text(serde_json::to_string(&fail)?.into()))
+                    .await;
+                return Ok(false);
+            }
+        };
+        let msg = msg.ok_or_else(|| anyhow::anyhow!("socket closed during auth"))??;
 
         match msg {
             Message::Text(payload) => {
@@ -279,35 +299,21 @@ async fn send_device_status(
     socket: &mut WebSocket,
     esp_connect_info: &EspConnectInfo,
     state: &SharedAppState,
+    authenticated: bool,
 ) -> Result<()> {
     let state = state.inner.read().await;
-    let settings = state.devices_settings.get(&esp_connect_info.id);
-    let settings_frame = if let Some(_settings) = settings {
-        TimerPacket {
-            tag: None,
-            data: TimerPacketInner::DeviceSettings {
-                added: true,
-                locales: state.locales.clone(),
-                default_locale: state.default_locale.clone(),
-                fkm_token: state.fkm_token,
-                secure_rfid: state.secure_rfid,
-                auto_setup: state.auto_setup,
-                sound_enabled: state.sound_enabled,
-            },
-        }
-    } else {
-        TimerPacket {
-            tag: None,
-            data: TimerPacketInner::DeviceSettings {
-                added: false,
-                locales: state.locales.clone(),
-                default_locale: state.default_locale.clone(),
-                fkm_token: 0,
-                secure_rfid: false,
-                auto_setup: false,
-                sound_enabled: state.sound_enabled,
-            },
-        }
+    let added = state.devices_settings.contains_key(&esp_connect_info.id);
+    let settings_frame = TimerPacket {
+        tag: None,
+        data: TimerPacketInner::DeviceSettings {
+            added,
+            locales: state.locales.clone(),
+            default_locale: state.default_locale.clone(),
+            fkm_token: if authenticated { state.fkm_token } else { 0 },
+            secure_rfid: authenticated && state.secure_rfid,
+            auto_setup: authenticated && state.auto_setup,
+            sound_enabled: state.sound_enabled,
+        },
     };
 
     drop(state);
@@ -649,14 +655,13 @@ async fn on_timer_response(
                 _ = crate::socket::api::send_battery_status(esp_id, level).await;
             }
         }
-        TimerPacketInner::Add {
-            firmware,
-            sign_key,
-        } => {
+        TimerPacketInner::Add { firmware, sign_key } => {
             // Add is allowed without prior session auth (device is enrolling).
             // Validate hex secret format.
             if parse_device_secret_hex(&sign_key).is_err() {
-                return Err(anyhow::anyhow!("Invalid sign_key format (need 64 hex chars)"));
+                return Err(anyhow::anyhow!(
+                    "Invalid sign_key format (need 64 hex chars)"
+                ));
             }
 
             let mut inner_state = state.inner.write().await;

@@ -1,1 +1,9 @@
 target/
+**/target/
+certs/
+.git/
+.env
+*.log
+Dockerfile
+Dockerfile.dev
+docker-compose.yml
