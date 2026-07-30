@@ -129,9 +129,21 @@ pub async fn send_battery_status(esp_id: u32, battery: Option<f64>) -> Result<()
         .map(|_| ())
 }
 
-pub async fn send_current_time(esp_id: u32, time: u64) -> Result<(), UnixError> {
+pub async fn send_current_state(
+    esp_id: u32,
+    time: Option<u64>,
+    inspection: Option<u64>,
+    competitor: Option<u64>,
+    group_id: Option<String>,
+) -> Result<(), UnixError> {
     crate::UNIX_SOCKET
-        .send_tagged_request(UnixRequestData::CurrentTimeInfo { esp_id, time })
+        .send_tagged_request(UnixRequestData::CurrentTimeInfo {
+            esp_id,
+            time,
+            inspection,
+            competitor,
+            group_id,
+        })
         .await
         .map(|_| ())
 }

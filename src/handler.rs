@@ -204,19 +204,39 @@ async fn on_ws_msg(
         }
         Message::Binary(buf) => {
             let esp_id = esp_connect_info.id;
-            if buf.len() > 10 && buf[0] == b'L' {
+            if buf.len() > 50 && buf[0] == b'L' {
                 //logs packet
-                let current_time = if buf[2..10] != [0; 8] {
+                let current_time = if buf[2..10] != [0xFF; 8] {
                     Some(u64::from_be_bytes(buf[2..10].try_into()?))
                 } else {
                     None
+                };
+
+                let inspection_time = if buf[10..18] != [0xFF; 8] {
+                    Some(u64::from_be_bytes(buf[10..18].try_into()?))
+                } else {
+                    None
+                };
+
+                let current_competitor = if buf[18..26] != [0xFF; 8] {
+                    Some(u64::from_be_bytes(buf[18..26].try_into()?))
+                } else {
+                    None
+                };
+
+                let raw = &buf[26..26 + 20];
+                let end = raw.iter().position(|&b| b == 0x00).unwrap_or(raw.len());
+                let current_group_id = if end == 0 {
+                    None
+                } else {
+                    String::from_utf8(raw[..end].to_vec()).ok()
                 };
 
                 if buf[1] == 0x01 {
                     tracing::warn!(file = format!("device_{esp_id:X}"), "LOGS TRUNCATED!");
                 }
 
-                let mut offset = 10;
+                let mut offset = 50;
                 while offset < buf.len() {
                     let line_len = u16::from_be_bytes([buf[offset], buf[offset + 1]]) as usize;
                     if line_len + offset > buf.len() {
@@ -242,11 +262,16 @@ async fn on_ws_msg(
                     offset += 2 + line_len;
                 }
 
-                if let Some(time) = current_time {
-                    let inner_state = state.inner.read().await;
-                    if inner_state.devices_settings.contains_key(&esp_id) {
-                        _ = crate::socket::api::send_current_time(esp_id, time).await;
-                    }
+                let inner_state = state.inner.read().await;
+                if inner_state.devices_settings.contains_key(&esp_id) {
+                    _ = crate::socket::api::send_current_state(
+                        esp_id,
+                        current_time,
+                        inspection_time,
+                        current_competitor,
+                        current_group_id,
+                    )
+                    .await;
                 }
             } else if buf.len() > 1 && buf[0] == b'C' {
                 let error_log_buf = &buf[1..];
@@ -440,24 +465,6 @@ async fn on_timer_response(
 
             let response = serde_json::to_string(&resp)?;
             socket.send(Message::Text(response.into())).await?;
-        }
-        TimerPacketInner::Logs { current_time, logs } => {
-            for log in logs.iter().rev() {
-                for line in log.lines() {
-                    if line.is_empty() {
-                        continue;
-                    }
-
-                    tracing::info!(file = format!("device_{esp_id:X}"), "{line}");
-                }
-            }
-
-            if let Some(time) = current_time {
-                let inner_state = state.inner.read().await;
-                if inner_state.devices_settings.contains_key(&esp_id) {
-                    _ = crate::socket::api::send_current_time(esp_id, time).await;
-                }
-            }
         }
         TimerPacketInner::Battery { level, voltage: _ } => {
             let inner_state = state.inner.read().await;

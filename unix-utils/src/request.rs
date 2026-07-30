@@ -50,7 +50,10 @@ pub enum UnixRequestData {
     },
     CurrentTimeInfo {
         esp_id: u32,
-        time: u64,
+        time: Option<u64>,
+        inspection: Option<u64>,
+        competitor: Option<u64>,
+        group_id: Option<String>,
     },
     TestAck {
         esp_id: u32,

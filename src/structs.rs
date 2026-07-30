@@ -84,10 +84,6 @@ pub enum TimerPacketInner {
         auto_setup: bool,
         sound_enabled: bool,
     },
-    Logs {
-        current_time: Option<u64>,
-        logs: Vec<String>,
-    },
     Battery {
         level: Option<f64>,
         voltage: Option<f64>,
