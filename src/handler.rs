@@ -232,11 +232,19 @@ async fn on_ws_msg(
                     String::from_utf8(raw[..end].to_vec()).ok()
                 };
 
+                let raw = &buf[46..82];
+                let end = raw.iter().position(|&b| b == 0x00).unwrap_or(raw.len());
+                let current_session_id = if end == 0 {
+                    None
+                } else {
+                    String::from_utf8(raw[..end].to_vec()).ok()
+                };
+
                 if buf[1] == 0x01 {
                     tracing::warn!(file = format!("device_{esp_id:X}"), "LOGS TRUNCATED!");
                 }
 
-                let mut offset = 50;
+                let mut offset = 100;
                 while offset < buf.len() {
                     let line_len = u16::from_be_bytes([buf[offset], buf[offset + 1]]) as usize;
                     if line_len + offset > buf.len() {
@@ -270,6 +278,7 @@ async fn on_ws_msg(
                         inspection_time,
                         current_competitor,
                         current_group_id,
+                        current_session_id,
                     )
                     .await;
                 }

@@ -54,6 +54,7 @@ pub enum UnixRequestData {
         inspection: Option<u64>,
         competitor: Option<u64>,
         group_id: Option<String>,
+        session_id: Option<String>,
     },
     TestAck {
         esp_id: u32,

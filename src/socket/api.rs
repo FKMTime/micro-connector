@@ -135,6 +135,7 @@ pub async fn send_current_state(
     inspection: Option<u64>,
     competitor: Option<u64>,
     group_id: Option<String>,
+    session_id: Option<String>,
 ) -> Result<(), UnixError> {
     crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::CurrentTimeInfo {
@@ -143,6 +144,7 @@ pub async fn send_current_state(
             inspection,
             competitor,
             group_id,
+            session_id,
         })
         .await
         .map(|_| ())
