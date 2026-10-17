@@ -9,6 +9,8 @@ use tokio::{
 };
 use unix_utils::{request::UnixRequest, response::UnixResponse};
 
+mod sim;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     _ = dotenvy::dotenv();
@@ -24,6 +26,9 @@ async fn main() -> Result<()> {
     let tests_root = tokio::fs::read("tests.json")
         .await
         .map_err(|_| anyhow::anyhow!("tests.json doesnt exists!"))?;
+    if std::env::var("E2E_SIM").is_ok_and(|v| v == "1") {
+        return sim::run(&socket_path, &tests_root).await;
+    }
     let tests_root: hil_processor::structs::TestsRoot = serde_json::from_slice(&tests_root)?;
 
     let listener = UnixListener::bind(&socket_path)?;
