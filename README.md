@@ -30,3 +30,5 @@ incidents, and resolved incidents, extra attempts, cutoffs and limits follow the
 socket (default: `$SOCKET_PATH.ctl`); `E2E_LOG` selects the JSONL request log (default: `e2e.jsonl`).
 The `e2e` executable name is retained for firmware sim scripts; `E2E_SIM` is no longer needed.
 Drive device inputs through the firmware simulator's bus models.
+The control commands `hold_reply` and `release_reply` (with `espId`) hold the next attempt's
+answer while still recording the attempt, then deliver it with its original request tag.

@@ -11,7 +11,8 @@
 //! per command): `{"cmd":"attempts"}`, `{"cmd":"resolve","sessionId":..,"status":"resolved"|
 //! "standard"|"extra_given","value":..,"penalty":..,"noCards":false}`, `{"cmd":"delete",
 //! "sessionId":..}`, `{"cmd":"drop_reply","espId":..}` (the next attempt of that device is entered
-//! but never answered). Every request with its answer, push and command is appended to `E2E_LOG`
+//! but never answered), or `hold_reply` / `release_reply` with `espId` to deliver a success later.
+//! Every request with its answer, push and command is appended to `E2E_LOG`
 //! (JSON lines: `{"ms","req","resp"}`, `{"ms","push"}`, `{"ms","ctl","result"}`).
 
 use anyhow::Result;
@@ -127,6 +128,12 @@ enum Command {
     DropReply {
         esp_id: u32,
     },
+    HoldReply {
+        esp_id: u32,
+    },
+    ReleaseReply {
+        esp_id: u32,
+    },
 }
 
 type Reply = Result<UnixResponseData, (&'static str, bool)>;
@@ -137,6 +144,7 @@ struct Fkm {
     devices: Vec<CompetitionStatusDevice>,
     attempts: Vec<Attempt>,
     drop_replies: Vec<u32>,
+    held_replies: HashMap<u32, Option<UnixResponse>>,
     log: std::fs::File,
     /// the connected micro-connector (FKMTime pushes to every socket; one is enough here)
     out: Option<UnboundedSender<UnixResponse>>,
@@ -189,6 +197,14 @@ impl Fkm {
     }
 
     fn handle(&mut self, req: UnixRequest) -> Option<UnixResponse> {
+        let hold_for = match &req.data {
+            UnixRequestData::EnterAttempt { esp_id, .. }
+                if matches!(self.held_replies.get(esp_id), Some(None)) =>
+            {
+                Some(*esp_id)
+            }
+            _ => None,
+        };
         let mut dropped = false;
         let reply = match &req.data {
             UnixRequestData::RequestToConnectDevice {
@@ -229,9 +245,13 @@ impl Fkm {
                 }
             })),
         };
-        let resp = (!dropped && req.tag.is_some()).then_some(resp);
+        let mut resp = (!dropped && req.tag.is_some()).then_some(resp);
+        let held = hold_for.is_some() && resp.is_some();
+        if let Some(esp_id) = hold_for.filter(|_| held) {
+            self.held_replies.insert(esp_id, resp.take());
+        }
         if !matches!(req.data, UnixRequestData::CurrentTimeInfo { .. }) {
-            self.write_log(json!({ "req": req, "resp": resp, "dropped": dropped }));
+            self.write_log(json!({ "req": req, "resp": resp, "dropped": dropped, "held": held }));
         }
         resp
     }
@@ -447,6 +467,17 @@ impl Fkm {
                 self.drop_replies.push(*esp_id);
                 Ok(true)
             }
+            Command::HoldReply { esp_id } => {
+                self.held_replies.insert(*esp_id, None);
+                Ok(true)
+            }
+            Command::ReleaseReply { esp_id } => match self.held_replies.remove(esp_id).flatten() {
+                Some(packet) => Ok(self
+                    .out
+                    .as_ref()
+                    .is_some_and(|out| out.send(packet).is_ok())),
+                None => Err("no held reply for this device"),
+            },
         };
         let result = match result {
             Ok(delivered) => json!({ "ok": true, "delivered": delivered }),
@@ -530,6 +561,7 @@ pub async fn run(socket_path: &str, tests_json: &[u8]) -> Result<()> {
         devices: Vec::new(),
         attempts: Vec::new(),
         drop_replies: Vec::new(),
+        held_replies: HashMap::new(),
         log,
         out: None,
     }));
@@ -632,6 +664,63 @@ async fn control_task(listener: UnixListener, fkm: Arc<Mutex<Fkm>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn held_success_is_entered_once_and_released_with_its_original_tag() {
+        let config: SimConfig = serde_json::from_str(include_str!("../../tests.json"))
+            .expect("valid bundled competition fixture");
+        let (tx, mut rx) = unbounded_channel();
+        let mut fkm = Fkm {
+            competition: CompetitionConfig {
+                groups: config.groups,
+                cards: config.cards,
+            },
+            rounds: config.rounds,
+            devices: Vec::new(),
+            attempts: Vec::new(),
+            drop_replies: Vec::new(),
+            held_replies: HashMap::new(),
+            log: std::fs::OpenOptions::new()
+                .write(true)
+                .open("/dev/null")
+                .expect("test log"),
+            out: Some(tx),
+        };
+        assert_eq!(fkm.command(Command::HoldReply { esp_id: 42 })["ok"], true);
+        let reply = fkm.handle(UnixRequest {
+            tag: Some(7),
+            data: UnixRequestData::EnterAttempt {
+                value: 100,
+                value_ms: 1000,
+                penalty: 0,
+                solved_at: "2026-10-18T00:00:00Z".into(),
+                esp_id: 42,
+                competitor_id: "69420".into(),
+                judge_id: "3004425529".into(),
+                is_delegate: false,
+                session_id: "held-session".into(),
+                inspection_time: 1000,
+                group_id: "333-r1".into(),
+            },
+        });
+        assert!(reply.is_none());
+        assert_eq!(fkm.attempts.len(), 1);
+        assert!(rx.try_recv().is_err());
+        assert_eq!(
+            fkm.command(Command::ReleaseReply { esp_id: 42 })["delivered"],
+            true
+        );
+        let reply = rx.try_recv().expect("released reply");
+        assert_eq!(reply.tag, Some(7));
+        assert!(matches!(
+            reply.data,
+            Some(UnixResponseData::EnterAttemptResp { .. })
+        ));
+        assert_eq!(
+            fkm.command(Command::ReleaseReply { esp_id: 42 })["ok"],
+            false
+        );
+    }
 
     #[test]
     fn configuration_needs_only_competition_data() {
