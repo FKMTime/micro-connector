@@ -37,6 +37,9 @@ pub async fn handle_client(
 
     let interval_time = std::time::Duration::from_secs(5);
     let mut hb_interval = tokio::time::interval(interval_time);
+    // a request handled inline (up to UNIX_TIMEOUT) delays ticks; firing them in a burst would
+    // judge the heartbeat before the device could answer the ping and drop the connection
+    hb_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut hb_received = true;
 
     loop {
