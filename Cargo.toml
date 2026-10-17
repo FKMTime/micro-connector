@@ -35,7 +35,6 @@ unix-utils = { path = "./unix-utils" }
 crc32fast = "1.5.0"
 base64 = "0.22.1"
 unidecode = "0.3.0"
-hil-processor = { path = "./hil-processor" }
 axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 rustls = { version = "0.23.40", features = ["ring"], default-features = false }
 rcgen = "0.14.8"

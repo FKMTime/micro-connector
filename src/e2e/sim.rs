@@ -1,5 +1,4 @@
-//! Simulation mode (`E2E_SIM=1`): plays FKMTime's backend for the server-driven flows instead of
-//! running HIL steps, so device simulators can test them end to end.
+//! Plays FKMTime's backend for server-driven flows so device simulators can test them end to end.
 //!
 //! Follows FKMTime's `resultFromDevice.service.ts` / `personForDevice.service.ts`: attempts are
 //! stored per session id, re-sent sessions are rejected (or confirm a resolved incident), delegate
@@ -16,7 +15,6 @@
 //! (JSON lines: `{"ms","req","resp"}`, `{"ms","push"}`, `{"ms","ctl","result"}`).
 
 use anyhow::Result;
-use hil_processor::structs::TestsRoot;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -33,15 +31,33 @@ use tokio::{
 use unix_utils::{
     request::{UnixRequest, UnixRequestData},
     response::{
-        CompetitionStatusDevice, CompetitionStatusResp, IncidentAttempt, UnixResponse,
-        UnixResponseData,
+        CompetitionStatusDevice, CompetitionStatusResp, IncidentAttempt, PossibleGroup,
+        UnixResponse, UnixResponseData,
     },
 };
 
 #[derive(Deserialize, Default, Clone)]
 struct SimConfig {
+    groups: Vec<PossibleGroup>,
+    cards: HashMap<u64, CardInfo>,
     #[serde(default)]
     rounds: HashMap<String, RoundInfo>,
+}
+
+#[derive(Deserialize, Default, Clone)]
+struct CompetitionConfig {
+    groups: Vec<PossibleGroup>,
+    cards: HashMap<u64, CardInfo>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct CardInfo {
+    registrant_id: i64,
+    name: String,
+    wca_id: String,
+    can_compete: bool,
+    groups: Vec<String>,
 }
 
 #[derive(Deserialize, Default, Clone, Copy)]
@@ -116,7 +132,7 @@ enum Command {
 type Reply = Result<UnixResponseData, (&'static str, bool)>;
 
 struct Fkm {
-    tests: TestsRoot,
+    competition: CompetitionConfig,
     rounds: HashMap<String, RoundInfo>,
     devices: Vec<CompetitionStatusDevice>,
     attempts: Vec<Attempt>,
@@ -255,13 +271,13 @@ impl Fkm {
         let Some((card_id, person)) = card_id
             .parse::<u64>()
             .ok()
-            .and_then(|id| Some((id, self.tests.cards.get(&id)?)))
+            .and_then(|id| Some((id, self.competition.cards.get(&id)?)))
         else {
             return Err(("Competitor not found", false));
         };
 
         let groups: Vec<_> = self
-            .tests
+            .competition
             .groups
             .iter()
             .filter(|g| person.groups.contains(&g.group_id))
@@ -307,14 +323,14 @@ impl Fkm {
         let Some(competitor) = competitor_id
             .parse::<u64>()
             .ok()
-            .filter(|c| self.tests.cards.contains_key(c))
+            .filter(|c| self.competition.cards.contains_key(c))
         else {
             return Err(("Competitor not found", true));
         };
         let judge = judge_id
             .parse::<u64>()
             .ok()
-            .filter(|j| self.tests.cards.contains_key(j));
+            .filter(|j| self.competition.cards.contains_key(j));
 
         if let Some(prev) = self
             .attempts
@@ -338,11 +354,16 @@ impl Fkm {
         if judge == Some(competitor) {
             return Err(("Judge cannot be the same person as competitor", false));
         }
-        if !self.tests.groups.iter().any(|g| g.group_id == *group_id) {
+        if !self
+            .competition
+            .groups
+            .iter()
+            .any(|g| g.group_id == *group_id)
+        {
             return Err(("Group not found", false));
         }
         let round_id = round_of(group_id).to_string();
-        let registered = self.tests.cards[&competitor]
+        let registered = self.competition.cards[&competitor]
             .groups
             .iter()
             .any(|g| round_of(g) == round_id);
@@ -492,7 +513,6 @@ impl Fkm {
 }
 
 pub async fn run(socket_path: &str, tests_json: &[u8]) -> Result<()> {
-    let tests: TestsRoot = serde_json::from_slice(tests_json)?;
     let config: SimConfig = serde_json::from_slice(tests_json)?;
     let log_path = std::env::var("E2E_LOG").unwrap_or("e2e.jsonl".to_string());
     let control_path = std::env::var("E2E_CONTROL").unwrap_or(format!("{socket_path}.ctl"));
@@ -502,7 +522,10 @@ pub async fn run(socket_path: &str, tests_json: &[u8]) -> Result<()> {
         .open(&log_path)?;
 
     let fkm = Arc::new(Mutex::new(Fkm {
-        tests,
+        competition: CompetitionConfig {
+            groups: config.groups,
+            cards: config.cards,
+        },
         rounds: config.rounds,
         devices: Vec::new(),
         attempts: Vec::new(),
@@ -516,7 +539,7 @@ pub async fn run(socket_path: &str, tests_json: &[u8]) -> Result<()> {
     tokio::spawn(control_task(control, fkm.clone()));
 
     let listener = UnixListener::bind(socket_path)?;
-    tracing::info!("Sim mode: socket {socket_path}, control {control_path}, log {log_path}");
+    tracing::info!("Fake FKMTime: socket {socket_path}, control {control_path}, log {log_path}");
     loop {
         let (stream, _) = listener.accept().await?;
         if let Err(e) = serve(stream, &fkm).await {
@@ -603,5 +626,28 @@ async fn control_task(listener: UnixListener, fkm: Arc<Mutex<Fkm>>) {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configuration_needs_only_competition_data() {
+        let mut fixture: Value = serde_json::from_str(include_str!("../../tests.json"))
+            .expect("valid bundled competition fixture");
+        fixture["rounds"] = json!({"333-r1": {
+            "attempts": 3, "cutoff": {"attempts": 1, "value": 1000}, "limit": 2500
+        }});
+        let config: SimConfig = serde_json::from_value(fixture).expect("competition configuration");
+        let competitor = &config.cards[&69420];
+        assert_eq!(competitor.registrant_id, 1);
+        assert_eq!(competitor.groups, ["333-r1"]);
+        assert!(config.groups.iter().any(|g| g.group_id == "333-r1"));
+        let round = &config.rounds["333-r1"];
+        assert_eq!(round.attempts, 3);
+        assert_eq!(round.cutoff.map(|c| (c.attempts, c.value)), Some((1, 1000)));
+        assert_eq!(round.limit, Some(2500));
     }
 }
