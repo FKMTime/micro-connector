@@ -1,13 +1,6 @@
-use anyhow::Result;
-use std::{
-    path::Path,
-    time::{Duration, SystemTime},
-};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{UnixListener, UnixStream},
-};
-use unix_utils::{request::UnixRequest, response::UnixResponse};
+//! Fake FKMTime server used by firmware device simulations.
+use anyhow::{Context, Result};
+use std::path::Path;
 
 mod sim;
 
@@ -17,99 +10,20 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let socket_path = std::env::var("SOCKET_PATH").unwrap_or("/tmp/sock/socket.sock".to_string());
-    let socket_dir = Path::new(&socket_path)
+    if let Some(parent) = Path::new(&socket_path)
         .parent()
-        .expect("No SOCKET_PATH parent");
-    _ = tokio::fs::create_dir_all(socket_dir).await;
-    _ = tokio::fs::remove_file(&socket_path).await;
+        .filter(|p| !p.as_os_str().is_empty())
+    {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    match tokio::fs::remove_file(&socket_path).await {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
 
-    let tests_root = tokio::fs::read("tests.json")
+    let config = tokio::fs::read("tests.json")
         .await
-        .map_err(|_| anyhow::anyhow!("tests.json doesnt exists!"))?;
-    if std::env::var("E2E_SIM").is_ok_and(|v| v == "1") {
-        return sim::run(&socket_path, &tests_root).await;
-    }
-    let tests_root: hil_processor::structs::TestsRoot = serde_json::from_slice(&tests_root)?;
-
-    let listener = UnixListener::bind(&socket_path)?;
-    tracing::info!("Unix listener started on path {socket_path}!");
-    loop {
-        let (mut stream, _) = listener.accept().await?;
-        let mut state = hil_processor::HilState {
-            devices: Vec::new(),
-            tests: tests_root.clone(),
-            should_send_status: true,
-            get_ms: || {
-                SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .expect("")
-                    .as_millis() as u64
-            },
-            status: Default::default(),
-
-            completed_count: 0,
-            packet_queue: Vec::new(),
-            log_fn: |tag, msg| {
-                if tag != "TRACE" {
-                    println!("[{tag}] {msg}");
-                }
-            },
-
-            error_log: Vec::new(),
-        };
-
-        if let Ok(out) = state.process() {
-            for packet in out {
-                _ = send_raw_resp(&mut stream, packet).await;
-            }
-        }
-
-        let mut buf = Vec::with_capacity(512);
-        loop {
-            let res = tokio::time::timeout(
-                Duration::from_millis(50),
-                read_until_null(&mut stream, &mut buf),
-            )
-            .await;
-
-            let packet: Option<UnixRequest> = match res {
-                Ok(Ok(bytes)) => serde_json::from_slice(&bytes[..])?,
-                Ok(Err(e)) => {
-                    tracing::error!("read_until_null returned error: {e:?}");
-                    break;
-                }
-                Err(_) => None,
-            };
-
-            _ = state.feed(packet);
-            if let Ok(out) = state.process() {
-                for packet in out {
-                    _ = send_raw_resp(&mut stream, packet).await;
-                }
-            }
-
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
-    }
-}
-
-async fn send_raw_resp(stream: &mut UnixStream, data: UnixResponse) -> Result<()> {
-    stream.write_all(&serde_json::to_vec(&data)?).await?;
-    stream.write_u8(0x00).await?;
-
-    Ok(())
-}
-
-async fn read_until_null(stream: &mut UnixStream, buf: &mut Vec<u8>) -> Result<Vec<u8>> {
-    loop {
-        let byte = stream.read_u8().await?;
-        if byte == 0x00 {
-            let ret = buf.to_owned();
-            buf.clear();
-
-            return Ok(ret);
-        }
-
-        buf.push(byte);
-    }
+        .context("Cannot read fake FKMTime configuration: tests.json")?;
+    sim::run(&socket_path, &config).await
 }
