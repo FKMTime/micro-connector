@@ -1,5 +1,4 @@
-//! Simulation mode (`E2E_SIM=1`): plays FKMTime's backend for the server-driven flows instead of
-//! running HIL steps, so device simulators can test them end to end.
+//! Plays FKMTime's backend for server-driven flows so device simulators can test them end to end.
 //!
 //! Follows FKMTime's `resultFromDevice.service.ts` / `personForDevice.service.ts`: attempts are
 //! stored per session id, re-sent sessions are rejected (or confirm a resolved incident), delegate
@@ -12,11 +11,11 @@
 //! per command): `{"cmd":"attempts"}`, `{"cmd":"resolve","sessionId":..,"status":"resolved"|
 //! "standard"|"extra_given","value":..,"penalty":..,"noCards":false}`, `{"cmd":"delete",
 //! "sessionId":..}`, `{"cmd":"drop_reply","espId":..}` (the next attempt of that device is entered
-//! but never answered). Every request with its answer, push and command is appended to `E2E_LOG`
+//! but never answered), or `hold_reply` / `release_reply` with `espId` to deliver a success later.
+//! Every request with its answer, push and command is appended to `E2E_LOG`
 //! (JSON lines: `{"ms","req","resp"}`, `{"ms","push"}`, `{"ms","ctl","result"}`).
 
 use anyhow::Result;
-use hil_processor::structs::TestsRoot;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -33,15 +32,33 @@ use tokio::{
 use unix_utils::{
     request::{UnixRequest, UnixRequestData},
     response::{
-        CompetitionStatusDevice, CompetitionStatusResp, IncidentAttempt, UnixResponse,
-        UnixResponseData,
+        CompetitionStatusDevice, CompetitionStatusResp, IncidentAttempt, PossibleGroup,
+        UnixResponse, UnixResponseData,
     },
 };
 
 #[derive(Deserialize, Default, Clone)]
 struct SimConfig {
+    groups: Vec<PossibleGroup>,
+    cards: HashMap<u64, CardInfo>,
     #[serde(default)]
     rounds: HashMap<String, RoundInfo>,
+}
+
+#[derive(Deserialize, Default, Clone)]
+struct CompetitionConfig {
+    groups: Vec<PossibleGroup>,
+    cards: HashMap<u64, CardInfo>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct CardInfo {
+    registrant_id: i64,
+    name: String,
+    wca_id: String,
+    can_compete: bool,
+    groups: Vec<String>,
 }
 
 #[derive(Deserialize, Default, Clone, Copy)]
@@ -111,16 +128,23 @@ enum Command {
     DropReply {
         esp_id: u32,
     },
+    HoldReply {
+        esp_id: u32,
+    },
+    ReleaseReply {
+        esp_id: u32,
+    },
 }
 
 type Reply = Result<UnixResponseData, (&'static str, bool)>;
 
 struct Fkm {
-    tests: TestsRoot,
+    competition: CompetitionConfig,
     rounds: HashMap<String, RoundInfo>,
     devices: Vec<CompetitionStatusDevice>,
     attempts: Vec<Attempt>,
     drop_replies: Vec<u32>,
+    held_replies: HashMap<u32, Option<UnixResponse>>,
     log: std::fs::File,
     /// the connected micro-connector (FKMTime pushes to every socket; one is enough here)
     out: Option<UnboundedSender<UnixResponse>>,
@@ -173,6 +197,14 @@ impl Fkm {
     }
 
     fn handle(&mut self, req: UnixRequest) -> Option<UnixResponse> {
+        let hold_for = match &req.data {
+            UnixRequestData::EnterAttempt { esp_id, .. }
+                if matches!(self.held_replies.get(esp_id), Some(None)) =>
+            {
+                Some(*esp_id)
+            }
+            _ => None,
+        };
         let mut dropped = false;
         let reply = match &req.data {
             UnixRequestData::RequestToConnectDevice {
@@ -213,9 +245,13 @@ impl Fkm {
                 }
             })),
         };
-        let resp = (!dropped && req.tag.is_some()).then_some(resp);
+        let mut resp = (!dropped && req.tag.is_some()).then_some(resp);
+        let held = hold_for.is_some() && resp.is_some();
+        if let Some(esp_id) = hold_for.filter(|_| held) {
+            self.held_replies.insert(esp_id, resp.take());
+        }
         if !matches!(req.data, UnixRequestData::CurrentTimeInfo { .. }) {
-            self.write_log(json!({ "req": req, "resp": resp, "dropped": dropped }));
+            self.write_log(json!({ "req": req, "resp": resp, "dropped": dropped, "held": held }));
         }
         resp
     }
@@ -255,13 +291,13 @@ impl Fkm {
         let Some((card_id, person)) = card_id
             .parse::<u64>()
             .ok()
-            .and_then(|id| Some((id, self.tests.cards.get(&id)?)))
+            .and_then(|id| Some((id, self.competition.cards.get(&id)?)))
         else {
             return Err(("Competitor not found", false));
         };
 
         let groups: Vec<_> = self
-            .tests
+            .competition
             .groups
             .iter()
             .filter(|g| person.groups.contains(&g.group_id))
@@ -307,14 +343,14 @@ impl Fkm {
         let Some(competitor) = competitor_id
             .parse::<u64>()
             .ok()
-            .filter(|c| self.tests.cards.contains_key(c))
+            .filter(|c| self.competition.cards.contains_key(c))
         else {
             return Err(("Competitor not found", true));
         };
         let judge = judge_id
             .parse::<u64>()
             .ok()
-            .filter(|j| self.tests.cards.contains_key(j));
+            .filter(|j| self.competition.cards.contains_key(j));
 
         if let Some(prev) = self
             .attempts
@@ -338,11 +374,16 @@ impl Fkm {
         if judge == Some(competitor) {
             return Err(("Judge cannot be the same person as competitor", false));
         }
-        if !self.tests.groups.iter().any(|g| g.group_id == *group_id) {
+        if !self
+            .competition
+            .groups
+            .iter()
+            .any(|g| g.group_id == *group_id)
+        {
             return Err(("Group not found", false));
         }
         let round_id = round_of(group_id).to_string();
-        let registered = self.tests.cards[&competitor]
+        let registered = self.competition.cards[&competitor]
             .groups
             .iter()
             .any(|g| round_of(g) == round_id);
@@ -426,6 +467,17 @@ impl Fkm {
                 self.drop_replies.push(*esp_id);
                 Ok(true)
             }
+            Command::HoldReply { esp_id } => {
+                self.held_replies.insert(*esp_id, None);
+                Ok(true)
+            }
+            Command::ReleaseReply { esp_id } => match self.held_replies.remove(esp_id).flatten() {
+                Some(packet) => Ok(self
+                    .out
+                    .as_ref()
+                    .is_some_and(|out| out.send(packet).is_ok())),
+                None => Err("no held reply for this device"),
+            },
         };
         let result = match result {
             Ok(delivered) => json!({ "ok": true, "delivered": delivered }),
@@ -492,7 +544,6 @@ impl Fkm {
 }
 
 pub async fn run(socket_path: &str, tests_json: &[u8]) -> Result<()> {
-    let tests: TestsRoot = serde_json::from_slice(tests_json)?;
     let config: SimConfig = serde_json::from_slice(tests_json)?;
     let log_path = std::env::var("E2E_LOG").unwrap_or("e2e.jsonl".to_string());
     let control_path = std::env::var("E2E_CONTROL").unwrap_or(format!("{socket_path}.ctl"));
@@ -502,11 +553,15 @@ pub async fn run(socket_path: &str, tests_json: &[u8]) -> Result<()> {
         .open(&log_path)?;
 
     let fkm = Arc::new(Mutex::new(Fkm {
-        tests,
+        competition: CompetitionConfig {
+            groups: config.groups,
+            cards: config.cards,
+        },
         rounds: config.rounds,
         devices: Vec::new(),
         attempts: Vec::new(),
         drop_replies: Vec::new(),
+        held_replies: HashMap::new(),
         log,
         out: None,
     }));
@@ -516,7 +571,7 @@ pub async fn run(socket_path: &str, tests_json: &[u8]) -> Result<()> {
     tokio::spawn(control_task(control, fkm.clone()));
 
     let listener = UnixListener::bind(socket_path)?;
-    tracing::info!("Sim mode: socket {socket_path}, control {control_path}, log {log_path}");
+    tracing::info!("Fake FKMTime: socket {socket_path}, control {control_path}, log {log_path}");
     loop {
         let (stream, _) = listener.accept().await?;
         if let Err(e) = serve(stream, &fkm).await {
@@ -603,5 +658,85 @@ async fn control_task(listener: UnixListener, fkm: Arc<Mutex<Fkm>>) {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn held_success_is_entered_once_and_released_with_its_original_tag() {
+        let config: SimConfig = serde_json::from_str(include_str!("../../tests.json"))
+            .expect("valid bundled competition fixture");
+        let (tx, mut rx) = unbounded_channel();
+        let mut fkm = Fkm {
+            competition: CompetitionConfig {
+                groups: config.groups,
+                cards: config.cards,
+            },
+            rounds: config.rounds,
+            devices: Vec::new(),
+            attempts: Vec::new(),
+            drop_replies: Vec::new(),
+            held_replies: HashMap::new(),
+            log: std::fs::OpenOptions::new()
+                .write(true)
+                .open("/dev/null")
+                .expect("test log"),
+            out: Some(tx),
+        };
+        assert_eq!(fkm.command(Command::HoldReply { esp_id: 42 })["ok"], true);
+        let reply = fkm.handle(UnixRequest {
+            tag: Some(7),
+            data: UnixRequestData::EnterAttempt {
+                value: 100,
+                value_ms: 1000,
+                penalty: 0,
+                solved_at: "2026-10-18T00:00:00Z".into(),
+                esp_id: 42,
+                competitor_id: "69420".into(),
+                judge_id: "3004425529".into(),
+                is_delegate: false,
+                session_id: "held-session".into(),
+                inspection_time: 1000,
+                group_id: "333-r1".into(),
+            },
+        });
+        assert!(reply.is_none());
+        assert_eq!(fkm.attempts.len(), 1);
+        assert!(rx.try_recv().is_err());
+        assert_eq!(
+            fkm.command(Command::ReleaseReply { esp_id: 42 })["delivered"],
+            true
+        );
+        let reply = rx.try_recv().expect("released reply");
+        assert_eq!(reply.tag, Some(7));
+        assert!(matches!(
+            reply.data,
+            Some(UnixResponseData::EnterAttemptResp { .. })
+        ));
+        assert_eq!(
+            fkm.command(Command::ReleaseReply { esp_id: 42 })["ok"],
+            false
+        );
+    }
+
+    #[test]
+    fn configuration_needs_only_competition_data() {
+        let mut fixture: Value = serde_json::from_str(include_str!("../../tests.json"))
+            .expect("valid bundled competition fixture");
+        fixture["rounds"] = json!({"333-r1": {
+            "attempts": 3, "cutoff": {"attempts": 1, "value": 1000}, "limit": 2500
+        }});
+        let config: SimConfig = serde_json::from_value(fixture).expect("competition configuration");
+        let competitor = &config.cards[&69420];
+        assert_eq!(competitor.registrant_id, 1);
+        assert_eq!(competitor.groups, ["333-r1"]);
+        assert!(config.groups.iter().any(|g| g.group_id == "333-r1"));
+        let round = &config.rounds["333-r1"];
+        assert_eq!(round.attempts, 3);
+        assert_eq!(round.cutoff.map(|c| (c.attempts, c.value)), Some((1, 1000)));
+        assert_eq!(round.limit, Some(2500));
     }
 }

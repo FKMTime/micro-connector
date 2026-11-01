@@ -17,3 +17,18 @@ RUST_LOG=none,backend=trace cargo run
 
 Why is this required? Devices with firmware < `2.4` are 
 communicating using different packet structures. 
+
+## Fake FKMTime for device simulations
+
+Build with `cargo build --bins`, then run `target/debug/e2e` from a directory containing
+`tests.json`. This file defines `groups`, `cards`, and optional `rounds` (attempt counts,
+cutoffs and time limits in centiseconds). The bundled configuration has sample cards and groups.
+
+The fake server always models FKMTime: attempts are tracked by session, delegate calls become
+incidents, and resolved incidents, extra attempts, cutoffs and limits follow the server flows.
+`SOCKET_PATH` selects its connector Unix socket. `E2E_CONTROL` selects the delegate control
+socket (default: `$SOCKET_PATH.ctl`); `E2E_LOG` selects the JSONL request log (default: `e2e.jsonl`).
+The `e2e` executable name is retained for firmware sim scripts; `E2E_SIM` is no longer needed.
+Drive device inputs through the firmware simulator's bus models.
+The control commands `hold_reply` and `release_reply` (with `espId`) hold the next attempt's
+answer while still recording the attempt, then deliver it with its original request tag.
