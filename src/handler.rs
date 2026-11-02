@@ -17,19 +17,19 @@ pub async fn handle_client(
         "============= Client connected! ============="
     );
 
+    // never hold a state guard across an update: it parks ServerStatus' write, and every new
+    // connection behind it, until the update ends
+    let updates_allowed = state.inner.read().await.should_update;
+    if updates_allowed
+        && let Some(firmware) = super::updater::should_update(&state, esp_connect_info).await?
     {
-        let state_inner = state.inner.read().await;
-        if state_inner.should_update
-            && let Some(firmware) = super::updater::should_update(&state, esp_connect_info).await?
-        {
-            tracing::info!(
-                file = format!("device_{:X}", esp_connect_info.id),
-                "Starting update."
-            );
-            super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
+        tracing::info!(
+            file = format!("device_{:X}", esp_connect_info.id),
+            "Starting update."
+        );
+        super::updater::update_client(&mut socket, esp_connect_info, firmware).await?;
 
-            return Ok(());
-        }
+        return Ok(());
     }
 
     send_epoch_time(&mut socket).await?;
@@ -59,8 +59,8 @@ pub async fn handle_client(
             Ok(res) = bc.recv() => {
                 match res {
                     crate::structs::BroadcastPacket::Build => {
-                        let inner_state = state.inner.read().await;
-                        if !inner_state.should_update {
+                        let updates_allowed = state.inner.read().await.should_update;
+                        if !updates_allowed {
                             continue;
                         }
 
@@ -267,6 +267,7 @@ async fn on_log_packet(packet: LogPacket<'_>, esp_id: u32, state: &SharedAppStat
 
     let inner_state = state.inner.read().await;
     if inner_state.devices_settings.contains_key(&esp_id) {
+        drop(inner_state);
         _ = crate::socket::api::send_current_state(
             esp_id,
             packet.current_time,
@@ -451,6 +452,7 @@ async fn on_timer_response(
         TimerPacketInner::Battery { level, voltage: _ } => {
             let inner_state = state.inner.read().await;
             if inner_state.devices_settings.contains_key(&esp_id) {
+                drop(inner_state);
                 _ = crate::socket::api::send_battery_status(esp_id, level).await;
             }
         }
@@ -481,4 +483,199 @@ async fn on_timer_response(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::structs::DeviceSettings;
+    use futures_util::{SinkExt, StreamExt};
+    use std::{sync::Once, time::Duration};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::{TcpListener, TcpStream, UnixListener, UnixStream},
+        time::timeout,
+    };
+    use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite};
+    use unix_utils::request::UnixRequestData;
+
+    const DEVICE_ID: u32 = 1;
+    const TIMEOUT: Duration = Duration::from_secs(2);
+
+    type Device = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+    fn provide_newer_firmware() {
+        static SETUP: Once = Once::new();
+        SETUP.call_once(|| {
+            let dir = std::env::temp_dir().join(format!("fkm-fw-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            // the tail isn't utf8, so the version is taken from the file name
+            std::fs::write(dir.join("v4_STATION_v3.5.0.bin"), [0xFF; 8192]).unwrap();
+            // SAFETY: nothing else in the tests touches the environment
+            unsafe { std::env::set_var("FIRMWARE_DIR", dir) };
+        });
+    }
+
+    async fn state_with_device(should_update: bool) -> SharedAppState {
+        let state = SharedAppState::new(false).await;
+        let mut inner = state.inner.write().await;
+        inner.should_update = should_update;
+        inner
+            .devices_settings
+            .insert(DEVICE_ID, DeviceSettings { sign_key: None });
+        drop(inner);
+        state
+    }
+
+    async fn connect_device(state: &SharedAppState) -> Device {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = crate::http::router(state.clone());
+        tokio::spawn(async move { axum::serve(listener, app.into_make_service()).await });
+
+        let url = format!("ws://{addr}/?id={DEVICE_ID}&ver=v3.4.4&hw=v4&firmware=STATION");
+        connect_async(url).await.unwrap().0
+    }
+
+    async fn wait_for_frame(device: &mut Device, wanted: fn(&tungstenite::Message) -> bool) {
+        let search = async {
+            while let Some(frame) = device.next().await {
+                if wanted(&frame.unwrap()) {
+                    return;
+                }
+            }
+            panic!("connection closed");
+        };
+        timeout(TIMEOUT, search).await.expect("frame not received");
+    }
+
+    fn is_start_update(frame: &tungstenite::Message) -> bool {
+        frame.to_text().is_ok_and(|t| t.contains("start_update"))
+    }
+
+    // the first heartbeat goes out after the broadcast subscription
+    async fn wait_until_listening(device: &mut Device) {
+        wait_for_frame(device, tungstenite::Message::is_ping).await;
+    }
+
+    /// tokio's RwLock is fair: one reader that holds its guard for long is enough to park a
+    /// writer, and with it every reader that comes after.
+    async fn assert_readers_pass_a_writer(state: &SharedAppState) {
+        let writer_state = state.clone();
+        let writer = tokio::spawn(async move { drop(writer_state.inner.write().await) });
+        tokio::task::yield_now().await;
+
+        let reader = timeout(TIMEOUT, state.inner.read()).await;
+        drop(reader.expect("reader blocked behind a writer"));
+        timeout(TIMEOUT, writer)
+            .await
+            .expect("writer blocked")
+            .unwrap();
+    }
+
+    async fn attach_backend(state: &SharedAppState) -> UnixStream {
+        let path = std::env::temp_dir().join(format!("fkm-unix-{}", std::process::id()));
+        let path = path.to_str().unwrap();
+        let listener = UnixListener::bind(path).unwrap();
+        crate::UNIX_SOCKET.init(path, state.clone()).await.unwrap();
+        let (backend, _) = timeout(TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        std::fs::remove_file(path).unwrap();
+        backend
+    }
+
+    async fn read_request(backend: &mut UnixStream) -> String {
+        let read = async {
+            let mut frame = Vec::new();
+            loop {
+                match backend.read_u8().await.unwrap() {
+                    0 => return String::from_utf8(frame).unwrap(),
+                    byte => frame.push(byte),
+                }
+            }
+        };
+        timeout(TIMEOUT, read).await.expect("no backend request")
+    }
+
+    #[tokio::test]
+    async fn update_on_connect_leaves_the_state_lock_free() {
+        provide_newer_firmware();
+        let state = state_with_device(true).await;
+
+        let mut device = connect_device(&state).await;
+        wait_for_frame(&mut device, is_start_update).await;
+
+        assert_readers_pass_a_writer(&state).await;
+    }
+
+    #[tokio::test]
+    async fn update_from_build_broadcast_leaves_the_state_lock_free() {
+        provide_newer_firmware();
+        let state = state_with_device(false).await;
+        let mut device = connect_device(&state).await;
+        wait_until_listening(&mut device).await;
+
+        state.inner.write().await.should_update = true;
+        state.build_broadcast().await.unwrap();
+        wait_for_frame(&mut device, is_start_update).await;
+
+        assert_readers_pass_a_writer(&state).await;
+    }
+
+    // one test because UNIX_SOCKET can only be initialised once
+    #[tokio::test]
+    async fn backend_traffic_does_not_wait_on_the_locks() {
+        let state = state_with_device(false).await;
+        let mut backend = attach_backend(&state).await;
+        let mut device = connect_device(&state).await;
+        wait_until_listening(&mut device).await;
+
+        // tagged requests: the replies would have to come through the socket loop
+        let battery = r#"{"data":{"battery":{"level":50.0}}}"#;
+        device
+            .send(tungstenite::Message::text(battery))
+            .await
+            .unwrap();
+        assert!(read_request(&mut backend).await.contains("Battery"));
+        assert_readers_pass_a_writer(&state).await;
+
+        let log_state = state.clone();
+        tokio::spawn(async move {
+            on_log_packet(LogPacket::default(), DEVICE_ID, &log_state).await;
+        });
+        assert!(read_request(&mut backend).await.contains("CurrentTime"));
+        assert_readers_pass_a_writer(&state).await;
+
+        // ServerStatus parked on the state lock must not take outgoing requests down with it
+        let reader = state.inner.read().await;
+        let status = serde_json::json!({"type": "ServerStatus", "data": {
+            "shouldUpdate": true, "devices": [], "translations": [], "defaultLocale": "en",
+            "fkmToken": 1, "secureRfid": false, "autoSetup": false, "soundEnabled": false,
+        }});
+        backend
+            .write_all(status.to_string().as_bytes())
+            .await
+            .unwrap();
+        backend.write_u8(0).await.unwrap();
+        let status_parked = async {
+            while state.inner.try_read().is_ok() {
+                tokio::task::yield_now().await;
+            }
+        };
+        timeout(TIMEOUT, status_parked).await.expect("status lost");
+
+        let request =
+            crate::UNIX_SOCKET.send_async_request(UnixRequestData::RequestToConnectDevice {
+                esp_id: DEVICE_ID,
+                sign_key: 0,
+                hw: "v4".to_string(),
+                r#type: "STATION".to_string(),
+            });
+        timeout(TIMEOUT, request)
+            .await
+            .expect("request blocked behind ServerStatus")
+            .unwrap();
+
+        drop(reader);
+        assert!(state.inner.read().await.should_update);
+    }
 }
