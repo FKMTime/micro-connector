@@ -220,9 +220,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             state.send_timer_packet(esp_id, packet).await?;
         }
         UnixResponseData::ServerStatus(status) => {
-            let inner = crate::UNIX_SOCKET.get_inner().await?;
-            let inner = inner.read().await;
-            let mut inner_state = inner.state.inner.write().await;
+            let mut inner_state = state.inner.write().await;
 
             // remove all unicode weirdness
             let translations: Vec<TranslationLocale> = status
@@ -280,7 +278,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
 
             drop(inner_state);
             if changed {
-                _ = inner.state.device_settings_broadcast().await;
+                _ = state.device_settings_broadcast().await;
             }
         }
         UnixResponseData::IncidentResolved {

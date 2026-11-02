@@ -64,17 +64,21 @@ fn key_from_str(key: &str) -> Result<PrivateKeyDer<'static>> {
         .ok_or_else(|| anyhow::anyhow!("Private ket returned None"))
 }
 
-pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
-    let addr: SocketAddr = format!("0.0.0.0:{port}").parse()?;
-    info!("Server started, listening on {addr}");
-
-    let app = Router::new()
+pub fn router(state: SharedAppState) -> Router {
+    Router::new()
         .route("/", get(ws_handler))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
         )
-        .with_state(state);
+        .with_state(state)
+}
+
+pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
+    let addr: SocketAddr = format!("0.0.0.0:{port}").parse()?;
+    info!("Server started, listening on {addr}");
+
+    let app = router(state);
 
     if std::env::var("NO_TLS").is_ok() {
         let listener = TcpListener::bind(addr).await?;
