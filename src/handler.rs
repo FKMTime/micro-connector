@@ -1,5 +1,6 @@
 use crate::{
     http::EspConnectInfo,
+    log_packet::LogPacket,
     structs::{SharedAppState, TimerPacket, TimerPacketInner},
 };
 use anyhow::Result;
@@ -207,83 +208,15 @@ async fn on_ws_msg(
         }
         Message::Binary(buf) => {
             let esp_id = esp_connect_info.id;
-            if buf.len() > 50 && buf[0] == b'L' {
-                //logs packet
-                let current_time = if buf[2..10] != [0xFF; 8] {
-                    Some(u64::from_be_bytes(buf[2..10].try_into()?))
-                } else {
-                    None
-                };
-
-                let inspection_time = if buf[10..18] != [0xFF; 8] {
-                    Some(u64::from_be_bytes(buf[10..18].try_into()?))
-                } else {
-                    None
-                };
-
-                let current_competitor = if buf[18..26] != [0xFF; 8] {
-                    Some(u64::from_be_bytes(buf[18..26].try_into()?))
-                } else {
-                    None
-                };
-
-                let raw = &buf[26..26 + 20];
-                let end = raw.iter().position(|&b| b == 0x00).unwrap_or(raw.len());
-                let current_group_id = if end == 0 {
-                    None
-                } else {
-                    String::from_utf8(raw[..end].to_vec()).ok()
-                };
-
-                let raw = &buf[46..82];
-                let end = raw.iter().position(|&b| b == 0x00).unwrap_or(raw.len());
-                let current_session_id = if end == 0 {
-                    None
-                } else {
-                    String::from_utf8(raw[..end].to_vec()).ok()
-                };
-
-                if buf[1] == 0x01 {
-                    tracing::warn!(file = format!("device_{esp_id:X}"), "LOGS TRUNCATED!");
-                }
-
-                let mut offset = 100;
-                while offset < buf.len() {
-                    let line_len = u16::from_be_bytes([buf[offset], buf[offset + 1]]) as usize;
-                    if line_len + offset > buf.len() {
-                        tracing::error!(file = format!("device_{esp_id:X}"), "Logs read error!");
-                        break;
+            if buf.first() == Some(&b'L') {
+                match crate::log_packet::parse_log_packet(&buf) {
+                    Ok(packet) => on_log_packet(packet, esp_id, state).await,
+                    Err(e) => {
+                        tracing::error!(
+                            file = format!("device_{esp_id:X}"),
+                            "Logs read error: {e}"
+                        );
                     }
-
-                    let line = core::str::from_utf8(&buf[offset + 2..offset + 2 + line_len])?;
-                    if !line.is_empty() {
-                        const RESET: &str = "\u{001B}[0m";
-                        let color = match line.as_bytes().first() {
-                            Some(b'E') => "\u{001B}[31m",
-                            Some(b'W') => "\u{001B}[33m",
-                            Some(b'I') => "\u{001B}[32m",
-                            Some(b'D') => "\u{001B}[34m",
-                            Some(b'T') => "\u{001B}[35m",
-                            _ => "",
-                        };
-
-                        tracing::info!(file = format!("device_{esp_id:X}"), "{color}{line}{RESET}");
-                    }
-
-                    offset += 2 + line_len;
-                }
-
-                let inner_state = state.inner.read().await;
-                if inner_state.devices_settings.contains_key(&esp_id) {
-                    _ = crate::socket::api::send_current_state(
-                        esp_id,
-                        current_time,
-                        inspection_time,
-                        current_competitor,
-                        current_group_id,
-                        current_session_id,
-                    )
-                    .await;
                 }
             } else if buf.len() > 1 && buf[0] == b'C' {
                 let error_log_buf = &buf[1..];
@@ -307,6 +240,43 @@ async fn on_ws_msg(
     }
 
     Ok(false)
+}
+
+async fn on_log_packet(packet: LogPacket<'_>, esp_id: u32, state: &SharedAppState) {
+    if packet.truncated {
+        tracing::warn!(file = format!("device_{esp_id:X}"), "LOGS TRUNCATED!");
+    }
+
+    for line in packet.lines {
+        const RESET: &str = "\u{001B}[0m";
+        let color = match line.as_bytes().first() {
+            Some(b'E') => "\u{001B}[31m",
+            Some(b'W') => "\u{001B}[33m",
+            Some(b'I') => "\u{001B}[32m",
+            Some(b'D') => "\u{001B}[34m",
+            Some(b'T') => "\u{001B}[35m",
+            _ => "",
+        };
+
+        tracing::info!(file = format!("device_{esp_id:X}"), "{color}{line}{RESET}");
+    }
+
+    if packet.lines_malformed {
+        tracing::error!(file = format!("device_{esp_id:X}"), "Logs read error!");
+    }
+
+    let inner_state = state.inner.read().await;
+    if inner_state.devices_settings.contains_key(&esp_id) {
+        _ = crate::socket::api::send_current_state(
+            esp_id,
+            packet.current_time,
+            packet.inspection_time,
+            packet.current_competitor,
+            packet.current_group_id,
+            packet.current_session_id,
+        )
+        .await;
+    }
 }
 
 async fn on_timer_response(

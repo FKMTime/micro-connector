@@ -7,6 +7,7 @@ mod error_log;
 mod github;
 mod handler;
 mod http;
+mod log_packet;
 mod log_subscriber;
 mod mdns;
 mod socket;
