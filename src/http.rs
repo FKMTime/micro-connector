@@ -146,6 +146,7 @@ async fn ws_handler(
 
 async fn handle_socket(socket: WebSocket, esp_connect_info: EspConnectInfo, state: SharedAppState) {
     info!("Client connected: {esp_connect_info}");
+    let _connected = state.connected_devices.track(esp_connect_info.id);
 
     let res = handle_client(socket, &esp_connect_info, state).await;
     if let Err(e) = res {

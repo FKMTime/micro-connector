@@ -549,6 +549,17 @@ mod tests {
         timeout(TIMEOUT, search).await.expect("frame not received");
     }
 
+    async fn wait_for_tracking(state: &SharedAppState, connected: bool, within: Duration) {
+        let settled = async {
+            while state.connected_devices.contains(DEVICE_ID) != connected {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+        timeout(within, settled)
+            .await
+            .expect("tracking not updated");
+    }
+
     fn is_start_update(frame: &tungstenite::Message) -> bool {
         frame.to_text().is_ok_and(|t| t.contains("start_update"))
     }
@@ -619,6 +630,54 @@ mod tests {
         wait_for_frame(&mut device, is_start_update).await;
 
         assert_readers_pass_a_writer(&state).await;
+    }
+
+    #[tokio::test]
+    async fn clean_close_clears_the_device() {
+        let state = state_with_device(false).await;
+        let mut device = connect_device(&state).await;
+        wait_for_tracking(&state, true, TIMEOUT).await;
+
+        device.close(None).await.unwrap();
+        wait_for_tracking(&state, false, TIMEOUT).await;
+    }
+
+    #[tokio::test]
+    async fn broken_connection_clears_the_device() {
+        let state = state_with_device(false).await;
+        let device = connect_device(&state).await;
+        wait_for_tracking(&state, true, TIMEOUT).await;
+
+        // no close frame: the read fails and handle_client returns an error
+        drop(device);
+        wait_for_tracking(&state, false, TIMEOUT).await;
+    }
+
+    // a device that resets drops off without a word, and has to become configurable again
+    #[tokio::test]
+    async fn missed_heartbeat_clears_the_device() {
+        let state = state_with_device(false).await;
+        let _silent_device = connect_device(&state).await;
+        wait_for_tracking(&state, true, TIMEOUT).await;
+
+        wait_for_tracking(&state, false, Duration::from_secs(8)).await;
+    }
+
+    #[tokio::test]
+    async fn overlapping_connections_keep_the_device_tracked() {
+        let state = state_with_device(false).await;
+        let mut old_device = connect_device(&state).await;
+        wait_until_listening(&mut old_device).await;
+        let mut new_device = connect_device(&state).await;
+        wait_until_listening(&mut new_device).await;
+
+        drop(old_device);
+        // the old connection's task has to be gone, or this passes on its count alone
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(state.connected_devices.contains(DEVICE_ID));
+
+        drop(new_device);
+        wait_for_tracking(&state, false, TIMEOUT).await;
     }
 
     // one test because UNIX_SOCKET can only be initialised once

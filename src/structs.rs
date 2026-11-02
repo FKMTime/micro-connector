@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
+};
 use unix_utils::{
     SnapshotData, TestPacketData,
     response::{PossibleGroup, TranslationLocale},
@@ -117,6 +120,7 @@ pub enum BroadcastPacket {
 pub struct SharedAppState {
     pub inner: std::sync::Arc<tokio::sync::RwLock<AppState>>,
     pub dev_mode: bool,
+    pub connected_devices: ConnectedDevices,
     bc: tokio::sync::broadcast::Sender<BroadcastPacket>,
 }
 
@@ -137,12 +141,61 @@ pub struct DeviceSettings {
     pub sign_key: Option<u32>,
 }
 
+/// Devices with a live websocket connection, counted per id: a device can reconnect before its
+/// old connection is dropped, and closing the old one must not hide the new one.
+///
+/// Kept out of `AppState` because [`ConnectionGuard`] updates it from `Drop`, which can't await.
+/// The lock is only ever held inside the methods below, never across an await.
+#[derive(Debug, Clone, Default)]
+pub struct ConnectedDevices(Arc<Mutex<HashMap<u32, usize>>>);
+
+/// Marks a device as connected until dropped, so every way out of a connection task clears it.
+#[must_use = "the device stops counting as connected when this is dropped"]
+#[derive(Debug)]
+pub struct ConnectionGuard {
+    devices: ConnectedDevices,
+    esp_id: u32,
+}
+
+impl ConnectedDevices {
+    fn counts(&self) -> MutexGuard<'_, HashMap<u32, usize>> {
+        // no panic can leave the map half updated, and this also runs in Drop during an unwind
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub fn track(&self, esp_id: u32) -> ConnectionGuard {
+        *self.counts().entry(esp_id).or_insert(0) += 1;
+
+        ConnectionGuard {
+            devices: self.clone(),
+            esp_id,
+        }
+    }
+
+    pub fn contains(&self, esp_id: u32) -> bool {
+        self.counts().contains_key(&esp_id)
+    }
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        let mut counts = self.devices.counts();
+        if let Some(count) = counts.get_mut(&self.esp_id) {
+            *count -= 1;
+            if *count == 0 {
+                counts.remove(&self.esp_id);
+            }
+        }
+    }
+}
+
 impl SharedAppState {
     pub async fn new(dev_mode: bool) -> Self {
         let (bc, _) = tokio::sync::broadcast::channel(1024);
 
         Self {
             dev_mode,
+            connected_devices: ConnectedDevices::default(),
             inner: std::sync::Arc::new(tokio::sync::RwLock::new(AppState {
                 should_update: false,
                 devices_settings: HashMap::new(),
@@ -180,5 +233,85 @@ impl SharedAppState {
 
     pub async fn get_bc(&self) -> tokio::sync::broadcast::Receiver<BroadcastPacket> {
         self.bc.subscribe()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DEVICE_ID: u32 = 1;
+    const OTHER_DEVICE_ID: u32 = 2;
+
+    #[test]
+    fn device_counts_as_connected_while_the_guard_lives() {
+        let devices = ConnectedDevices::default();
+        assert!(!devices.contains(DEVICE_ID));
+
+        let guard = devices.track(DEVICE_ID);
+        assert!(devices.contains(DEVICE_ID));
+        assert!(!devices.contains(OTHER_DEVICE_ID));
+
+        drop(guard);
+        assert!(!devices.contains(DEVICE_ID));
+    }
+
+    #[test]
+    fn closing_an_old_connection_keeps_the_newer_one() {
+        let devices = ConnectedDevices::default();
+        let old = devices.track(DEVICE_ID);
+        let new = devices.track(DEVICE_ID);
+
+        drop(old);
+        assert!(devices.contains(DEVICE_ID));
+
+        drop(new);
+        assert!(!devices.contains(DEVICE_ID));
+    }
+
+    #[test]
+    fn connections_can_close_in_any_order() {
+        let devices = ConnectedDevices::default();
+        let old = devices.track(DEVICE_ID);
+        let new = devices.track(DEVICE_ID);
+
+        drop(new);
+        assert!(devices.contains(DEVICE_ID));
+
+        drop(old);
+        assert!(!devices.contains(DEVICE_ID));
+    }
+
+    #[tokio::test]
+    async fn panic_in_a_connection_task_clears_the_device() {
+        let devices = ConnectedDevices::default();
+
+        let task_devices = devices.clone();
+        let task = tokio::spawn(async move {
+            let _connected = task_devices.track(DEVICE_ID);
+            panic!("connection task failed");
+        });
+
+        assert!(task.await.unwrap_err().is_panic());
+        assert!(!devices.contains(DEVICE_ID));
+    }
+
+    #[tokio::test]
+    async fn aborted_connection_task_clears_the_device() {
+        let devices = ConnectedDevices::default();
+
+        let task_devices = devices.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let _connected = task_devices.track(DEVICE_ID);
+            started_tx.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+        started_rx.await.unwrap();
+        assert!(devices.contains(DEVICE_ID));
+
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert!(!devices.contains(DEVICE_ID));
     }
 }
