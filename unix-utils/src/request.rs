@@ -59,6 +59,9 @@ pub enum UnixRequestData {
         competitor: Option<u64>,
         group_id: Option<String>,
         session_id: Option<String>,
+        /// `None` (sent as `null`) for firmware that doesn't report live state
+        timer_running: Option<bool>,
+        inspection_running: Option<bool>,
     },
     TestAck {
         esp_id: u32,

@@ -7,6 +7,13 @@ const HEADER_LEN_TIME_ONLY: usize = 10;
 const HEADER_LEN_NO_SESSION: usize = 50;
 /// v3.5.0: same as above + 36 B session id + padding
 const HEADER_LEN: usize = 100;
+/// Live-state block inside the padding of the v3.5.0 header: magic, version, flags.
+/// Older firmware leaves these bytes uninitialised, so they only count behind the magic.
+const LIVE_STATE_OFFSET: usize = 82;
+const LIVE_STATE_MAGIC: &[u8; 2] = b"LV";
+const LIVE_STATE_VERSION: u8 = 1;
+const LIVE_FLAG_TIMER_RUNNING: u8 = 1 << 0;
+const LIVE_FLAG_INSPECTION_RUNNING: u8 = 1 << 1;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct LogPacket<'a> {
@@ -16,6 +23,9 @@ pub struct LogPacket<'a> {
     pub current_competitor: Option<u64>,
     pub current_group_id: Option<String>,
     pub current_session_id: Option<String>,
+    /// `None` when the firmware doesn't report it (no live-state block in the header).
+    pub timer_running: Option<bool>,
+    pub inspection_running: Option<bool>,
     pub lines: Vec<&'a str>,
     /// A line ran past the end of the packet or wasn't utf8. `lines` stops before it.
     pub lines_malformed: bool,
@@ -34,6 +44,11 @@ fn line_starts_at(buf: &[u8], offset: usize) -> bool {
 fn read_u64(buf: &[u8], offset: usize, none_value: u64) -> Option<u64> {
     let bytes = buf.get(offset..offset + 8)?.try_into().ok()?;
     Some(u64::from_be_bytes(bytes)).filter(|&value| value != none_value)
+}
+
+fn read_live_flags(buf: &[u8]) -> Option<u8> {
+    let block = buf.get(LIVE_STATE_OFFSET..LIVE_STATE_OFFSET + 4)?;
+    (block[..2] == *LIVE_STATE_MAGIC && block[2] == LIVE_STATE_VERSION).then_some(block[3])
 }
 
 fn read_str(buf: &[u8], offset: usize, len: usize) -> Option<String> {
@@ -75,6 +90,11 @@ pub fn parse_log_packet(buf: &[u8]) -> Result<LogPacket<'_>> {
 
     if header_len == HEADER_LEN {
         packet.current_session_id = read_str(buf, 46, 36);
+
+        if let Some(flags) = read_live_flags(buf) {
+            packet.timer_running = Some(flags & LIVE_FLAG_TIMER_RUNNING != 0);
+            packet.inspection_running = Some(flags & LIVE_FLAG_INSPECTION_RUNNING != 0);
+        }
     }
 
     let mut offset = header_len;
@@ -135,6 +155,13 @@ mod tests {
     fn current_header() -> Vec<u8> {
         let mut packet = header(HEADER_LEN, TIME, INSPECTION, COMPETITOR);
         packet[46..46 + SESSION_ID.len()].copy_from_slice(SESSION_ID.as_bytes());
+        packet
+    }
+
+    fn with_live_state(mut packet: Vec<u8>, version: u8, flags: u8) -> Vec<u8> {
+        packet[LIVE_STATE_OFFSET..LIVE_STATE_OFFSET + 2].copy_from_slice(LIVE_STATE_MAGIC);
+        packet[LIVE_STATE_OFFSET + 2] = version;
+        packet[LIVE_STATE_OFFSET + 3] = flags;
         packet
     }
 
@@ -312,6 +339,7 @@ mod tests {
                 "I one",
             ),
             with_line(with_line(current_header(), "I one"), "W two"),
+            with_live_state(current_header(), LIVE_STATE_VERSION, 0b11),
         ];
 
         for packet in &packets {
@@ -319,5 +347,111 @@ mod tests {
                 _ = parse_log_packet(&packet[..len]);
             }
         }
+    }
+
+    #[test]
+    fn live_state_flags() {
+        let cases = [
+            (0b00, false, false),
+            (0b01, true, false),
+            (0b10, false, true),
+            (0b11, true, true),
+        ];
+
+        for (flags, timer_running, inspection_running) in cases {
+            let packet = with_live_state(current_header(), LIVE_STATE_VERSION, flags);
+            let packet = with_line(packet, "I one");
+
+            assert_eq!(
+                parse_log_packet(&packet).unwrap(),
+                LogPacket {
+                    current_time: Some(TIME),
+                    inspection_time: Some(INSPECTION),
+                    current_competitor: Some(COMPETITOR),
+                    current_group_id: Some(GROUP_ID.to_string()),
+                    current_session_id: Some(SESSION_ID.to_string()),
+                    timer_running: Some(timer_running),
+                    inspection_running: Some(inspection_running),
+                    lines: vec!["I one"],
+                    ..Default::default()
+                },
+                "flags {flags:#04b}"
+            );
+        }
+    }
+
+    #[test]
+    fn live_state_ignores_unknown_flag_bits() {
+        let packet = with_live_state(current_header(), LIVE_STATE_VERSION, 0b1111_1101);
+        let parsed = parse_log_packet(&packet).unwrap();
+
+        assert_eq!(parsed.timer_running, Some(true));
+        assert_eq!(parsed.inspection_running, Some(false));
+    }
+
+    /// Firmware before the live-state block leaves 82..100 uninitialised.
+    #[test]
+    fn live_state_is_none_without_the_block() {
+        let mut garbage = current_header();
+        garbage[LIVE_STATE_OFFSET..HEADER_LEN].fill(0xA5);
+        let mut lowercase_magic = with_live_state(current_header(), LIVE_STATE_VERSION, 0b11);
+        lowercase_magic[LIVE_STATE_OFFSET + 1] = b'v';
+
+        let packets = [
+            current_header(),
+            garbage,
+            with_live_state(current_header(), 0, 0b11),
+            with_live_state(current_header(), LIVE_STATE_VERSION + 1, 0b11),
+            lowercase_magic,
+        ];
+
+        for packet in packets {
+            let packet = with_line(packet, "I one");
+            let parsed = parse_log_packet(&packet).unwrap();
+
+            assert_eq!(parsed.timer_running, None);
+            assert_eq!(parsed.inspection_running, None);
+            assert_eq!(parsed.current_session_id.as_deref(), Some(SESSION_ID));
+            assert_eq!(parsed.lines, ["I one"]);
+        }
+    }
+
+    /// Sent every second and on timer start/stop: live state only, no lines.
+    #[test]
+    fn header_only_packet() {
+        let packet = with_live_state(current_header(), LIVE_STATE_VERSION, 0b01);
+        assert_eq!(packet.len(), HEADER_LEN);
+
+        assert_eq!(
+            parse_log_packet(&packet).unwrap(),
+            LogPacket {
+                current_time: Some(TIME),
+                inspection_time: Some(INSPECTION),
+                current_competitor: Some(COMPETITOR),
+                current_group_id: Some(GROUP_ID.to_string()),
+                current_session_id: Some(SESSION_ID.to_string()),
+                timer_running: Some(true),
+                inspection_running: Some(false),
+                lines: vec![],
+                lines_malformed: false,
+                truncated: false,
+            }
+        );
+    }
+
+    #[test]
+    fn header_only_packet_with_nothing_live() {
+        let mut packet = header(HEADER_LEN, u64::MAX, u64::MAX, u64::MAX);
+        packet[26..82].fill(0x00);
+        let packet = with_live_state(packet, LIVE_STATE_VERSION, 0b00);
+
+        assert_eq!(
+            parse_log_packet(&packet).unwrap(),
+            LogPacket {
+                timer_running: Some(false),
+                inspection_running: Some(false),
+                ..Default::default()
+            }
+        );
     }
 }
