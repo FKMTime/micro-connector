@@ -34,6 +34,8 @@ pub async fn handle_client(
 
     send_epoch_time(&mut socket).await?;
     send_device_status(&mut socket, esp_connect_info, &state).await?;
+    _ = crate::socket::api::send_device_connected(esp_connect_info.id, &esp_connect_info.version)
+        .await;
     let mut bc = state.get_bc().await;
 
     let interval_time = std::time::Duration::from_secs(5);
@@ -594,7 +596,17 @@ mod tests {
         backend
     }
 
+    // every connection announces itself, the other tests' ones included
     async fn read_request(backend: &mut UnixStream) -> String {
+        loop {
+            let request = read_any_request(backend).await;
+            if !request.contains("DeviceConnected") {
+                return request;
+            }
+        }
+    }
+
+    async fn read_any_request(backend: &mut UnixStream) -> String {
         let read = async {
             let mut frame = Vec::new();
             loop {
@@ -687,6 +699,10 @@ mod tests {
         let mut backend = attach_backend(&state).await;
         let mut device = connect_device(&state).await;
         wait_until_listening(&mut device).await;
+
+        let connected = read_any_request(&mut backend).await;
+        assert!(connected.contains(r#""type":"DeviceConnected""#));
+        assert!(connected.contains(r#""firmwareVersion":"v3.4.4""#));
 
         // tagged requests: the replies would have to come through the socket loop
         let battery = r#"{"data":{"battery":{"level":50.0}}}"#;
