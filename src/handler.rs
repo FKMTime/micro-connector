@@ -521,6 +521,7 @@ mod tests {
     async fn state_with_device(should_update: bool) -> SharedAppState {
         let state = SharedAppState::new(false).await;
         let mut inner = state.inner.write().await;
+        inner.server_status_received = true;
         inner.should_update = should_update;
         inner
             .devices_settings
