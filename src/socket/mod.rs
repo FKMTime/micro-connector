@@ -152,7 +152,7 @@ impl Socket {
     }
 }
 
-async fn socket_task(
+pub(crate) async fn socket_task(
     socket_path: String,
     mut rx: UnboundedReceiver<UnixRequest>,
     state: SharedAppState,
@@ -247,6 +247,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                 || inner_state.secure_rfid != status.secure_rfid
                 || inner_state.sound_enabled != status.sound_enabled;
 
+            inner_state.server_status_received = true;
             inner_state.should_update = status.should_update;
             inner_state.locales = translations;
             inner_state.default_locale = status.default_locale;

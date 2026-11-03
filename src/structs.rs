@@ -126,6 +126,9 @@ pub struct SharedAppState {
 
 #[derive(Debug, Clone)]
 pub struct AppState {
+    /// Set by the first `ServerStatus` and never cleared: until then there are no sign keys, and
+    /// a device that connects gets no `RandomSigned` and stays untrusted for the whole session.
+    pub server_status_received: bool,
     pub should_update: bool,
     pub devices_settings: HashMap<u32, DeviceSettings>,
     pub locales: Vec<TranslationLocale>,
@@ -197,6 +200,7 @@ impl SharedAppState {
             dev_mode,
             connected_devices: ConnectedDevices::default(),
             inner: std::sync::Arc::new(tokio::sync::RwLock::new(AppState {
+                server_status_received: false,
                 should_update: false,
                 devices_settings: HashMap::new(),
                 locales: Vec::new(),
