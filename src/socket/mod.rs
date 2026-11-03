@@ -437,6 +437,8 @@ mod tests {
             competitor: None,
             group_id: None,
             session_id: None,
+            timer_running: None,
+            inspection_running: None,
         }
     }
 
