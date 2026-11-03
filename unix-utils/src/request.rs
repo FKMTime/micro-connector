@@ -40,6 +40,10 @@ pub enum UnixRequestData {
         esp_id: u32,
         battery_percentage: u8,
     },
+    DeviceConnected {
+        esp_id: u32,
+        firmware_version: String,
+    },
     RequestToConnectDevice {
         esp_id: u32,
         sign_key: u32,
