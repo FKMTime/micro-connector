@@ -41,6 +41,32 @@ struct PendingReply {
     quiet: bool,
 }
 
+/// Takes a pending reply out of `tag_channels` when its request stops waiting without one:
+/// on timeout, or when the caller's future is dropped (e.g. the device's connection task is
+/// aborted). Nothing else would ever remove it.
+struct PendingReplyGuard {
+    inner: InnerRwLock,
+    tag: Option<u32>,
+}
+
+impl Drop for PendingReplyGuard {
+    fn drop(&mut self) {
+        let Some(tag) = self.tag else {
+            return;
+        };
+
+        // drop can't wait for the lock, so whoever holds it gets a task to do it later
+        if let Ok(mut inner) = self.inner.try_write() {
+            inner.tag_channels.remove(&tag);
+        } else if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let inner = self.inner.clone();
+            runtime.spawn(async move {
+                inner.write().await.tag_channels.remove(&tag);
+            });
+        }
+    }
+}
+
 /// Requests sent every second by every station: logging them at info would write
 /// tens of lines a second to the router's flash.
 fn is_quiet(data: &UnixRequestData) -> bool {
@@ -155,11 +181,16 @@ impl Socket {
         }
 
         if let Some(tag) = tag {
+            let mut guard = PendingReplyGuard {
+                inner,
+                tag: Some(tag),
+            };
+
             // TODO: add better errors (for timeout, and recv error)
             let resp = tokio::time::timeout(UNIX_TIMEOUT, resp_rx).await;
-            if resp.is_err() {
-                // no reply is coming to take it out, so it would stay forever
-                inner.write().await.tag_channels.remove(&tag);
+            if resp.is_ok() {
+                // the reply (or a dropped sender) means it was already taken out
+                guard.tag = None;
             }
             return Ok(resp??);
         }
@@ -479,6 +510,55 @@ mod tests {
         );
         assert!(rx.recv().await.unwrap().tag.is_some());
         assert_eq!(pending_replies(&socket).await, 0);
+    }
+
+    async fn spawn_pending_request(
+        socket: &Arc<Socket>,
+        rx: &mut UnboundedReceiver<UnixRequest>,
+    ) -> tokio::task::JoinHandle<Result<UnixResponseData, UnixError>> {
+        let request = tokio::spawn({
+            let socket = socket.clone();
+            async move { socket.send_tagged_request(current_time_info()).await }
+        });
+        assert!(rx.recv().await.unwrap().tag.is_some());
+        assert_eq!(pending_replies(socket).await, 1);
+
+        request
+    }
+
+    #[tokio::test]
+    async fn abandoned_request_leaves_no_reply_channel() {
+        let (socket, mut rx) = socket().await;
+        let socket = Arc::new(socket);
+
+        let request = spawn_pending_request(&socket, &mut rx).await;
+        request.abort();
+        assert!(request.await.unwrap_err().is_cancelled());
+
+        assert_eq!(pending_replies(&socket).await, 0);
+    }
+
+    #[tokio::test]
+    async fn request_abandoned_while_the_lock_is_held_leaves_no_reply_channel() {
+        let (socket, mut rx) = socket().await;
+        let socket = Arc::new(socket);
+
+        let request = spawn_pending_request(&socket, &mut rx).await;
+        let inner = socket.get_inner().await.unwrap();
+        let reader = inner.read().await;
+        request.abort();
+        assert!(request.await.unwrap_err().is_cancelled());
+        assert_eq!(reader.tag_channels.len(), 1);
+        drop(reader);
+
+        let cleaned_up = async {
+            while pending_replies(&socket).await > 0 {
+                tokio::task::yield_now().await;
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(1), cleaned_up)
+            .await
+            .expect("reply channel left behind");
     }
 
     #[tokio::test]
