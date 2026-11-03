@@ -249,7 +249,7 @@ async fn on_log_packet(packet: LogPacket<'_>, esp_id: u32, state: &SharedAppStat
         tracing::warn!(file = format!("device_{esp_id:X}"), "LOGS TRUNCATED!");
     }
 
-    for line in packet.lines {
+    for line in &packet.lines {
         const RESET: &str = "\u{001B}[0m";
         let color = match line.as_bytes().first() {
             Some(b'E') => "\u{001B}[31m",
@@ -270,15 +270,7 @@ async fn on_log_packet(packet: LogPacket<'_>, esp_id: u32, state: &SharedAppStat
     let inner_state = state.inner.read().await;
     if inner_state.devices_settings.contains_key(&esp_id) {
         drop(inner_state);
-        _ = crate::socket::api::send_current_state(
-            esp_id,
-            packet.current_time,
-            packet.inspection_time,
-            packet.current_competitor,
-            packet.current_group_id,
-            packet.current_session_id,
-        )
-        .await;
+        _ = crate::socket::api::send_current_state(esp_id, packet).await;
     }
 }
 
@@ -716,9 +708,16 @@ mod tests {
 
         let log_state = state.clone();
         tokio::spawn(async move {
-            on_log_packet(LogPacket::default(), DEVICE_ID, &log_state).await;
+            let packet = LogPacket {
+                timer_running: Some(true),
+                ..Default::default()
+            };
+            on_log_packet(packet, DEVICE_ID, &log_state).await;
         });
-        assert!(read_request(&mut backend).await.contains("CurrentTime"));
+        let current = read_request(&mut backend).await;
+        assert!(current.contains(r#""type":"CurrentTimeInfo""#));
+        assert!(current.contains(r#""timerRunning":true"#));
+        assert!(current.contains(r#""inspectionRunning":null"#));
         assert_readers_pass_a_writer(&state).await;
 
         // ServerStatus parked on the state lock must not take outgoing requests down with it
