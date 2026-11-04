@@ -10,6 +10,10 @@ RUN apk add --no-cache \
     musl-dev \
     build-base
 
+# Alpine's aarch64 gcc defaults to -moutline-atomics, whose helpers live in libgcc; rustc links
+# musl binaries with -nodefaultlibs, so vendored C (libdbus) would fail with undefined __aarch64_* symbols
+ENV CFLAGS_aarch64_unknown_linux_musl="-mno-outline-atomics"
+
 WORKDIR /app
 
 # Build dependencies against placeholder sources, so this layer is reused
