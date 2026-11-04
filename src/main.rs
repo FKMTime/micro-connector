@@ -1,3 +1,4 @@
+// warm-cache build measurement, reverted in the next commit
 use anyhow::Result;
 use std::{os::unix::fs::PermissionsExt, path::PathBuf};
 
