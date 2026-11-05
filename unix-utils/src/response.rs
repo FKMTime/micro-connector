@@ -118,6 +118,9 @@ pub struct PossibleGroup {
     pub use_inspection: bool,
     pub secondary_text: Option<String>,
     pub limit: Option<u64>,
+    /// Highest time penalty for the event, in seconds; passed through to the station.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_penalty: Option<u8>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
