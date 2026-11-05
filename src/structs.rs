@@ -247,6 +247,38 @@ mod tests {
     const DEVICE_ID: u32 = 1;
     const OTHER_DEVICE_ID: u32 = 2;
 
+    fn group_sent_to_station(backend_group: &str) -> serde_json::Value {
+        let group: PossibleGroup = serde_json::from_str(backend_group).unwrap();
+        let packet = TimerPacket {
+            tag: None,
+            data: TimerPacketInner::CardInfoResponse {
+                card_id: 1,
+                display: "d".to_string(),
+                country_iso2: "PL".to_string(),
+                can_compete: true,
+                possible_groups: vec![group],
+            },
+        };
+        let json = serde_json::to_value(&packet).unwrap();
+        json["data"]["card_info_response"]["possible_groups"][0].clone()
+    }
+
+    #[test]
+    fn max_penalty_reaches_the_station() {
+        let group = group_sent_to_station(
+            r#"{"groupId":"clock-r1-g1","name":"Clock R1","useInspection":true,"secondaryText":null,"limit":null,"maxPenalty":14}"#,
+        );
+        assert_eq!(group["maxPenalty"], 14);
+    }
+
+    #[test]
+    fn max_penalty_is_left_out_when_the_backend_omits_it() {
+        let group = group_sent_to_station(
+            r#"{"groupId":"333-r1-g1","name":"3x3 R1","useInspection":true,"secondaryText":null,"limit":null}"#,
+        );
+        assert!(group.get("maxPenalty").is_none());
+    }
+
     #[test]
     fn device_counts_as_connected_while_the_guard_lives() {
         let devices = ConnectedDevices::default();
