@@ -631,7 +631,7 @@ mod tests {
         wait_until_listening(&mut device).await;
 
         state.inner.write().await.should_update = true;
-        state.build_broadcast().await.unwrap();
+        state.build_broadcast().await;
         wait_for_frame(&mut device, is_start_update).await;
 
         assert_readers_pass_a_writer(&state).await;

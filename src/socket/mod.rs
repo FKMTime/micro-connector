@@ -282,7 +282,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let inner = inner.read().await;
             let state = &inner.state;
 
-            state.send_timer_packet(esp_id, packet).await?;
+            state.send_timer_packet(esp_id, packet).await;
         }
         UnixResponseData::ServerStatus(status) => {
             let mut inner_state = state.inner.write().await;
@@ -344,7 +344,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
 
             drop(inner_state);
             if changed {
-                _ = state.device_settings_broadcast().await;
+                state.device_settings_broadcast().await;
             }
         }
         UnixResponseData::IncidentResolved {
@@ -365,7 +365,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let inner = inner.read().await;
             let state = &inner.state;
 
-            state.send_timer_packet(esp_id, packet).await?;
+            state.send_timer_packet(esp_id, packet).await;
         }
         UnixResponseData::TestPacket { esp_id, data } => {
             let inner = crate::UNIX_SOCKET.get_inner().await?;
@@ -380,7 +380,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                         data: TimerPacketInner::TestPacket(data),
                     },
                 )
-                .await?;
+                .await;
         }
         UnixResponseData::UploadFirmware {
             file_name,
@@ -421,7 +421,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                         firmware: firmware.to_string(),
                     },
                 )
-                .await?;
+                .await;
         }
         UnixResponseData::SetDeviceSettings { devices, volume } => {
             for esp_id in devices {
@@ -433,7 +433,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                             data: TimerPacketInner::SetDeviceSettings { volume },
                         },
                     )
-                    .await?;
+                    .await;
             }
         }
         _ => {}
@@ -496,6 +496,17 @@ mod tests {
             .await
             .tag_channels
             .len()
+    }
+
+    #[tokio::test]
+    async fn station_packet_with_no_station_connected_keeps_the_socket() {
+        let state = SharedAppState::new(false).await;
+        let set_volume = UnixResponseData::SetDeviceSettings {
+            devices: vec![0xA1B2],
+            volume: Some(5),
+        };
+
+        assert!(process_untagged_response(set_volume, &state).await.is_ok());
     }
 
     #[tokio::test(start_paused = true)]
