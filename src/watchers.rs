@@ -70,7 +70,7 @@ async fn dev_build_watcher(
     }
 
     if modified_state {
-        _ = state.build_broadcast().await;
+        state.build_broadcast().await;
     }
 
     Ok(())
@@ -107,7 +107,7 @@ async fn github_releases_watcher(state: &SharedAppState, firmware_dir: &Path) ->
             move_file(&tmp_path, &release_path).await?;
 
             tracing::info!("Downloaded new release: {}", file.name);
-            _ = state.build_broadcast().await;
+            state.build_broadcast().await;
         }
     }
 

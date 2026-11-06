@@ -214,25 +214,27 @@ impl SharedAppState {
         }
     }
 
-    pub async fn build_broadcast(&self) -> anyhow::Result<()> {
-        self.bc.send(BroadcastPacket::Build)?;
-        Ok(())
+    /// Every connected station listens, so a send only fails when none is connected, and
+    /// then there is nobody to deliver to: that is not an error.
+    fn broadcast(&self, packet: BroadcastPacket) {
+        _ = self.bc.send(packet);
     }
 
-    pub async fn force_update(&self, hw: String, firmware: Firmware) -> anyhow::Result<()> {
-        self.bc.send(BroadcastPacket::ForceUpdate((hw, firmware)))?;
-        Ok(())
+    pub async fn build_broadcast(&self) {
+        self.broadcast(BroadcastPacket::Build);
     }
 
-    pub async fn device_settings_broadcast(&self) -> anyhow::Result<()> {
-        self.bc.send(BroadcastPacket::UpdateDeviceSettings)?;
-        self.bc.send(BroadcastPacket::Build)?;
-        Ok(())
+    pub async fn force_update(&self, hw: String, firmware: Firmware) {
+        self.broadcast(BroadcastPacket::ForceUpdate((hw, firmware)));
     }
 
-    pub async fn send_timer_packet(&self, esp_id: u32, packet: TimerPacket) -> anyhow::Result<()> {
-        self.bc.send(BroadcastPacket::Resp((esp_id, packet)))?;
-        Ok(())
+    pub async fn device_settings_broadcast(&self) {
+        self.broadcast(BroadcastPacket::UpdateDeviceSettings);
+        self.broadcast(BroadcastPacket::Build);
+    }
+
+    pub async fn send_timer_packet(&self, esp_id: u32, packet: TimerPacket) {
+        self.broadcast(BroadcastPacket::Resp((esp_id, packet)));
     }
 
     pub async fn get_bc(&self) -> tokio::sync::broadcast::Receiver<BroadcastPacket> {
