@@ -452,7 +452,7 @@ async fn on_timer_response(
         }
         TimerPacketInner::Add { firmware, sign_key } => {
             let inner_state = state.inner.read().await;
-            if !inner_state.devices_settings.contains_key(&esp_id) {
+            if should_forward_add(inner_state.devices_settings.get(&esp_id), sign_key) {
                 drop(inner_state);
                 _ = crate::socket::api::add_device(
                     esp_id,
@@ -477,6 +477,13 @@ async fn on_timer_response(
     }
 
     Ok(())
+}
+
+/// A device asks to be added when it's unknown, or when it comes back with a new sign key (its
+/// own was reset): the backend then asks in the panel whether to accept the new key. An `Add`
+/// with the key it already has is a repeat and isn't forwarded.
+fn should_forward_add(known: Option<&crate::structs::DeviceSettings>, sign_key: u32) -> bool {
+    known.is_none_or(|device| device.sign_key != Some(sign_key))
 }
 
 #[cfg(test)]
@@ -610,6 +617,21 @@ mod tests {
             }
         };
         timeout(TIMEOUT, read).await.expect("no backend request")
+    }
+
+    #[test]
+    fn add_is_forwarded_for_an_unknown_device_or_a_new_key() {
+        let known = DeviceSettings {
+            sign_key: Some(1234),
+        };
+
+        assert!(should_forward_add(None, 1234));
+        assert!(should_forward_add(Some(&known), 5678));
+        assert!(should_forward_add(
+            Some(&DeviceSettings { sign_key: None }),
+            5678
+        ));
+        assert!(!should_forward_add(Some(&known), 1234));
     }
 
     #[tokio::test]
