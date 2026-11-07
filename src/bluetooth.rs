@@ -1,9 +1,11 @@
 use crate::adapter::BleAdapter;
 use crate::structs::SharedAppState;
 use anyhow::Result;
-use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
+use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter, WriteType};
 use btleplug::platform::Manager;
 use serde::Deserialize;
+use std::time::Duration;
+use tokio::time::{Instant, timeout};
 
 //const FKM_UUID: uuid::Uuid = uuid::uuid!("f254a578-ef88-4372-b5f5-5ecf87e65884");
 const SET_WIFI_UUID: uuid::Uuid = uuid::uuid!("bcd7e573-b0b2-4775-83c0-acbf3aaf210c");
@@ -52,7 +54,7 @@ pub async fn start_bluetooth_task(state: SharedAppState) -> Result<()> {
                     tracing::error!("Adapter Bluetooth task failed: {:?}", e);
                 }
 
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
         });
 
@@ -71,7 +73,7 @@ pub async fn start_bluetooth_task(state: SharedAppState) -> Result<()> {
                 tracing::error!("Bluetooth task failed: {:?}", e);
             }
 
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(Duration::from_secs(5)).await;
         }
     });
 
@@ -90,7 +92,7 @@ async fn bluetooth_task(state: &SharedAppState) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("No adapters found"))?;
 
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
         if !state.inner.read().await.auto_setup {
             continue;
         }
@@ -98,7 +100,8 @@ async fn bluetooth_task(state: &SharedAppState) -> Result<()> {
         let filter = ScanFilter { services: vec![] };
         adapter.start_scan(filter).await?;
 
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        let mut found = Vec::new();
         for device in adapter.peripherals().await? {
             // one peripheral that went away shouldn't cost the rest of the pass
             let properties = match device.properties().await {
@@ -117,10 +120,18 @@ async fn bluetooth_task(state: &SharedAppState) -> Result<()> {
             }
 
             tracing::info!("Found FKM device with name: \"{local_name}\"!");
+            // BlueZ also lists cached devices; one it didn't hear in this scan should have no rssi
+            tracing::trace!("\"{local_name}\" rssi: {:?}", properties.rssi);
+            found.push((device, local_name));
+        }
 
-            let res = setup_bt_device(device).await;
-            if let Err(e) = res {
-                tracing::error!("Failed to setup BT device: {:?}", e);
+        if !found.is_empty()
+            && let Some(set_wifi_data) = load_set_wifi_data().await
+        {
+            for (device, local_name) in found {
+                if let Err(e) = setup_bt_device(&device, &local_name, &set_wifi_data).await {
+                    tracing::error!("Failed to setup BT device \"{local_name}\": {:?}", e);
+                }
             }
         }
 
@@ -130,50 +141,32 @@ async fn bluetooth_task(state: &SharedAppState) -> Result<()> {
 
 async fn adapter_bluetooth_task(state: &SharedAppState, adapter: &mut BleAdapter) -> Result<()> {
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
         if !state.inner.read().await.auto_setup {
             continue;
         }
 
-        let Ok(scan_devices) = adapter.scan(std::time::Duration::from_secs(5)).await else {
+        let Ok(scan_devices) = adapter.scan(Duration::from_secs(5)).await else {
             continue;
         };
 
-        for device in scan_devices {
-            if !should_setup_device(state, &device.local_name) {
-                continue;
-            }
+        let found: Vec<_> = scan_devices
+            .into_iter()
+            .filter(|device| should_setup_device(state, &device.local_name))
+            .collect();
+        if found.is_empty() {
+            continue;
+        }
 
+        let Some(set_wifi_data) = load_set_wifi_data().await else {
+            continue;
+        };
+
+        for device in found {
             tracing::info!("Found FKM device with name: \"{}\"!", device.local_name);
 
-            tracing::trace!("Getting wifi settings");
-            let auto_setup_settings =
-                if let Ok(ass) = crate::socket::api::get_auto_setup_settings().await {
-                    ass
-                } else {
-                    std::env::var("AUTOSETUP_SETTINGS")?
-                };
-
-            let res = serde_json::from_str::<AutoSetupSettings>(&auto_setup_settings);
-            match res {
-                Ok(ass) => {
-                    if ass.ssid.is_empty() {
-                        tracing::trace!("Wifi ssid null... Skipping!");
-                        return Ok(());
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Wifi auto setup settings parse error: {e:?}");
-                    return Ok(());
-                }
-            }
-
-            let set_wifi_data = format!("{auto_setup_settings}\0");
-            let set_wifi_data = set_wifi_data.as_bytes();
-            tracing::trace!("Got wifi settings");
-
             let res = adapter
-                .write_to_device(device.device_id, SET_WIFI_UUID, set_wifi_data)
+                .write_to_device(device.device_id, SET_WIFI_UUID, &set_wifi_data)
                 .await;
             if let Err(e) = res {
                 tracing::error!("Failed to setup BT device: {:?}", e);
@@ -197,62 +190,173 @@ struct ConnSettings {
     pub ws_url: Option<String>,
 }
 
-async fn setup_bt_device(device: btleplug::platform::Peripheral) -> Result<()> {
-    if !device.is_connected().await? {
-        tracing::trace!("Connecting to device");
-        device.connect().await?;
-    }
-
-    tracing::trace!("Connected to device");
-    device.discover_services().await?;
-    tracing::trace!("Discovered services");
-
-    tracing::trace!("Getting characteristics");
-    let characteristics = device.characteristics();
-    let set_wifi = characteristics
-        .iter()
-        .find(|c| c.uuid == SET_WIFI_UUID)
-        .ok_or_else(|| anyhow::anyhow!("Couldn't find SET_WIFI characteristic!"))?;
-    tracing::trace!("Got characteristics");
-
-    // get wifi settings from API or env
+/// Fetched once per pass, before connecting to anything: without settings there is nothing to
+/// write, and connecting anyway would only hold devices that accept a single connection.
+async fn load_set_wifi_data() -> Option<Vec<u8>> {
     tracing::trace!("Getting wifi settings");
-    let auto_setup_settings = if let Ok(ass) = crate::socket::api::get_auto_setup_settings().await {
-        ass
-    } else {
-        std::env::var("AUTOSETUP_SETTINGS")?
+    let auto_setup_settings = match crate::socket::api::get_auto_setup_settings().await {
+        Ok(ass) => ass,
+        Err(api_err) => match std::env::var("AUTOSETUP_SETTINGS") {
+            Ok(ass) => ass,
+            Err(_) => {
+                tracing::warn!(
+                    "No wifi settings (API: {api_err:?}, AUTOSETUP_SETTINGS unset), skipping this pass"
+                );
+                return None;
+            }
+        },
     };
 
-    let res = serde_json::from_str::<AutoSetupSettings>(&auto_setup_settings);
-    match res {
-        Ok(ass) => {
-            if ass.ssid.is_empty() {
-                tracing::trace!("Wifi ssid null... Skipping!");
-                return Ok(());
-            }
+    set_wifi_data(&auto_setup_settings)
+}
+
+fn set_wifi_data(auto_setup_settings: &str) -> Option<Vec<u8>> {
+    match serde_json::from_str::<AutoSetupSettings>(auto_setup_settings) {
+        Ok(ass) if ass.ssid.is_empty() => {
+            tracing::trace!("Wifi ssid empty, skipping this pass");
+            None
+        }
+        Ok(_) => {
+            tracing::trace!("Got wifi settings");
+            Some(format!("{auto_setup_settings}\0").into_bytes())
         }
         Err(e) => {
-            tracing::error!("Wifi auto setup settings parse error: {e:?}");
-            return Ok(());
+            tracing::error!("Wifi auto setup settings parse error: {e:?}, skipping this pass");
+            None
+        }
+    }
+}
+
+// Each step is bounded, so one unreachable device can't stall the queue behind it. The work
+// takes at most 25s and the disconnect 5s, so a device costs at most 30s.
+const IS_CONNECTED_TIMEOUT: Duration = Duration::from_secs(2);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const DISCOVER_TIMEOUT: Duration = Duration::from_secs(8);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+const DISCONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The BLE operations of one setup, apart so the sequence can be tested without hardware.
+trait SetupDevice {
+    async fn is_connected(&self) -> Result<bool>;
+    async fn connect(&self) -> Result<()>;
+    async fn discover_services(&self) -> Result<()>;
+    async fn write_set_wifi(&self, data: &[u8]) -> Result<()>;
+    async fn disconnect(&self) -> Result<()>;
+}
+
+impl SetupDevice for btleplug::platform::Peripheral {
+    async fn is_connected(&self) -> Result<bool> {
+        Ok(Peripheral::is_connected(self).await?)
+    }
+
+    async fn connect(&self) -> Result<()> {
+        Ok(Peripheral::connect(self).await?)
+    }
+
+    async fn discover_services(&self) -> Result<()> {
+        Ok(Peripheral::discover_services(self).await?)
+    }
+
+    async fn write_set_wifi(&self, data: &[u8]) -> Result<()> {
+        let characteristics = self.characteristics();
+        let set_wifi = characteristics
+            .iter()
+            .find(|c| c.uuid == SET_WIFI_UUID)
+            .ok_or_else(|| anyhow::anyhow!("Couldn't find SET_WIFI characteristic!"))?;
+
+        Ok(Peripheral::write(self, set_wifi, data, WriteType::WithoutResponse).await?)
+    }
+
+    async fn disconnect(&self) -> Result<()> {
+        Ok(Peripheral::disconnect(self).await?)
+    }
+}
+
+// The disconnect runs after every attempt, whatever its outcome: a device in setup mode accepts
+// one connection, so one left open hides it until BlueZ or the connector restarts. It also
+// cancels a `connect()` that timed out while still pending.
+async fn setup_bt_device(
+    device: &impl SetupDevice,
+    local_name: &str,
+    set_wifi_data: &[u8],
+) -> Result<()> {
+    let started = Instant::now();
+    let res = write_set_wifi(device, local_name, set_wifi_data).await;
+
+    let disconnect_started = Instant::now();
+    match timeout(DISCONNECT_TIMEOUT, device.disconnect()).await {
+        Ok(Ok(())) => tracing::trace!(
+            "\"{local_name}\" disconnect: ok in {:?}",
+            disconnect_started.elapsed()
+        ),
+        Ok(Err(e)) => tracing::warn!("\"{local_name}\" disconnect failed: {e:?}"),
+        Err(_) => {
+            tracing::warn!("\"{local_name}\" disconnect timed out after {DISCONNECT_TIMEOUT:?}")
         }
     }
 
-    let set_wifi_data = format!("{auto_setup_settings}\0");
-    let set_wifi_data = set_wifi_data.as_bytes();
-    tracing::trace!("Got wifi settings");
+    tracing::trace!("\"{local_name}\" setup took {:?}", started.elapsed());
+    res
+}
 
-    _ = device
-        .write(
-            set_wifi,
-            set_wifi_data,
-            btleplug::api::WriteType::WithoutResponse,
-        )
-        .await;
+async fn write_set_wifi(
+    device: &impl SetupDevice,
+    local_name: &str,
+    set_wifi_data: &[u8],
+) -> Result<()> {
+    let connected = step(
+        local_name,
+        "is_connected",
+        IS_CONNECTED_TIMEOUT,
+        device.is_connected(),
+    )
+    .await?;
+    if !connected {
+        step(local_name, "connect", CONNECT_TIMEOUT, device.connect()).await?;
+    }
+
+    step(
+        local_name,
+        "discover",
+        DISCOVER_TIMEOUT,
+        device.discover_services(),
+    )
+    .await?;
+
+    // WithoutResponse: an ok here means the write was queued, not that the device got it
+    tracing::trace!(
+        "\"{local_name}\" writing {} bytes WithoutResponse",
+        set_wifi_data.len()
+    );
+    step(
+        local_name,
+        "write",
+        WRITE_TIMEOUT,
+        device.write_set_wifi(set_wifi_data),
+    )
+    .await?;
 
     tracing::info!("Wrote wifi settings to device");
-    _ = device.disconnect().await;
-
     Ok(())
+}
+
+async fn step<T>(
+    local_name: &str,
+    name: &str,
+    limit: Duration,
+    work: impl Future<Output = Result<T>>,
+) -> Result<T> {
+    let started = Instant::now();
+    let res = timeout(limit, work).await;
+    let elapsed = started.elapsed();
+
+    match &res {
+        Ok(Ok(_)) => tracing::trace!("\"{local_name}\" {name}: ok in {elapsed:?}"),
+        Ok(Err(e)) => tracing::trace!("\"{local_name}\" {name}: failed in {elapsed:?}: {e:?}"),
+        Err(_) => tracing::trace!("\"{local_name}\" {name}: timed out after {elapsed:?}"),
+    }
+
+    res.map_err(|_| anyhow::anyhow!("{name} timed out after {limit:?}"))?
 }
 
 #[cfg(test)]
@@ -349,5 +453,245 @@ mod tests {
 
         drop(connected);
         assert!(should_setup_device(&state, DEVICE_NAME));
+    }
+
+    #[derive(Clone, Copy)]
+    enum Step {
+        Ok,
+        Fail,
+        Hang,
+        Take(Duration),
+    }
+
+    impl Step {
+        async fn run(self) -> Result<()> {
+            match self {
+                Step::Ok => Ok(()),
+                Step::Fail => Err(anyhow::anyhow!("step failed")),
+                Step::Hang => std::future::pending().await,
+                Step::Take(duration) => {
+                    tokio::time::sleep(duration).await;
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    struct FakeDevice {
+        connected: bool,
+        connect: Step,
+        discover: Step,
+        write: Step,
+        disconnect: Step,
+        calls: std::sync::Mutex<Vec<&'static str>>,
+    }
+
+    impl FakeDevice {
+        fn new() -> Self {
+            Self {
+                connected: false,
+                connect: Step::Ok,
+                discover: Step::Ok,
+                write: Step::Ok,
+                disconnect: Step::Ok,
+                calls: Default::default(),
+            }
+        }
+
+        fn record(&self, call: &'static str) {
+            self.calls.lock().unwrap().push(call);
+        }
+
+        fn calls(&self) -> Vec<&'static str> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl SetupDevice for FakeDevice {
+        async fn is_connected(&self) -> Result<bool> {
+            self.record("is_connected");
+            Ok(self.connected)
+        }
+
+        async fn connect(&self) -> Result<()> {
+            self.record("connect");
+            self.connect.run().await
+        }
+
+        async fn discover_services(&self) -> Result<()> {
+            self.record("discover");
+            self.discover.run().await
+        }
+
+        async fn write_set_wifi(&self, _data: &[u8]) -> Result<()> {
+            self.record("write");
+            self.write.run().await
+        }
+
+        async fn disconnect(&self) -> Result<()> {
+            self.record("disconnect");
+            self.disconnect.run().await
+        }
+    }
+
+    async fn setup(device: &FakeDevice) -> Result<()> {
+        setup_bt_device(device, DEVICE_NAME, b"{}\0").await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn successful_setup_disconnects() {
+        let device = FakeDevice::new();
+
+        assert!(setup(&device).await.is_ok());
+        assert_eq!(
+            device.calls(),
+            ["is_connected", "connect", "discover", "write", "disconnect"]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn device_already_connected_is_not_connected_again_but_is_disconnected() {
+        let device = FakeDevice {
+            connected: true,
+            ..FakeDevice::new()
+        };
+
+        assert!(setup(&device).await.is_ok());
+        assert_eq!(
+            device.calls(),
+            ["is_connected", "discover", "write", "disconnect"]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn failed_step_still_disconnects() {
+        for (device, last_step) in [
+            (
+                FakeDevice {
+                    connect: Step::Fail,
+                    ..FakeDevice::new()
+                },
+                "connect",
+            ),
+            (
+                FakeDevice {
+                    discover: Step::Fail,
+                    ..FakeDevice::new()
+                },
+                "discover",
+            ),
+            // also how a missing SET_WIFI characteristic fails
+            (
+                FakeDevice {
+                    write: Step::Fail,
+                    ..FakeDevice::new()
+                },
+                "write",
+            ),
+        ] {
+            let res = setup(&device).await;
+
+            assert_eq!(res.unwrap_err().to_string(), "step failed", "{last_step}");
+            let calls = device.calls();
+            assert_eq!(calls[calls.len() - 2..], [last_step, "disconnect"]);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn hanging_step_times_out_and_still_disconnects() {
+        for (device, last_step, limit) in [
+            (
+                FakeDevice {
+                    connect: Step::Hang,
+                    ..FakeDevice::new()
+                },
+                "connect",
+                CONNECT_TIMEOUT,
+            ),
+            (
+                FakeDevice {
+                    discover: Step::Hang,
+                    ..FakeDevice::new()
+                },
+                "discover",
+                DISCOVER_TIMEOUT,
+            ),
+            (
+                FakeDevice {
+                    write: Step::Hang,
+                    ..FakeDevice::new()
+                },
+                "write",
+                WRITE_TIMEOUT,
+            ),
+        ] {
+            let start = Instant::now();
+            let res = setup(&device).await;
+
+            assert_eq!(
+                res.unwrap_err().to_string(),
+                format!("{last_step} timed out after {limit:?}")
+            );
+            assert_eq!(start.elapsed(), limit);
+            let calls = device.calls();
+            assert_eq!(calls[calls.len() - 2..], [last_step, "disconnect"]);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn hanging_disconnect_is_bounded_and_keeps_setup_result() {
+        let device = FakeDevice {
+            disconnect: Step::Hang,
+            ..FakeDevice::new()
+        };
+        let start = Instant::now();
+
+        assert!(setup(&device).await.is_ok());
+        assert_eq!(start.elapsed(), DISCONNECT_TIMEOUT);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn slowest_setup_stays_within_30_seconds() {
+        let just_under = |limit: Duration| Step::Take(limit - Duration::from_millis(1));
+        let device = FakeDevice {
+            connect: just_under(CONNECT_TIMEOUT),
+            discover: just_under(DISCOVER_TIMEOUT),
+            write: just_under(WRITE_TIMEOUT),
+            disconnect: Step::Hang,
+            ..FakeDevice::new()
+        };
+        let start = Instant::now();
+
+        assert!(setup(&device).await.is_ok());
+        assert!(start.elapsed() < Duration::from_secs(30));
+        assert_eq!(
+            IS_CONNECTED_TIMEOUT
+                + CONNECT_TIMEOUT
+                + DISCOVER_TIMEOUT
+                + WRITE_TIMEOUT
+                + DISCONNECT_TIMEOUT,
+            Duration::from_secs(30)
+        );
+    }
+
+    #[test]
+    fn settings_are_written_nul_terminated() {
+        let settings = r#"{"ssid":"example-net","psk":"example-psk","data":null}"#;
+
+        assert_eq!(
+            set_wifi_data(settings),
+            Some(format!("{settings}\0").into_bytes())
+        );
+    }
+
+    #[test]
+    fn settings_without_an_ssid_are_not_written() {
+        assert_eq!(set_wifi_data(r#"{"ssid":"","psk":"example-psk"}"#), None);
+    }
+
+    #[test]
+    fn settings_that_do_not_parse_are_not_written() {
+        assert_eq!(set_wifi_data(""), None);
+        assert_eq!(set_wifi_data(r#"{"psk":"example-psk"}"#), None);
     }
 }
