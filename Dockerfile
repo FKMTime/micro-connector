@@ -1,75 +1,50 @@
-FROM --platform=amd64 rust:alpine AS builder
+# Builds natively for the platform being built: CI runs each platform on its own runner,
+# so there is no cross-compiler and only one Rust target per build
+FROM rust:alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache \
-    wget \
     pkgconfig \
     dbus-dev \
     gcc \
     musl-dev \
     build-base
 
-# Download and setup aarch64 cross-compiler
-RUN wget https://github.com/FKMTime/deps/raw/refs/heads/main/aarch64-linux-musl-cross.tgz \
-    && tar -xf aarch64-linux-musl-cross.tgz \
-    && mv aarch64-linux-musl-cross /usr/local/ \
-    && rm aarch64-linux-musl-cross.tgz
-
-# Add cross-compiler to PATH
-ENV PATH=/usr/local/aarch64-linux-musl-cross/bin:$PATH
-
-# Add Rust targets
-RUN rustup target add x86_64-unknown-linux-musl
-RUN rustup target add aarch64-unknown-linux-musl
+# Alpine's aarch64 gcc defaults to -moutline-atomics, whose helpers live in libgcc; rustc links
+# musl binaries with -nodefaultlibs, so vendored C (libdbus) would fail with undefined __aarch64_* symbols
+ENV CFLAGS_aarch64_unknown_linux_musl="-mno-outline-atomics"
 
 WORKDIR /app
 
-# Build cache layer for backend
-COPY ./Cargo.toml .
-COPY ./Cargo.lock .
+# Build dependencies against placeholder sources, so this layer is reused
+# until Cargo.toml or Cargo.lock change
+COPY ./Cargo.toml ./Cargo.lock ./
+COPY ./unix-utils/Cargo.toml ./unix-utils/Cargo.lock ./unix-utils/
+RUN mkdir -p ./src/e2e ./unix-utils/src \
+    && echo "fn main() {println!(\"if you see this, the build broke\")}" > ./src/main.rs \
+    && cp ./src/main.rs ./src/e2e/main.rs \
+    && touch ./unix-utils/src/lib.rs \
+    && cargo build -r --bins --target "$(uname -m)-unknown-linux-musl"
 
-# Create minimal src structure for initial build
-RUN mkdir -p ./src/e2e
-RUN echo "fn main() {println!(\"if you see this, the build broke\")}" > ./src/main.rs
-RUN echo "fn main() {println!(\"if you see this, the build broke\")}" > ./src/e2e/main.rs
-
-# Build cache layer for unix-utils
-RUN mkdir -p ./unix-utils
-COPY ./unix-utils/Cargo.toml ./unix-utils/Cargo.toml
-COPY ./unix-utils/Cargo.lock ./unix-utils/Cargo.lock
-RUN mkdir -p ./unix-utils/src
-RUN echo "fn dsa() {}" > ./unix-utils/src/lib.rs
-
-# Initial builds for dependency caching
-RUN cargo build -r --target x86_64-unknown-linux-musl --config target.x86_64-unknown-linux-musl.linker=\"x86_64-alpine-linux-musl-gcc\"
-RUN cargo build -r --target aarch64-unknown-linux-musl --config target.aarch64-unknown-linux-musl.linker=\"aarch64-linux-musl-gcc\"
-
-# Clean up artifacts that need to be rebuilt
-RUN rm -f target/*/release/deps/unix_utils* target/*/release/deps/libunix_utils* target/*/release/deps/backend* target/*/release/deps/e2e*
-
-# Copy actual source code and perform final builds
+# Copy actual source code. COPY keeps the checkout's mtimes, which can be older than the
+# placeholder build, so touch the crate roots to make cargo rebuild the real sources
 COPY . .
-RUN cargo build -r --target x86_64-unknown-linux-musl --config target.x86_64-unknown-linux-musl.linker=\"x86_64-alpine-linux-musl-gcc\"
-RUN cargo build -r --target aarch64-unknown-linux-musl --config target.aarch64-unknown-linux-musl.linker=\"aarch64-linux-musl-gcc\"
+RUN touch ./src/main.rs ./src/e2e/main.rs ./unix-utils/src/lib.rs
 
-FROM alpine:latest as backend
+FROM builder AS backend-builder
+RUN cargo build -r --bin backend --target "$(uname -m)-unknown-linux-musl" \
+    && cp "target/$(uname -m)-unknown-linux-musl/release/backend" /app/backend
+
+FROM builder AS e2e-builder
+RUN cargo build -r --bin e2e --target "$(uname -m)-unknown-linux-musl" \
+    && cp "target/$(uname -m)-unknown-linux-musl/release/e2e" /app/e2e
+
+FROM alpine:latest AS backend
 WORKDIR /app
-COPY --from=builder /app/target/aarch64-unknown-linux-musl/release/backend /app/backend.arm64
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/backend /app/backend.amd64
-RUN if [ "$(uname -m)" = "aarch64" ]; then \
-    mv /app/backend.arm64 /app/backend; \
-    else \
-    mv /app/backend.amd64 /app/backend; \
-    fi
+COPY --from=backend-builder /app/backend /app/backend
 ENTRYPOINT ["/app/backend"]
 
-FROM alpine:latest as e2e
+FROM alpine:latest AS e2e
 WORKDIR /app
-COPY --from=builder /app/target/aarch64-unknown-linux-musl/release/e2e /app/e2e.arm64
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/e2e /app/e2e.amd64
-RUN if [ "$(uname -m)" = "aarch64" ]; then \
-    mv /app/e2e.arm64 /app/e2e; \
-    else \
-    mv /app/e2e.amd64 /app/e2e; \
-    fi
+COPY --from=e2e-builder /app/e2e /app/e2e
 ENTRYPOINT ["/app/e2e"]

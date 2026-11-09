@@ -126,6 +126,9 @@ pub struct SharedAppState {
 
 #[derive(Debug, Clone)]
 pub struct AppState {
+    /// Set by the first `ServerStatus` and never cleared: until then there are no sign keys, and
+    /// a device that connects gets no `RandomSigned` and stays untrusted for the whole session.
+    pub server_status_received: bool,
     pub should_update: bool,
     pub devices_settings: HashMap<u32, DeviceSettings>,
     pub locales: Vec<TranslationLocale>,
@@ -197,6 +200,7 @@ impl SharedAppState {
             dev_mode,
             connected_devices: ConnectedDevices::default(),
             inner: std::sync::Arc::new(tokio::sync::RwLock::new(AppState {
+                server_status_received: false,
                 should_update: false,
                 devices_settings: HashMap::new(),
                 locales: Vec::new(),
@@ -210,25 +214,27 @@ impl SharedAppState {
         }
     }
 
-    pub async fn build_broadcast(&self) -> anyhow::Result<()> {
-        self.bc.send(BroadcastPacket::Build)?;
-        Ok(())
+    /// Every connected station listens, so a send only fails when none is connected, and
+    /// then there is nobody to deliver to: that is not an error.
+    fn broadcast(&self, packet: BroadcastPacket) {
+        _ = self.bc.send(packet);
     }
 
-    pub async fn force_update(&self, hw: String, firmware: Firmware) -> anyhow::Result<()> {
-        self.bc.send(BroadcastPacket::ForceUpdate((hw, firmware)))?;
-        Ok(())
+    pub async fn build_broadcast(&self) {
+        self.broadcast(BroadcastPacket::Build);
     }
 
-    pub async fn device_settings_broadcast(&self) -> anyhow::Result<()> {
-        self.bc.send(BroadcastPacket::UpdateDeviceSettings)?;
-        self.bc.send(BroadcastPacket::Build)?;
-        Ok(())
+    pub async fn force_update(&self, hw: String, firmware: Firmware) {
+        self.broadcast(BroadcastPacket::ForceUpdate((hw, firmware)));
     }
 
-    pub async fn send_timer_packet(&self, esp_id: u32, packet: TimerPacket) -> anyhow::Result<()> {
-        self.bc.send(BroadcastPacket::Resp((esp_id, packet)))?;
-        Ok(())
+    pub async fn device_settings_broadcast(&self) {
+        self.broadcast(BroadcastPacket::UpdateDeviceSettings);
+        self.broadcast(BroadcastPacket::Build);
+    }
+
+    pub async fn send_timer_packet(&self, esp_id: u32, packet: TimerPacket) {
+        self.broadcast(BroadcastPacket::Resp((esp_id, packet)));
     }
 
     pub async fn get_bc(&self) -> tokio::sync::broadcast::Receiver<BroadcastPacket> {
@@ -242,6 +248,38 @@ mod tests {
 
     const DEVICE_ID: u32 = 1;
     const OTHER_DEVICE_ID: u32 = 2;
+
+    fn group_sent_to_station(backend_group: &str) -> serde_json::Value {
+        let group: PossibleGroup = serde_json::from_str(backend_group).unwrap();
+        let packet = TimerPacket {
+            tag: None,
+            data: TimerPacketInner::CardInfoResponse {
+                card_id: 1,
+                display: "d".to_string(),
+                country_iso2: "PL".to_string(),
+                can_compete: true,
+                possible_groups: vec![group],
+            },
+        };
+        let json = serde_json::to_value(&packet).unwrap();
+        json["data"]["card_info_response"]["possible_groups"][0].clone()
+    }
+
+    #[test]
+    fn max_penalty_reaches_the_station() {
+        let group = group_sent_to_station(
+            r#"{"groupId":"clock-r1-g1","name":"Clock R1","useInspection":true,"secondaryText":null,"limit":null,"maxPenalty":14}"#,
+        );
+        assert_eq!(group["maxPenalty"], 14);
+    }
+
+    #[test]
+    fn max_penalty_is_left_out_when_the_backend_omits_it() {
+        let group = group_sent_to_station(
+            r#"{"groupId":"333-r1-g1","name":"3x3 R1","useInspection":true,"secondaryText":null,"limit":null}"#,
+        );
+        assert!(group.get("maxPenalty").is_none());
+    }
 
     #[test]
     fn device_counts_as_connected_while_the_guard_lives() {

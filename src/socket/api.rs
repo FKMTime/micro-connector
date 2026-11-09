@@ -1,3 +1,4 @@
+use crate::log_packet::LogPacket;
 use anyhow::Result;
 use unix_utils::{
     SnapshotData, UnixError,
@@ -129,22 +130,26 @@ pub async fn send_battery_status(esp_id: u32, battery: Option<f64>) -> Result<()
         .map(|_| ())
 }
 
-pub async fn send_current_state(
-    esp_id: u32,
-    time: Option<u64>,
-    inspection: Option<u64>,
-    competitor: Option<u64>,
-    group_id: Option<String>,
-    session_id: Option<String>,
-) -> Result<(), UnixError> {
+pub async fn send_device_connected(esp_id: u32, firmware_version: &str) -> Result<(), UnixError> {
+    crate::UNIX_SOCKET
+        .send_async_request(UnixRequestData::DeviceConnected {
+            esp_id,
+            firmware_version: firmware_version.to_string(),
+        })
+        .await
+}
+
+pub async fn send_current_state(esp_id: u32, packet: LogPacket<'_>) -> Result<(), UnixError> {
     crate::UNIX_SOCKET
         .send_tagged_request(UnixRequestData::CurrentTimeInfo {
             esp_id,
-            time,
-            inspection,
-            competitor,
-            group_id,
-            session_id,
+            time: packet.current_time,
+            inspection: packet.inspection_time,
+            competitor: packet.current_competitor,
+            group_id: packet.current_group_id,
+            session_id: packet.current_session_id,
+            timer_running: packet.timer_running,
+            inspection_running: packet.inspection_running,
         })
         .await
         .map(|_| ())
@@ -178,4 +183,52 @@ pub async fn get_auto_setup_settings() -> Result<String> {
     }
 
     Err(anyhow::anyhow!("Cant get auto setup settings!"))
+}
+
+#[cfg(test)]
+mod tests {
+    use unix_utils::request::{UnixRequest, UnixRequestData};
+
+    fn current_time_info(
+        timer_running: Option<bool>,
+        inspection_running: Option<bool>,
+    ) -> serde_json::Value {
+        let req = UnixRequest {
+            tag: Some(7),
+            data: UnixRequestData::CurrentTimeInfo {
+                esp_id: 0xA1B2,
+                time: Some(1_000),
+                inspection: None,
+                competitor: None,
+                group_id: None,
+                session_id: None,
+                timer_running,
+                inspection_running,
+            },
+        };
+
+        serde_json::to_value(&req).unwrap()
+    }
+
+    #[test]
+    fn current_time_info_sends_live_state() {
+        let json = current_time_info(Some(true), Some(false));
+
+        assert_eq!(json["type"], "CurrentTimeInfo");
+        assert_eq!(json["data"]["timerRunning"], true);
+        assert_eq!(json["data"]["inspectionRunning"], false);
+    }
+
+    /// The backend tells old firmware apart by the explicit null.
+    #[test]
+    fn current_time_info_sends_null_without_live_state() {
+        let json = current_time_info(None, None);
+        let data = json["data"].as_object().unwrap();
+
+        assert_eq!(data.get("timerRunning"), Some(&serde_json::Value::Null));
+        assert_eq!(
+            data.get("inspectionRunning"),
+            Some(&serde_json::Value::Null)
+        );
+    }
 }

@@ -21,8 +21,9 @@ pub struct AutoSetupSettings {
 pub struct AutoSetupData {
     pub mdns: bool,
 
-    #[serde(rename = "wsUrl")]
-    pub ws_url: String,
+    // the backend sends `wsUrl`, the firmware reads `ws_url`
+    #[serde(alias = "wsUrl")]
+    pub ws_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -118,6 +119,9 @@ pub struct PossibleGroup {
     pub use_inspection: bool,
     pub secondary_text: Option<String>,
     pub limit: Option<u64>,
+    /// Highest time penalty for the event, in seconds; passed through to the station.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_penalty: Option<u8>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -147,5 +151,31 @@ impl Default for CompetitionStatusResp {
             auto_setup: false,
             sound_enabled: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn relay(backend_json: &str) -> serde_json::Value {
+        let settings: AutoSetupSettings = serde_json::from_str(backend_json).unwrap();
+        serde_json::to_value(settings).unwrap()
+    }
+
+    #[test]
+    fn auto_setup_ws_url_reaches_firmware_as_snake_case() {
+        let device_json =
+            relay(r#"{"ssid":"s","psk":"p","data":{"mdns":false,"wsUrl":"wss://10.0.0.1:8080"}}"#);
+
+        assert_eq!(device_json["data"]["ws_url"], "wss://10.0.0.1:8080");
+        assert!(device_json["data"].get("wsUrl").is_none());
+    }
+
+    #[test]
+    fn auto_setup_accepts_null_ws_url() {
+        let device_json = relay(r#"{"ssid":"s","psk":"p","data":{"mdns":true,"wsUrl":null}}"#);
+
+        assert!(device_json["data"]["ws_url"].is_null());
     }
 }

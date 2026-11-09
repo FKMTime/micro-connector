@@ -6,8 +6,8 @@ use anyhow::Result;
 use axum::Router;
 use axum::extract::ws::WebSocket;
 use axum::extract::{Query, State};
-use axum::http::HeaderMap;
-use axum::response::IntoResponse;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::{extract::WebSocketUpgrade, routing::get};
 use axum_server::tls_rustls::RustlsConfig;
 use rcgen::CertifiedKey;
@@ -110,10 +110,18 @@ async fn ws_handler(
     ws: WebSocketUpgrade,
     Query(esp_connect_info): Query<EspConnectInfo>,
     State(state): State<SharedAppState>,
-) -> impl IntoResponse {
+) -> Response {
     let mut headers = HeaderMap::new();
 
     let inner = state.inner.read().await;
+    // the device checks trust only in the handshake, so it has to wait for the sign keys; it
+    // treats a non-101 reply as a connection error and retries
+    if !inner.server_status_received {
+        drop(inner);
+        info!("Rejecting {esp_connect_info}: no ServerStatus from the backend yet");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
     if let Some(device_settings) = inner.devices_settings.get(&esp_connect_info.id)
         && let Some(sign_key) = device_settings.sign_key
     {
@@ -142,6 +150,7 @@ async fn ws_handler(
         headers,
         ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info, state)),
     )
+        .into_response()
 }
 
 async fn handle_socket(socket: WebSocket, esp_connect_info: EspConnectInfo, state: SharedAppState) {
@@ -158,4 +167,148 @@ async fn handle_socket(socket: WebSocket, esp_connect_info: EspConnectInfo, stat
         file = format!("device_{:X}", esp_connect_info.id),
         "============= Client disconnected! ============="
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aes::cipher::BlockCipherDecrypt;
+    use std::time::Duration;
+    use tokio::{
+        io::AsyncWriteExt,
+        net::{UnixListener, UnixStream},
+        time::timeout,
+    };
+    use tokio_tungstenite::{connect_async, tungstenite};
+
+    const KNOWN_DEVICE_ID: u32 = 0x1A2B3C4D;
+    const UNKNOWN_DEVICE_ID: u32 = 0x5E6F7A8B;
+    const SIGN_KEY: u32 = 123456;
+    const FKM_TOKEN: i32 = 4242;
+    const RANDOM: u64 = 987654321;
+    const TIMEOUT: Duration = Duration::from_secs(2);
+
+    type Handshake = Result<tungstenite::handshake::client::Response, tungstenite::Error>;
+
+    /// A fake backend on its own unix socket; it stays bound so the connector can reconnect.
+    struct Backend {
+        listener: UnixListener,
+        _requests: tokio::sync::mpsc::UnboundedSender<unix_utils::request::UnixRequest>,
+    }
+
+    async fn start_backend(state: &SharedAppState, name: &str) -> Backend {
+        let path = std::env::temp_dir().join(format!("fkm-{name}-{}", std::process::id()));
+        _ = std::fs::remove_file(&path);
+        let listener = UnixListener::bind(&path).unwrap();
+        let (requests, rx) = tokio::sync::mpsc::unbounded_channel();
+        crate::socket::socket_task(path.to_str().unwrap().to_string(), rx, state.clone()).await;
+        Backend {
+            listener,
+            _requests: requests,
+        }
+    }
+
+    impl Backend {
+        async fn accept(&self) -> UnixStream {
+            let accept = timeout(TIMEOUT, self.listener.accept());
+            accept.await.expect("connector didn't connect").unwrap().0
+        }
+    }
+
+    async fn send_status(backend: &mut UnixStream, state: &SharedAppState) {
+        let status = serde_json::json!({"type": "ServerStatus", "data": {
+            "shouldUpdate": false, "devices": [{"espId": KNOWN_DEVICE_ID, "signKey": SIGN_KEY}],
+            "translations": [], "defaultLocale": "en", "fkmToken": FKM_TOKEN,
+            "secureRfid": false, "autoSetup": false, "soundEnabled": true,
+        }});
+        backend
+            .write_all(status.to_string().as_bytes())
+            .await
+            .unwrap();
+        backend.write_u8(0).await.unwrap();
+
+        let received = async {
+            while !state.inner.read().await.server_status_received {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+        timeout(TIMEOUT, received)
+            .await
+            .expect("status not received");
+    }
+
+    async fn connect(state: &SharedAppState, id: u32) -> Handshake {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = router(state.clone());
+        tokio::spawn(async move { axum::serve(listener, app.into_make_service()).await });
+
+        let url = format!("ws://{addr}/?id={id}&ver=v3.4.4&hw=v4&firmware=STATION&random={RANDOM}");
+        connect_async(url).await.map(|(_, response)| response)
+    }
+
+    /// Decrypts `RandomSigned` the way the firmware does.
+    fn random_signed(handshake: &Handshake) -> Option<(u64, i32)> {
+        let header = handshake.as_ref().unwrap().headers().get("RandomSigned")?;
+        let signed: u128 = header.to_str().unwrap().parse().unwrap();
+
+        let mut key = [0; 16];
+        key[..4].copy_from_slice(&SIGN_KEY.to_be_bytes());
+        let mut block = Array::from(signed.to_be_bytes());
+        Aes128::new(&Array::from(key)).decrypt_block(&mut block);
+
+        let random = u64::from_be_bytes(block[..8].try_into().unwrap());
+        let token = i32::from_be_bytes(block[8..12].try_into().unwrap());
+        Some((random, token))
+    }
+
+    #[tokio::test]
+    async fn upgrade_before_the_first_server_status_is_rejected() {
+        let state = SharedAppState::new(false).await;
+        let _backend = start_backend(&state, "no-status").await;
+
+        match connect(&state, KNOWN_DEVICE_ID).await {
+            Err(tungstenite::Error::Http(response)) => {
+                assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+            }
+            other => panic!("expected a 503, got {other:?}"),
+        }
+        assert!(!state.connected_devices.contains(KNOWN_DEVICE_ID));
+    }
+
+    #[tokio::test]
+    async fn known_device_is_signed_after_the_first_server_status() {
+        let state = SharedAppState::new(false).await;
+        let backend = start_backend(&state, "known").await;
+        send_status(&mut backend.accept().await, &state).await;
+
+        let handshake = connect(&state, KNOWN_DEVICE_ID).await;
+        assert_eq!(random_signed(&handshake), Some((RANDOM, FKM_TOKEN)));
+    }
+
+    // a device that isn't added yet still connects: it sets trust itself when submit is pressed
+    #[tokio::test]
+    async fn unknown_device_is_accepted_without_a_signature() {
+        let state = SharedAppState::new(false).await;
+        let backend = start_backend(&state, "unknown").await;
+        send_status(&mut backend.accept().await, &state).await;
+
+        let handshake = connect(&state, UNKNOWN_DEVICE_ID).await;
+        assert!(handshake.is_ok());
+        assert_eq!(random_signed(&handshake), None);
+    }
+
+    // the keys outlive the connection to the backend, so a backend restart locks nobody out
+    #[tokio::test]
+    async fn backend_reconnect_keeps_accepting_signed_devices() {
+        let state = SharedAppState::new(false).await;
+        let backend = start_backend(&state, "reconnect").await;
+        send_status(&mut backend.accept().await, &state).await;
+
+        // the first connection was dropped above; wait for the connector to come back
+        let _reconnected = backend.accept().await;
+
+        let handshake = connect(&state, KNOWN_DEVICE_ID).await;
+        assert_eq!(random_signed(&handshake), Some((RANDOM, FKM_TOKEN)));
+    }
 }

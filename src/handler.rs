@@ -34,6 +34,8 @@ pub async fn handle_client(
 
     send_epoch_time(&mut socket).await?;
     send_device_status(&mut socket, esp_connect_info, &state).await?;
+    _ = crate::socket::api::send_device_connected(esp_connect_info.id, &esp_connect_info.version)
+        .await;
     let mut bc = state.get_bc().await;
 
     let interval_time = std::time::Duration::from_secs(5);
@@ -247,7 +249,7 @@ async fn on_log_packet(packet: LogPacket<'_>, esp_id: u32, state: &SharedAppStat
         tracing::warn!(file = format!("device_{esp_id:X}"), "LOGS TRUNCATED!");
     }
 
-    for line in packet.lines {
+    for line in &packet.lines {
         const RESET: &str = "\u{001B}[0m";
         let color = match line.as_bytes().first() {
             Some(b'E') => "\u{001B}[31m",
@@ -268,15 +270,7 @@ async fn on_log_packet(packet: LogPacket<'_>, esp_id: u32, state: &SharedAppStat
     let inner_state = state.inner.read().await;
     if inner_state.devices_settings.contains_key(&esp_id) {
         drop(inner_state);
-        _ = crate::socket::api::send_current_state(
-            esp_id,
-            packet.current_time,
-            packet.inspection_time,
-            packet.current_competitor,
-            packet.current_group_id,
-            packet.current_session_id,
-        )
-        .await;
+        _ = crate::socket::api::send_current_state(esp_id, packet).await;
     }
 }
 
@@ -458,7 +452,7 @@ async fn on_timer_response(
         }
         TimerPacketInner::Add { firmware, sign_key } => {
             let inner_state = state.inner.read().await;
-            if !inner_state.devices_settings.contains_key(&esp_id) {
+            if should_forward_add(inner_state.devices_settings.get(&esp_id), sign_key) {
                 drop(inner_state);
                 _ = crate::socket::api::add_device(
                     esp_id,
@@ -483,6 +477,13 @@ async fn on_timer_response(
     }
 
     Ok(())
+}
+
+/// A device asks to be added when it's unknown, or when it comes back with a new sign key (its
+/// own was reset): the backend then asks in the panel whether to accept the new key. An `Add`
+/// with the key it already has is a repeat and isn't forwarded.
+fn should_forward_add(known: Option<&crate::structs::DeviceSettings>, sign_key: u32) -> bool {
+    known.is_none_or(|device| device.sign_key != Some(sign_key))
 }
 
 #[cfg(test)]
@@ -519,6 +520,7 @@ mod tests {
     async fn state_with_device(should_update: bool) -> SharedAppState {
         let state = SharedAppState::new(false).await;
         let mut inner = state.inner.write().await;
+        inner.server_status_received = true;
         inner.should_update = should_update;
         inner
             .devices_settings
@@ -594,7 +596,17 @@ mod tests {
         backend
     }
 
+    // every connection announces itself, the other tests' ones included
     async fn read_request(backend: &mut UnixStream) -> String {
+        loop {
+            let request = read_any_request(backend).await;
+            if !request.contains("DeviceConnected") {
+                return request;
+            }
+        }
+    }
+
+    async fn read_any_request(backend: &mut UnixStream) -> String {
         let read = async {
             let mut frame = Vec::new();
             loop {
@@ -605,6 +617,21 @@ mod tests {
             }
         };
         timeout(TIMEOUT, read).await.expect("no backend request")
+    }
+
+    #[test]
+    fn add_is_forwarded_for_an_unknown_device_or_a_new_key() {
+        let known = DeviceSettings {
+            sign_key: Some(1234),
+        };
+
+        assert!(should_forward_add(None, 1234));
+        assert!(should_forward_add(Some(&known), 5678));
+        assert!(should_forward_add(
+            Some(&DeviceSettings { sign_key: None }),
+            5678
+        ));
+        assert!(!should_forward_add(Some(&known), 1234));
     }
 
     #[tokio::test]
@@ -626,7 +653,7 @@ mod tests {
         wait_until_listening(&mut device).await;
 
         state.inner.write().await.should_update = true;
-        state.build_broadcast().await.unwrap();
+        state.build_broadcast().await;
         wait_for_frame(&mut device, is_start_update).await;
 
         assert_readers_pass_a_writer(&state).await;
@@ -688,6 +715,10 @@ mod tests {
         let mut device = connect_device(&state).await;
         wait_until_listening(&mut device).await;
 
+        let connected = read_any_request(&mut backend).await;
+        assert!(connected.contains(r#""type":"DeviceConnected""#));
+        assert!(connected.contains(r#""firmwareVersion":"v3.4.4""#));
+
         // tagged requests: the replies would have to come through the socket loop
         let battery = r#"{"data":{"battery":{"level":50.0}}}"#;
         device
@@ -699,9 +730,16 @@ mod tests {
 
         let log_state = state.clone();
         tokio::spawn(async move {
-            on_log_packet(LogPacket::default(), DEVICE_ID, &log_state).await;
+            let packet = LogPacket {
+                timer_running: Some(true),
+                ..Default::default()
+            };
+            on_log_packet(packet, DEVICE_ID, &log_state).await;
         });
-        assert!(read_request(&mut backend).await.contains("CurrentTime"));
+        let current = read_request(&mut backend).await;
+        assert!(current.contains(r#""type":"CurrentTimeInfo""#));
+        assert!(current.contains(r#""timerRunning":true"#));
+        assert!(current.contains(r#""inspectionRunning":null"#));
         assert_readers_pass_a_writer(&state).await;
 
         // ServerStatus parked on the state lock must not take outgoing requests down with it

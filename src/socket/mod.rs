@@ -31,7 +31,57 @@ pub struct SocketInner {
     //stream: UnixStream,
     state: SharedAppState,
     socket_channel: tokio::sync::mpsc::UnboundedSender<UnixRequest>,
-    tag_channels: HashMap<u32, tokio::sync::oneshot::Sender<Option<UnixResponseData>>>,
+    tag_channels: HashMap<u32, PendingReply>,
+}
+
+#[derive(Debug)]
+struct PendingReply {
+    tx: tokio::sync::oneshot::Sender<Option<UnixResponseData>>,
+    /// Logged at trace instead of info, see [`is_quiet`]
+    quiet: bool,
+}
+
+/// Takes a pending reply out of `tag_channels` when its request stops waiting without one:
+/// on timeout, or when the caller's future is dropped (e.g. the device's connection task is
+/// aborted). Nothing else would ever remove it.
+struct PendingReplyGuard {
+    inner: InnerRwLock,
+    tag: Option<u32>,
+}
+
+impl Drop for PendingReplyGuard {
+    fn drop(&mut self) {
+        let Some(tag) = self.tag else {
+            return;
+        };
+
+        // drop can't wait for the lock, so whoever holds it gets a task to do it later
+        if let Ok(mut inner) = self.inner.try_write() {
+            inner.tag_channels.remove(&tag);
+        } else if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let inner = self.inner.clone();
+            runtime.spawn(async move {
+                inner.write().await.tag_channels.remove(&tag);
+            });
+        }
+    }
+}
+
+/// Requests sent every second by every station: logging them at info would write
+/// tens of lines a second to the router's flash.
+fn is_quiet(data: &UnixRequestData) -> bool {
+    matches!(data, UnixRequestData::CurrentTimeInfo { .. })
+}
+
+fn log_response(quiet: bool, raw: &[u8], resp: &UnixResponse) {
+    let raw = String::from_utf8_lossy(raw);
+    if quiet {
+        tracing::trace!(file = "unix", "Received unix response (JSON): {raw}");
+        tracing::trace!(file = "unix", "Received unix response: {resp:?}");
+    } else {
+        tracing::info!(file = "unix", "Received unix response (JSON): {raw}");
+        tracing::info!(file = "unix", "Received unix response: {resp:?}");
+    }
 }
 
 impl Socket {
@@ -107,12 +157,14 @@ impl Socket {
         tag: Option<u32>,
         data: UnixRequestData,
     ) -> Result<Option<UnixResponseData>> {
-        let req = UnixRequest {
-            tag,
-            data: data.clone(),
-        };
+        let quiet = is_quiet(&data);
+        let req = UnixRequest { tag, data };
 
-        tracing::info!(file = "unix", "Sending Unix Request: {req:?}");
+        if quiet {
+            tracing::trace!(file = "unix", "Sending Unix Request: {req:?}");
+        } else {
+            tracing::info!(file = "unix", "Sending Unix Request: {req:?}");
+        }
 
         let inner = self.get_inner().await?;
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
@@ -120,17 +172,27 @@ impl Socket {
         // inside parens to unlock after send!
         {
             let mut inner = inner.write().await;
-            if let Some(tag) = tag {
-                inner.tag_channels.insert(tag, resp_tx);
-            }
-
             inner.socket_channel.send(req)?;
+            if let Some(tag) = tag {
+                inner
+                    .tag_channels
+                    .insert(tag, PendingReply { tx: resp_tx, quiet });
+            }
         }
 
-        if tag.is_some() {
+        if let Some(tag) = tag {
+            let mut guard = PendingReplyGuard {
+                inner,
+                tag: Some(tag),
+            };
+
             // TODO: add better errors (for timeout, and recv error)
-            let resp = tokio::time::timeout(UNIX_TIMEOUT, resp_rx).await??;
-            return Ok(resp);
+            let resp = tokio::time::timeout(UNIX_TIMEOUT, resp_rx).await;
+            if resp.is_ok() {
+                // the reply (or a dropped sender) means it was already taken out
+                guard.tag = None;
+            }
+            return Ok(resp??);
         }
 
         Ok(None)
@@ -139,20 +201,22 @@ impl Socket {
     pub async fn send_resp_to_channel(
         &self,
         tag: u32,
-        resp: Option<UnixResponseData>,
+        raw: &[u8],
+        resp: UnixResponse,
     ) -> Result<()> {
         let inner = self.get_inner().await?;
-        let mut inner = inner.write().await;
+        let pending = inner.write().await.tag_channels.remove(&tag);
 
-        if let Some(chan) = inner.tag_channels.remove(&tag) {
-            _ = chan.send(resp);
+        log_response(pending.as_ref().is_some_and(|p| p.quiet), raw, &resp);
+        if let Some(pending) = pending {
+            _ = pending.tx.send(resp.data);
         }
 
         Ok(())
     }
 }
 
-async fn socket_task(
+pub(crate) async fn socket_task(
     socket_path: String,
     mut rx: UnboundedReceiver<UnixRequest>,
     state: SharedAppState,
@@ -182,13 +246,14 @@ async fn inner_socket_task(
                 let recv = recv?;
 
                 let resp: UnixResponse = serde_json::from_slice(&recv)?;
-                tracing::info!(file = "unix", "Received unix response (JSON): {}", core::str::from_utf8(&recv)?);
-                tracing::info!(file = "unix", "Received unix response: {resp:?}");
 
                 if let Some(tag) = resp.tag {
-                    super::UNIX_SOCKET.send_resp_to_channel(tag, resp.data).await?;
-                } else if let Some(data) = resp.data {
-                    process_untagged_response(data, state).await?;
+                    super::UNIX_SOCKET.send_resp_to_channel(tag, &recv, resp).await?;
+                } else {
+                    log_response(false, &recv, &resp);
+                    if let Some(data) = resp.data {
+                        process_untagged_response(data, state).await?;
+                    }
                 }
             }
             Some(recv) = rx.recv() => {
@@ -217,7 +282,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let inner = inner.read().await;
             let state = &inner.state;
 
-            state.send_timer_packet(esp_id, packet).await?;
+            state.send_timer_packet(esp_id, packet).await;
         }
         UnixResponseData::ServerStatus(status) => {
             let mut inner_state = state.inner.write().await;
@@ -247,6 +312,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                 || inner_state.secure_rfid != status.secure_rfid
                 || inner_state.sound_enabled != status.sound_enabled;
 
+            inner_state.server_status_received = true;
             inner_state.should_update = status.should_update;
             inner_state.locales = translations;
             inner_state.default_locale = status.default_locale;
@@ -278,7 +344,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
 
             drop(inner_state);
             if changed {
-                _ = state.device_settings_broadcast().await;
+                state.device_settings_broadcast().await;
             }
         }
         UnixResponseData::IncidentResolved {
@@ -299,7 +365,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
             let inner = inner.read().await;
             let state = &inner.state;
 
-            state.send_timer_packet(esp_id, packet).await?;
+            state.send_timer_packet(esp_id, packet).await;
         }
         UnixResponseData::TestPacket { esp_id, data } => {
             let inner = crate::UNIX_SOCKET.get_inner().await?;
@@ -314,7 +380,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                         data: TimerPacketInner::TestPacket(data),
                     },
                 )
-                .await?;
+                .await;
         }
         UnixResponseData::UploadFirmware {
             file_name,
@@ -355,7 +421,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                         firmware: firmware.to_string(),
                     },
                 )
-                .await?;
+                .await;
         }
         UnixResponseData::SetDeviceSettings { devices, volume } => {
             for esp_id in devices {
@@ -367,7 +433,7 @@ async fn process_untagged_response(data: UnixResponseData, state: &SharedAppStat
                             data: TimerPacketInner::SetDeviceSettings { volume },
                         },
                     )
-                    .await?;
+                    .await;
             }
         }
         _ => {}
@@ -387,5 +453,158 @@ async fn read_until_null(stream: &mut UnixStream, buf: &mut Vec<u8>) -> Result<V
         }
 
         buf.push(byte);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn current_time_info() -> UnixRequestData {
+        UnixRequestData::CurrentTimeInfo {
+            esp_id: 0xA1B2,
+            time: None,
+            inspection: None,
+            competitor: None,
+            group_id: None,
+            session_id: None,
+            timer_running: None,
+            inspection_running: None,
+        }
+    }
+
+    /// Not `UNIX_SOCKET`: that one can only be initialised once and the handler tests own it.
+    async fn socket() -> (Socket, UnboundedReceiver<UnixRequest>) {
+        let (socket_channel, rx) = tokio::sync::mpsc::unbounded_channel();
+        let socket = Socket::const_new();
+        let inner = SocketInner {
+            state: SharedAppState::new(false).await,
+            socket_channel,
+            tag_channels: HashMap::new(),
+        };
+        socket.inner.set(Arc::new(RwLock::new(inner))).unwrap();
+
+        (socket, rx)
+    }
+
+    async fn pending_replies(socket: &Socket) -> usize {
+        socket
+            .get_inner()
+            .await
+            .unwrap()
+            .read()
+            .await
+            .tag_channels
+            .len()
+    }
+
+    #[tokio::test]
+    async fn station_packet_with_no_station_connected_keeps_the_socket() {
+        let state = SharedAppState::new(false).await;
+        let set_volume = UnixResponseData::SetDeviceSettings {
+            devices: vec![0xA1B2],
+            volume: Some(5),
+        };
+
+        assert!(process_untagged_response(set_volume, &state).await.is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn timed_out_request_leaves_no_reply_channel() {
+        let (socket, mut rx) = socket().await;
+
+        assert!(
+            socket
+                .send_tagged_request(current_time_info())
+                .await
+                .is_err()
+        );
+        assert!(rx.recv().await.unwrap().tag.is_some());
+        assert_eq!(pending_replies(&socket).await, 0);
+    }
+
+    async fn spawn_pending_request(
+        socket: &Arc<Socket>,
+        rx: &mut UnboundedReceiver<UnixRequest>,
+    ) -> tokio::task::JoinHandle<Result<UnixResponseData, UnixError>> {
+        let request = tokio::spawn({
+            let socket = socket.clone();
+            async move { socket.send_tagged_request(current_time_info()).await }
+        });
+        assert!(rx.recv().await.unwrap().tag.is_some());
+        assert_eq!(pending_replies(socket).await, 1);
+
+        request
+    }
+
+    #[tokio::test]
+    async fn abandoned_request_leaves_no_reply_channel() {
+        let (socket, mut rx) = socket().await;
+        let socket = Arc::new(socket);
+
+        let request = spawn_pending_request(&socket, &mut rx).await;
+        request.abort();
+        assert!(request.await.unwrap_err().is_cancelled());
+
+        assert_eq!(pending_replies(&socket).await, 0);
+    }
+
+    #[tokio::test]
+    async fn request_abandoned_while_the_lock_is_held_leaves_no_reply_channel() {
+        let (socket, mut rx) = socket().await;
+        let socket = Arc::new(socket);
+
+        let request = spawn_pending_request(&socket, &mut rx).await;
+        let inner = socket.get_inner().await.unwrap();
+        let reader = inner.read().await;
+        request.abort();
+        assert!(request.await.unwrap_err().is_cancelled());
+        assert_eq!(reader.tag_channels.len(), 1);
+        drop(reader);
+
+        let cleaned_up = async {
+            while pending_replies(&socket).await > 0 {
+                tokio::task::yield_now().await;
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(1), cleaned_up)
+            .await
+            .expect("reply channel left behind");
+    }
+
+    #[tokio::test]
+    async fn answered_request_leaves_no_reply_channel() {
+        let (socket, mut rx) = socket().await;
+        let socket = Arc::new(socket);
+
+        let request = tokio::spawn({
+            let socket = socket.clone();
+            async move { socket.send_tagged_request(current_time_info()).await }
+        });
+        let tag = rx.recv().await.unwrap().tag.unwrap();
+        assert_eq!(pending_replies(&socket).await, 1);
+
+        let resp = UnixResponse {
+            error: None,
+            tag: Some(tag),
+            data: Some(UnixResponseData::Empty),
+        };
+        socket.send_resp_to_channel(tag, b"{}", resp).await.unwrap();
+
+        assert!(matches!(
+            request.await.unwrap(),
+            Ok(UnixResponseData::Empty)
+        ));
+        assert_eq!(pending_replies(&socket).await, 0);
+    }
+
+    #[test]
+    fn only_current_time_info_is_quiet() {
+        assert!(is_quiet(&current_time_info()));
+        assert!(!is_quiet(&UnixRequestData::DeviceConnected {
+            esp_id: 0xA1B2,
+            firmware_version: "v3.5.0".to_string(),
+        }));
+        assert!(!is_quiet(&UnixRequestData::AutoSetupSettings));
     }
 }

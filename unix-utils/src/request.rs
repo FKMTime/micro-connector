@@ -40,6 +40,10 @@ pub enum UnixRequestData {
         esp_id: u32,
         battery_percentage: u8,
     },
+    DeviceConnected {
+        esp_id: u32,
+        firmware_version: String,
+    },
     RequestToConnectDevice {
         esp_id: u32,
         sign_key: u32,
@@ -55,6 +59,9 @@ pub enum UnixRequestData {
         competitor: Option<u64>,
         group_id: Option<String>,
         session_id: Option<String>,
+        /// `None` (sent as `null`) for firmware that doesn't report live state
+        timer_running: Option<bool>,
+        inspection_running: Option<bool>,
     },
     TestAck {
         esp_id: u32,
