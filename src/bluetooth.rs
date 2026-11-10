@@ -41,6 +41,17 @@ fn should_setup_device(state: &SharedAppState, local_name: &str) -> bool {
     !connected
 }
 
+/// BlueZ also lists devices cached from earlier scans. One it didn't hear in this scan has no rssi:
+/// it left setup mode (usually because it already got its settings), so connecting to it can only
+/// time out and holds up the rest of the pass.
+fn heard_in_this_scan(local_name: &str, rssi: Option<i16>) -> bool {
+    if rssi.is_none() {
+        tracing::trace!("Skipping \"{local_name}\": not heard in this scan");
+    }
+
+    rssi.is_some()
+}
+
 pub async fn start_bluetooth_task(state: SharedAppState) -> Result<()> {
     let adapter_api = crate::adapter::adapter_api_url();
     let client = reqwest::Client::new();
@@ -115,12 +126,13 @@ async fn bluetooth_task(state: &SharedAppState) -> Result<()> {
 
             //let is_fkm = properties.services.contains(&FKM_UUID);
             let local_name = properties.local_name.unwrap_or_default();
-            if !should_setup_device(state, &local_name) {
+            if !should_setup_device(state, &local_name)
+                || !heard_in_this_scan(&local_name, properties.rssi)
+            {
                 continue;
             }
 
             tracing::info!("Found FKM device with name: \"{local_name}\"!");
-            // BlueZ also lists cached devices; one it didn't hear in this scan should have no rssi
             tracing::trace!("\"{local_name}\" rssi: {:?}", properties.rssi);
             found.push((device, local_name));
         }
@@ -376,6 +388,14 @@ mod tests {
         assert_eq!(parse_device_id("FKM-1"), Some(1));
         // the largest id the firmware can produce
         assert_eq!(parse_device_id("FKM-7FFFFFFF"), Some(0x7FFF_FFFF));
+    }
+
+    #[test]
+    fn skips_a_device_bluez_did_not_hear_in_this_scan() {
+        assert!(heard_in_this_scan(DEVICE_NAME, Some(-60)));
+        assert!(heard_in_this_scan(DEVICE_NAME, Some(0)));
+        // cached from an earlier scan: it left setup mode, a connect would only time out
+        assert!(!heard_in_this_scan(DEVICE_NAME, None));
     }
 
     #[test]
