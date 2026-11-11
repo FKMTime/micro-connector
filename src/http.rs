@@ -27,7 +27,7 @@ fn default_random() -> u64 {
     0
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct EspConnectInfo {
     pub id: u32,
 

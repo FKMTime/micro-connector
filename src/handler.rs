@@ -37,11 +37,14 @@ pub async fn handle_client(
     _ = crate::socket::api::send_device_connected(esp_connect_info.id, &esp_connect_info.version)
         .await;
     let mut bc = state.get_bc().await;
+    // requests wait for the backend (up to UNIX_TIMEOUT) in their own tasks, so this loop keeps
+    // reading frames, and with that answering the device's pings; their replies come back here
+    let (reply_tx, mut reply_rx) = tokio::sync::mpsc::unbounded_channel::<TimerPacket>();
 
     let interval_time = std::time::Duration::from_secs(5);
     let mut hb_interval = tokio::time::interval(interval_time);
-    // a request handled inline (up to UNIX_TIMEOUT) delays ticks; firing them in a burst would
-    // judge the heartbeat before the device could answer the ping and drop the connection
+    // an update or a slow send delays ticks; firing them in a burst would judge the heartbeat
+    // before the device could answer the ping and drop the connection
     hb_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut hb_received = true;
 
@@ -93,9 +96,13 @@ pub async fn handle_client(
                     }
                 }
             }
+            Some(reply) = reply_rx.recv() => {
+                let reply = serde_json::to_string(&reply)?;
+                socket.send(Message::Text(reply.into())).await?;
+            }
             msg = socket.recv() => {
                 let msg = msg.ok_or_else(|| anyhow::anyhow!("Frame option is null"))??;
-                let res = on_ws_msg(&mut socket, msg, esp_connect_info, &mut hb_received, &state).await;
+                let res = on_ws_msg(msg, esp_connect_info, &mut hb_received, &state, &reply_tx).await;
 
                 match res {
                     Ok(true) => break,
@@ -168,11 +175,11 @@ async fn send_epoch_time(socket: &mut WebSocket) -> Result<()> {
 }
 
 async fn on_ws_msg(
-    socket: &mut WebSocket,
     msg: Message,
     esp_connect_info: &EspConnectInfo,
     hb_received: &mut bool,
     state: &SharedAppState,
+    reply_tx: &tokio::sync::mpsc::UnboundedSender<TimerPacket>,
 ) -> Result<bool> {
     match msg {
         Message::Close(frame) => {
@@ -201,10 +208,16 @@ async fn on_ws_msg(
             tracing::trace!("WS payload recv [{:X}]: {payload}", esp_connect_info.id);
 
             let response: TimerPacket = serde_json::from_str(&payload)?;
-            let res = on_timer_response(socket, response, esp_connect_info, state).await;
-            if let Err(e) = res {
-                error!("on_timer_response error: {e:?}");
-            }
+            let (esp_connect_info, state) = (esp_connect_info.clone(), state.clone());
+            let reply_tx = reply_tx.clone();
+            tokio::spawn(async move {
+                match on_timer_response(response, &esp_connect_info, &state).await {
+                    // the connection may be gone by now; its reply then has nowhere to go
+                    Ok(Some(reply)) => _ = reply_tx.send(reply),
+                    Ok(None) => {}
+                    Err(e) => error!("on_timer_response error: {e:?}"),
+                }
+            });
 
             *hb_received = true;
         }
@@ -274,12 +287,12 @@ async fn on_log_packet(packet: LogPacket<'_>, esp_id: u32, state: &SharedAppStat
     }
 }
 
+/// Handles a packet from the device; returns the reply to send back, if it gets one.
 async fn on_timer_response(
-    socket: &mut WebSocket,
     response: TimerPacket,
     esp_connect_info: &EspConnectInfo,
     state: &SharedAppState,
-) -> Result<()> {
+) -> Result<Option<TimerPacket>> {
     let esp_id = esp_connect_info.id;
 
     match response.data {
@@ -309,13 +322,10 @@ async fn on_timer_response(
             let attendance_device = attendance_device.unwrap_or(false);
             if attendance_device {
                 _ = crate::socket::api::mark_attendance(esp_id, card_id).await;
-                let resp = serde_json::to_string(&TimerPacket {
+                return Ok(Some(TimerPacket {
                     tag: response.tag,
                     data: TimerPacketInner::AttendanceMarked,
-                })?;
-                socket.send(Message::Text(resp.into())).await?;
-
-                return Ok(());
+                }));
             }
 
             let response = match crate::socket::api::get_competitor_info(
@@ -353,8 +363,7 @@ async fn on_timer_response(
                 },
             };
 
-            let response = serde_json::to_string(&response)?;
-            socket.send(Message::Text(response.into())).await?;
+            return Ok(Some(response));
         }
         TimerPacketInner::Solve {
             solve_time,
@@ -405,7 +414,7 @@ async fn on_timer_response(
             let resp = match res {
                 Ok(unix_utils::response::UnixResponseData::EnterAttemptResp { message }) => {
                     if delegate {
-                        return Ok(());
+                        return Ok(None);
                     }
 
                     TimerPacket {
@@ -419,7 +428,7 @@ async fn on_timer_response(
                 }
                 Ok(_) => {
                     if delegate {
-                        return Ok(());
+                        return Ok(None);
                     }
 
                     TimerPacket {
@@ -440,8 +449,7 @@ async fn on_timer_response(
                 },
             };
 
-            let response = serde_json::to_string(&resp)?;
-            socket.send(Message::Text(response.into())).await?;
+            return Ok(Some(resp));
         }
         TimerPacketInner::Battery { level, voltage: _ } => {
             let inner_state = state.inner.read().await;
@@ -476,7 +484,7 @@ async fn on_timer_response(
         }
     }
 
-    Ok(())
+    Ok(None)
 }
 
 /// A device asks to be added when it's unknown, or when it comes back with a new sign key (its
@@ -741,6 +749,41 @@ mod tests {
         assert!(current.contains(r#""timerRunning":true"#));
         assert!(current.contains(r#""inspectionRunning":null"#));
         assert_readers_pass_a_writer(&state).await;
+
+        // a request waiting on a slow backend must not hold up the pong: the device takes a
+        // silent link for a dead one, drops it and sends again
+        let solve = serde_json::json!({"tag": 7, "data": {"solve": {
+            "solve_time": 12340, "penalty": 0, "competitor_id": 11, "judge_id": 22,
+            "timestamp": 1_700_000_000, "session_id": "s-1", "delegate": false,
+            "inspection_time": 0, "group_id": "333-r1-g1", "sign_key": 0,
+        }}});
+        device
+            .send(tungstenite::Message::text(solve.to_string()))
+            .await
+            .unwrap();
+        let attempt = read_request(&mut backend).await;
+        assert!(attempt.contains(r#""type":"EnterAttempt""#));
+
+        device
+            .send(tungstenite::Message::Ping(vec![].into()))
+            .await
+            .unwrap();
+        wait_for_frame(&mut device, tungstenite::Message::is_pong).await;
+
+        let tag = serde_json::from_str::<serde_json::Value>(&attempt).unwrap()["tag"].clone();
+        let reply = serde_json::json!({"tag": tag, "type": "EnterAttemptResp",
+            "data": {"message": "Attempt entered"}});
+        backend
+            .write_all(reply.to_string().as_bytes())
+            .await
+            .unwrap();
+        backend.write_u8(0).await.unwrap();
+        wait_for_frame(&mut device, |frame| {
+            frame
+                .to_text()
+                .is_ok_and(|t| t.contains(r#""tag":7"#) && t.contains("Attempt entered"))
+        })
+        .await;
 
         // ServerStatus parked on the state lock must not take outgoing requests down with it
         let reader = state.inner.read().await;
