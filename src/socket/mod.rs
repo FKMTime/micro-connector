@@ -67,10 +67,19 @@ impl Drop for PendingReplyGuard {
     }
 }
 
-/// Requests sent every second by every station: logging them at info would write
+/// Requests sent every few seconds for every station: logging them at info would write
 /// tens of lines a second to the router's flash.
 fn is_quiet(data: &UnixRequestData) -> bool {
-    matches!(data, UnixRequestData::CurrentTimeInfo { .. })
+    matches!(
+        data,
+        UnixRequestData::CurrentTimeInfo { .. } | UnixRequestData::StationLink { .. }
+    )
+}
+
+/// The backend's `EmptyResp` to a request sent without waiting (`StationLink`, every 10 s
+/// per station): it has no tag and nothing to act on.
+fn is_quiet_reply(resp: &UnixResponse) -> bool {
+    resp.tag.is_none() && matches!(resp.data, None | Some(UnixResponseData::Empty))
 }
 
 fn log_response(quiet: bool, raw: &[u8], resp: &UnixResponse) {
@@ -250,7 +259,7 @@ async fn inner_socket_task(
                 if let Some(tag) = resp.tag {
                     super::UNIX_SOCKET.send_resp_to_channel(tag, &recv, resp).await?;
                 } else {
-                    log_response(false, &recv, &resp);
+                    log_response(is_quiet_reply(&resp), &recv, &resp);
                     if let Some(data) = resp.data {
                         process_untagged_response(data, state).await?;
                     }
@@ -470,6 +479,7 @@ mod tests {
             session_id: None,
             timer_running: None,
             inspection_running: None,
+            rssi: None,
         }
     }
 
@@ -599,12 +609,33 @@ mod tests {
     }
 
     #[test]
-    fn only_current_time_info_is_quiet() {
+    fn only_live_requests_are_quiet() {
         assert!(is_quiet(&current_time_info()));
+        assert!(is_quiet(&UnixRequestData::StationLink {
+            esp_id: 0xA1B2,
+            ap_signal: Some(-60),
+            tx_bitrate_kbps: None,
+            tx_retries_percent: None,
+        }));
         assert!(!is_quiet(&UnixRequestData::DeviceConnected {
             esp_id: 0xA1B2,
             firmware_version: "v3.5.0".to_string(),
         }));
         assert!(!is_quiet(&UnixRequestData::AutoSetupSettings));
+    }
+
+    #[test]
+    fn untagged_empty_reply_is_quiet() {
+        let reply: UnixResponse = serde_json::from_str(
+            r#"{"type":"EmptyResp","data":{"error":false},"tag":null,"error":false}"#,
+        )
+        .unwrap();
+        assert!(is_quiet_reply(&reply));
+
+        let message: UnixResponse = serde_json::from_str(
+            r#"{"type":"CustomMessage","data":{"espId":1,"line1":"a","line2":"b"},"tag":null}"#,
+        )
+        .unwrap();
+        assert!(!is_quiet_reply(&message));
     }
 }

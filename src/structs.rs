@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    net::IpAddr,
     sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 use unix_utils::{
@@ -144,13 +145,21 @@ pub struct DeviceSettings {
     pub sign_key: Option<u32>,
 }
 
-/// Devices with a live websocket connection, counted per id: a device can reconnect before its
-/// old connection is dropped, and closing the old one must not hide the new one.
+/// Devices with a live websocket connection, each with its open connections: a device can
+/// reconnect before its old connection is dropped, and closing the old one must not hide the
+/// new one.
 ///
 /// Kept out of `AppState` because [`ConnectionGuard`] updates it from `Drop`, which can't await.
 /// The lock is only ever held inside the methods below, never across an await.
 #[derive(Debug, Clone, Default)]
-pub struct ConnectedDevices(Arc<Mutex<HashMap<u32, usize>>>);
+pub struct ConnectedDevices(Arc<Mutex<ConnectionMap>>);
+
+#[derive(Debug, Default)]
+struct ConnectionMap {
+    next_id: u64,
+    /// Oldest connection first, with the address it came from when known
+    devices: HashMap<u32, Vec<(u64, Option<IpAddr>)>>,
+}
 
 /// Marks a device as connected until dropped, so every way out of a connection task clears it.
 #[must_use = "the device stops counting as connected when this is dropped"]
@@ -158,35 +167,55 @@ pub struct ConnectedDevices(Arc<Mutex<HashMap<u32, usize>>>);
 pub struct ConnectionGuard {
     devices: ConnectedDevices,
     esp_id: u32,
+    connection_id: u64,
 }
 
 impl ConnectedDevices {
-    fn counts(&self) -> MutexGuard<'_, HashMap<u32, usize>> {
+    fn map(&self) -> MutexGuard<'_, ConnectionMap> {
         // no panic can leave the map half updated, and this also runs in Drop during an unwind
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    pub fn track(&self, esp_id: u32) -> ConnectionGuard {
-        *self.counts().entry(esp_id).or_insert(0) += 1;
+    pub fn track(&self, esp_id: u32, peer: Option<IpAddr>) -> ConnectionGuard {
+        let mut map = self.map();
+        let connection_id = map.next_id;
+        map.next_id += 1;
+        map.devices
+            .entry(esp_id)
+            .or_default()
+            .push((connection_id, peer));
 
         ConnectionGuard {
             devices: self.clone(),
             esp_id,
+            connection_id,
         }
     }
 
     pub fn contains(&self, esp_id: u32) -> bool {
-        self.counts().contains_key(&esp_id)
+        self.map().devices.contains_key(&esp_id)
+    }
+
+    /// Each connected device with the address of its newest connection that has one
+    pub fn peers(&self) -> Vec<(u32, IpAddr)> {
+        self.map()
+            .devices
+            .iter()
+            .filter_map(|(&esp_id, connections)| {
+                let peer = connections.iter().rev().find_map(|&(_, peer)| peer)?;
+                Some((esp_id, peer))
+            })
+            .collect()
     }
 }
 
 impl Drop for ConnectionGuard {
     fn drop(&mut self) {
-        let mut counts = self.devices.counts();
-        if let Some(count) = counts.get_mut(&self.esp_id) {
-            *count -= 1;
-            if *count == 0 {
-                counts.remove(&self.esp_id);
+        let mut map = self.devices.map();
+        if let Some(connections) = map.devices.get_mut(&self.esp_id) {
+            connections.retain(|&(id, _)| id != self.connection_id);
+            if connections.is_empty() {
+                map.devices.remove(&self.esp_id);
             }
         }
     }
@@ -286,7 +315,7 @@ mod tests {
         let devices = ConnectedDevices::default();
         assert!(!devices.contains(DEVICE_ID));
 
-        let guard = devices.track(DEVICE_ID);
+        let guard = devices.track(DEVICE_ID, None);
         assert!(devices.contains(DEVICE_ID));
         assert!(!devices.contains(OTHER_DEVICE_ID));
 
@@ -297,8 +326,8 @@ mod tests {
     #[test]
     fn closing_an_old_connection_keeps_the_newer_one() {
         let devices = ConnectedDevices::default();
-        let old = devices.track(DEVICE_ID);
-        let new = devices.track(DEVICE_ID);
+        let old = devices.track(DEVICE_ID, None);
+        let new = devices.track(DEVICE_ID, None);
 
         drop(old);
         assert!(devices.contains(DEVICE_ID));
@@ -310,8 +339,8 @@ mod tests {
     #[test]
     fn connections_can_close_in_any_order() {
         let devices = ConnectedDevices::default();
-        let old = devices.track(DEVICE_ID);
-        let new = devices.track(DEVICE_ID);
+        let old = devices.track(DEVICE_ID, None);
+        let new = devices.track(DEVICE_ID, None);
 
         drop(new);
         assert!(devices.contains(DEVICE_ID));
@@ -320,13 +349,31 @@ mod tests {
         assert!(!devices.contains(DEVICE_ID));
     }
 
+    #[test]
+    fn peer_is_the_newest_connection_with_an_address() {
+        let old_ip: IpAddr = "10.0.0.21".parse().unwrap();
+        let new_ip: IpAddr = "10.0.0.22".parse().unwrap();
+        let devices = ConnectedDevices::default();
+        let old = devices.track(DEVICE_ID, Some(old_ip));
+        let new = devices.track(DEVICE_ID, Some(new_ip));
+        let _no_address = devices.track(OTHER_DEVICE_ID, None);
+
+        assert_eq!(devices.peers(), [(DEVICE_ID, new_ip)]);
+
+        drop(new);
+        assert_eq!(devices.peers(), [(DEVICE_ID, old_ip)]);
+
+        drop(old);
+        assert!(devices.peers().is_empty());
+    }
+
     #[tokio::test]
     async fn panic_in_a_connection_task_clears_the_device() {
         let devices = ConnectedDevices::default();
 
         let task_devices = devices.clone();
         let task = tokio::spawn(async move {
-            let _connected = task_devices.track(DEVICE_ID);
+            let _connected = task_devices.track(DEVICE_ID, None);
             panic!("connection task failed");
         });
 
@@ -341,7 +388,7 @@ mod tests {
         let task_devices = devices.clone();
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let task = tokio::spawn(async move {
-            let _connected = task_devices.track(DEVICE_ID);
+            let _connected = task_devices.track(DEVICE_ID, None);
             started_tx.send(()).unwrap();
             std::future::pending::<()>().await;
         });

@@ -5,15 +5,15 @@ use aes::cipher::{Array, BlockCipherEncrypt, KeyInit};
 use anyhow::Result;
 use axum::Router;
 use axum::extract::ws::WebSocket;
-use axum::extract::{Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{ConnectInfo, Query, State};
+use axum::http::{Extensions, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::{extract::WebSocketUpgrade, routing::get};
 use axum_server::tls_rustls::RustlsConfig;
 use rcgen::CertifiedKey;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::Deserialize;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
@@ -82,7 +82,11 @@ pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
 
     if std::env::var("NO_TLS").is_ok() {
         let listener = TcpListener::bind(addr).await?;
-        axum::serve(listener, app.into_make_service()).await?;
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await?;
     } else {
         rustls::crypto::ring::default_provider()
             .install_default()
@@ -100,7 +104,7 @@ pub async fn start_server(port: u16, state: SharedAppState) -> Result<()> {
 
         let config = RustlsConfig::from_config(Arc::new(config));
         axum_server::bind_rustls(addr, config)
-            .serve(app.into_make_service())
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
             .await?;
     }
     Ok(())
@@ -110,7 +114,13 @@ async fn ws_handler(
     ws: WebSocketUpgrade,
     Query(esp_connect_info): Query<EspConnectInfo>,
     State(state): State<SharedAppState>,
+    extensions: Extensions,
 ) -> Response {
+    // missing only when served without connect info (tests); the station link reader needs it
+    let peer = extensions
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| addr.ip().to_canonical());
+
     let mut headers = HeaderMap::new();
 
     let inner = state.inner.read().await;
@@ -148,14 +158,19 @@ async fn ws_handler(
 
     (
         headers,
-        ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info, state)),
+        ws.on_upgrade(move |socket| handle_socket(socket, esp_connect_info, peer, state)),
     )
         .into_response()
 }
 
-async fn handle_socket(socket: WebSocket, esp_connect_info: EspConnectInfo, state: SharedAppState) {
+async fn handle_socket(
+    socket: WebSocket,
+    esp_connect_info: EspConnectInfo,
+    peer: Option<IpAddr>,
+    state: SharedAppState,
+) {
     info!("Client connected: {esp_connect_info}");
-    let _connected = state.connected_devices.track(esp_connect_info.id);
+    let _connected = state.connected_devices.track(esp_connect_info.id, peer);
 
     let res = handle_client(socket, &esp_connect_info, state).await;
     if let Err(e) = res {
@@ -237,13 +252,17 @@ mod tests {
             .expect("status not received");
     }
 
-    async fn connect(state: &SharedAppState, id: u32) -> Handshake {
+    async fn serve(state: &SharedAppState, id: u32) -> String {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let app = router(state.clone());
-        tokio::spawn(async move { axum::serve(listener, app.into_make_service()).await });
+        let app = router(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
+        tokio::spawn(async move { axum::serve(listener, app).await });
 
-        let url = format!("ws://{addr}/?id={id}&ver=v3.4.4&hw=v4&firmware=STATION&random={RANDOM}");
+        format!("ws://{addr}/?id={id}&ver=v3.4.4&hw=v4&firmware=STATION&random={RANDOM}")
+    }
+
+    async fn connect(state: &SharedAppState, id: u32) -> Handshake {
+        let url = serve(state, id).await;
         connect_async(url).await.map(|(_, response)| response)
     }
 
@@ -310,5 +329,27 @@ mod tests {
 
         let handshake = connect(&state, KNOWN_DEVICE_ID).await;
         assert_eq!(random_signed(&handshake), Some((RANDOM, FKM_TOKEN)));
+    }
+
+    /// The station link reader finds the station's MAC through this address.
+    #[tokio::test]
+    async fn connected_device_is_tracked_with_its_address() {
+        let state = SharedAppState::new(false).await;
+        let backend = start_backend(&state, "peer").await;
+        send_status(&mut backend.accept().await, &state).await;
+
+        let url = serve(&state, KNOWN_DEVICE_ID).await;
+        let _station = connect_async(url).await.unwrap();
+
+        let tracked = async {
+            while state.connected_devices.peers().is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+        timeout(TIMEOUT, tracked).await.expect("device not tracked");
+        assert_eq!(
+            state.connected_devices.peers(),
+            [(KNOWN_DEVICE_ID, IpAddr::from([127, 0, 0, 1]))]
+        );
     }
 }

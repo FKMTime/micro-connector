@@ -239,6 +239,7 @@ dependencies = [
  "unidecode",
  "unix-utils",
  "uuid",
+ "wl-nl80211",
 ]
 
 [[package]]
@@ -783,6 +784,19 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
+]
+
+[[package]]
+name = "genetlink"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d20090823996d07b8c57fcb5f57b641288b2224719322062557f60ccc537d4fc"
+dependencies = [
+ "futures",
+ "log",
+ "netlink-packet-core",
+ "netlink-packet-generic",
+ "netlink-proto",
 ]
 
 [[package]]
@@ -1364,6 +1378,49 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "netlink-packet-core"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d6e2daf9a8c2e21302714706860a0e6be02e03d17294ecc66b354ea7d4059dd"
+
+[[package]]
+name = "netlink-packet-generic"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e609a7be61318181c110df304d54ed3f3e129b9569b8ca16e40a9d644f46930c"
+dependencies = [
+ "netlink-packet-core",
+ "zerocopy",
+]
+
+[[package]]
+name = "netlink-proto"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "deb648c817503ada468a15b8fb7a37d2061079dc0905f2c6552392850279dd85"
+dependencies = [
+ "bytes",
+ "futures-channel",
+ "futures-util",
+ "log",
+ "netlink-packet-core",
+ "netlink-sys",
+]
+
+[[package]]
+name = "netlink-sys"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c99d38e00b420df49e940fe0826e667c3dad82ac68eb4c2bbf754c1c14a83a10"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "libc",
+ "log",
+ "tokio",
 ]
 
 [[package]]
@@ -3169,6 +3226,24 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
+]
+
+[[package]]
+name = "wl-nl80211"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ec36aa764fc6715a1c2a778e4187c35b7f12e84a3129ea8a25bfec7ac9cfdd4"
+dependencies = [
+ "bitflags",
+ "futures",
+ "genetlink",
+ "log",
+ "netlink-packet-core",
+ "netlink-packet-generic",
+ "netlink-proto",
+ "netlink-sys",
+ "tokio",
+ "zerocopy",
 ]
 
 [[package]]

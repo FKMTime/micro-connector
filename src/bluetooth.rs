@@ -425,7 +425,7 @@ mod tests {
     #[tokio::test]
     async fn connected_device_is_skipped() {
         let state = SharedAppState::new(false).await;
-        let _connected = state.connected_devices.track(DEVICE_ID);
+        let _connected = state.connected_devices.track(DEVICE_ID, None);
 
         assert!(!should_setup_device(&state, DEVICE_NAME));
     }
@@ -433,7 +433,7 @@ mod tests {
     #[tokio::test]
     async fn device_without_a_connection_is_tried() {
         let state = SharedAppState::new(false).await;
-        let _connected = state.connected_devices.track(DEVICE_ID + 1);
+        let _connected = state.connected_devices.track(DEVICE_ID + 1, None);
 
         assert!(should_setup_device(&state, DEVICE_NAME));
     }
@@ -468,7 +468,7 @@ mod tests {
     async fn device_that_went_offline_is_tried_again() {
         let state = SharedAppState::new(false).await;
 
-        let connected = state.connected_devices.track(DEVICE_ID);
+        let connected = state.connected_devices.track(DEVICE_ID, None);
         assert!(!should_setup_device(&state, DEVICE_NAME));
 
         drop(connected);

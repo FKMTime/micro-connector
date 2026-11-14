@@ -62,6 +62,18 @@ pub enum UnixRequestData {
         /// `None` (sent as `null`) for firmware that doesn't report live state
         timer_running: Option<bool>,
         inspection_running: Option<bool>,
+        /// Station's Wi-Fi signal in dBm; `None` (sent as `null`) when it reports none
+        rssi: Option<i8>,
+    },
+    /// What the access point reports about a station, when the connector runs on it.
+    /// Sent without waiting for a reply: older backends don't answer it.
+    StationLink {
+        esp_id: u32,
+        /// dBm, as the access point hears the station
+        ap_signal: Option<i8>,
+        tx_bitrate_kbps: Option<u32>,
+        /// Retries per 100 packets sent to the station since the previous reading
+        tx_retries_percent: Option<u32>,
     },
     TestAck {
         esp_id: u32,

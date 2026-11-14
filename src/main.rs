@@ -11,6 +11,7 @@ mod log_packet;
 mod log_subscriber;
 mod mdns;
 mod socket;
+mod station_link;
 mod structs;
 mod updater;
 mod watchers;
@@ -51,6 +52,7 @@ async fn main() -> Result<()> {
     }
 
     watchers::spawn_watchers(state.clone()).await?;
+    station_link::spawn(state.clone());
     tokio::task::spawn(http::start_server(port, state));
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
