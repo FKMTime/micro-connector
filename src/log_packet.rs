@@ -14,6 +14,9 @@ const LIVE_STATE_MAGIC: &[u8; 2] = b"LV";
 const LIVE_STATE_VERSION: u8 = 1;
 const LIVE_FLAG_TIMER_RUNNING: u8 = 1 << 0;
 const LIVE_FLAG_INSPECTION_RUNNING: u8 = 1 << 1;
+/// Station's Wi-Fi RSSI (i8, dBm) right after the live-state block; `0` = no reading.
+/// Firmware before it zero-fills the byte, so it reads as unknown without a version bump.
+const LIVE_RSSI_OFFSET: usize = LIVE_STATE_OFFSET + 4;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct LogPacket<'a> {
@@ -26,6 +29,8 @@ pub struct LogPacket<'a> {
     /// `None` when the firmware doesn't report it (no live-state block in the header).
     pub timer_running: Option<bool>,
     pub inspection_running: Option<bool>,
+    /// Station's Wi-Fi signal in dBm; `None` without the live-state block or a reading.
+    pub rssi: Option<i8>,
     pub lines: Vec<&'a str>,
     /// A line ran past the end of the packet or wasn't utf8. `lines` stops before it.
     pub lines_malformed: bool,
@@ -49,6 +54,12 @@ fn read_u64(buf: &[u8], offset: usize, none_value: u64) -> Option<u64> {
 fn read_live_flags(buf: &[u8]) -> Option<u8> {
     let block = buf.get(LIVE_STATE_OFFSET..LIVE_STATE_OFFSET + 4)?;
     (block[..2] == *LIVE_STATE_MAGIC && block[2] == LIVE_STATE_VERSION).then_some(block[3])
+}
+
+fn read_rssi(buf: &[u8]) -> Option<i8> {
+    buf.get(LIVE_RSSI_OFFSET)
+        .map(|&byte| byte as i8)
+        .filter(|&rssi| rssi != 0)
 }
 
 fn read_str(buf: &[u8], offset: usize, len: usize) -> Option<String> {
@@ -94,6 +105,7 @@ pub fn parse_log_packet(buf: &[u8]) -> Result<LogPacket<'_>> {
         if let Some(flags) = read_live_flags(buf) {
             packet.timer_running = Some(flags & LIVE_FLAG_TIMER_RUNNING != 0);
             packet.inspection_running = Some(flags & LIVE_FLAG_INSPECTION_RUNNING != 0);
+            packet.rssi = read_rssi(buf);
         }
     }
 
@@ -416,6 +428,52 @@ mod tests {
         }
     }
 
+    fn with_rssi(mut packet: Vec<u8>, rssi: i8) -> Vec<u8> {
+        packet[LIVE_RSSI_OFFSET] = rssi as u8;
+        packet
+    }
+
+    #[test]
+    fn rssi_from_the_live_header() {
+        let packet = with_rssi(
+            with_live_state(current_header(), LIVE_STATE_VERSION, 0b01),
+            -67,
+        );
+        let packet = with_line(packet, "I one");
+        let parsed = parse_log_packet(&packet).unwrap();
+
+        assert_eq!(parsed.rssi, Some(-67));
+        assert_eq!(parsed.timer_running, Some(true));
+        assert_eq!(parsed.lines, ["I one"]);
+    }
+
+    #[test]
+    fn rssi_zero_is_no_reading() {
+        let packet = with_rssi(
+            with_live_state(current_header(), LIVE_STATE_VERSION, 0b00),
+            0,
+        );
+
+        assert_eq!(parse_log_packet(&packet).unwrap().rssi, None);
+    }
+
+    /// Byte 86 means nothing unless the live-state block in front of it is valid.
+    #[test]
+    fn rssi_is_none_without_the_live_block() {
+        let packets = [
+            with_rssi(current_header(), -67),
+            with_rssi(with_live_state(current_header(), 0, 0b11), -67),
+            with_rssi(
+                with_live_state(current_header(), LIVE_STATE_VERSION + 1, 0b11),
+                -67,
+            ),
+        ];
+
+        for packet in packets {
+            assert_eq!(parse_log_packet(&packet).unwrap().rssi, None);
+        }
+    }
+
     /// Sent every second and on timer start/stop: live state only, no lines.
     #[test]
     fn header_only_packet() {
@@ -432,6 +490,7 @@ mod tests {
                 current_session_id: Some(SESSION_ID.to_string()),
                 timer_running: Some(true),
                 inspection_running: Some(false),
+                rssi: None,
                 lines: vec![],
                 lines_malformed: false,
                 truncated: false,

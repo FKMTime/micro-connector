@@ -48,3 +48,5 @@ tokio-tungstenite = "0.29.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus = { version = "0.9.11", features = ["vendored"] }
+futures-util = "0.3.32"
+wl-nl80211 = "0.9.0"

@@ -1,4 +1,4 @@
-use crate::log_packet::LogPacket;
+use crate::{log_packet::LogPacket, station_link::StationLink};
 use anyhow::Result;
 use unix_utils::{
     SnapshotData, UnixError,
@@ -150,9 +150,21 @@ pub async fn send_current_state(esp_id: u32, packet: LogPacket<'_>) -> Result<()
             session_id: packet.current_session_id,
             timer_running: packet.timer_running,
             inspection_running: packet.inspection_running,
+            rssi: packet.rssi,
         })
         .await
         .map(|_| ())
+}
+
+pub async fn send_station_link(link: StationLink) -> Result<(), UnixError> {
+    crate::UNIX_SOCKET
+        .send_async_request(UnixRequestData::StationLink {
+            esp_id: link.esp_id,
+            ap_signal: link.ap_signal,
+            tx_bitrate_kbps: link.tx_bitrate_kbps,
+            tx_retries_percent: link.tx_retries_percent,
+        })
+        .await
 }
 
 pub async fn add_device(
@@ -193,6 +205,14 @@ mod tests {
         timer_running: Option<bool>,
         inspection_running: Option<bool>,
     ) -> serde_json::Value {
+        current_time_info_with_rssi(timer_running, inspection_running, None)
+    }
+
+    fn current_time_info_with_rssi(
+        timer_running: Option<bool>,
+        inspection_running: Option<bool>,
+        rssi: Option<i8>,
+    ) -> serde_json::Value {
         let req = UnixRequest {
             tag: Some(7),
             data: UnixRequestData::CurrentTimeInfo {
@@ -204,6 +224,7 @@ mod tests {
                 session_id: None,
                 timer_running,
                 inspection_running,
+                rssi,
             },
         };
 
@@ -229,6 +250,46 @@ mod tests {
         assert_eq!(
             data.get("inspectionRunning"),
             Some(&serde_json::Value::Null)
+        );
+    }
+
+    #[test]
+    fn current_time_info_sends_rssi() {
+        let json = current_time_info_with_rssi(None, None, Some(-67));
+
+        assert_eq!(json["data"]["rssi"], -67);
+    }
+
+    #[test]
+    fn current_time_info_sends_null_without_rssi() {
+        let json = current_time_info(Some(false), Some(false));
+        let data = json["data"].as_object().unwrap();
+
+        assert_eq!(data.get("rssi"), Some(&serde_json::Value::Null));
+    }
+
+    #[test]
+    fn station_link_is_camel_case_with_nulls() {
+        let req = UnixRequest {
+            tag: None,
+            data: UnixRequestData::StationLink {
+                esp_id: 0xA1B2,
+                ap_signal: Some(-71),
+                tx_bitrate_kbps: Some(6_000),
+                tx_retries_percent: None,
+            },
+        };
+        let json = serde_json::to_value(&req).unwrap();
+
+        assert_eq!(json["type"], "StationLink");
+        assert_eq!(
+            json["data"],
+            serde_json::json!({
+                "espId": 0xA1B2,
+                "apSignal": -71,
+                "txBitrateKbps": 6_000,
+                "txRetriesPercent": null,
+            })
         );
     }
 }
