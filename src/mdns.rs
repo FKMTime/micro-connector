@@ -10,6 +10,18 @@ pub const HOST_NAME: &str = "fkmtime.local.";
 /// served within seconds.
 const INTERFACE_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
+/// Pushes each daemon's own IP check out of its lifetime, since
+/// `watch_interfaces` handles interface changes instead.
+///
+/// It can't be 0, although mdns-sd documents 0 as "disabled". In mdns-sd
+/// 0.19 the daemon schedules its first check before the option arrives.
+/// Once that check runs, it reschedules the next one at `now + 0`, so the
+/// daemon spins a CPU core from then on. It also can't be `u32::MAX`, which
+/// is longer than kqueue accepts as a poll timeout, so on macOS the poll
+/// fails at once and the daemon spins the same way. One year is valid on
+/// both epoll and kqueue.
+const DAEMON_IP_CHECK_INTERVAL_SECS: u32 = 365 * 24 * 60 * 60;
+
 pub async fn register_mdns(port: &u16) -> Result<()> {
     let adapter_api = crate::adapter::adapter_api_url();
     let client = reqwest::Client::new();
@@ -96,7 +108,7 @@ async fn watch_interfaces(port: u16) {
 fn register_service(ip: &IpAddr, port: u16) -> Result<ServiceDaemon> {
     let mdns = ServiceDaemon::new()?;
     // `watch_interfaces` owns interface changes; see there for why.
-    mdns.set_ip_check_interval(0)?;
+    mdns.set_ip_check_interval(DAEMON_IP_CHECK_INTERVAL_SECS)?;
 
     let ip = ip.to_string();
     let properties = if std::env::var("NO_TLS").is_ok() {
