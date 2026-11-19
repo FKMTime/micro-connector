@@ -2,6 +2,7 @@
 name = "backend"
 version = "0.1.0"
 edition = "2024"
+license = "PolyForm-Strict-1.0.0"
 default-run = "backend"
 
 [[bin]]
